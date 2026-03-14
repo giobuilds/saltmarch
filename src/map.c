@@ -7,6 +7,7 @@
  */
 
 #include "map.h"
+#include <stddef.h>
 
 /* ---- map_init ------------------------------------------
  * Walks every cell in the grid and assigns a TileType.
