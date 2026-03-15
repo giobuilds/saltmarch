@@ -1,30 +1,35 @@
 # Project Architecture (High Level)
 anno1800-clone/
 ├── src/
-│   ├── main.c           ← your skeleton
-│   ├── game.c/h         ← game state, main loop logic
-│   ├── map.c/h          ← isometric tile map
-│   ├── render.c/h       ← all SDL draw calls
-│   ├── input.c/h        ← mouse/keyboard handling
-│   ├── economy.c/h      ← production chains, resources
-│   ├── population.c/h   ← residents, needs, tiers
-│   └── ui.c/h           ← HUD, panels, menus
+│   ├── main.c
+│   ├── game.c/h
+│   ├── map.c/h
+│   ├── camera.c/h
+│   ├── input.c/h
+│   ├── render.c/h
+│   ├── building.c/h
+│   ├── resource.c/h
+│   └── ui.c/h
 ├── assets/
 │   ├── tiles/
 │   └── sprites/
 ├── CMakeLists.txt
-└── Makefile
+└── BUILD.md
 
 # Deliverables
 
-File        Responsibility
-main.c      SDL callbacks only — no logic, no globals
-map.h/c     40×40 tile grid; TILE_GRASS, WATER, FOREST, SAND
-camera.h/c  offset_x/y scroll state; centred on FullHD at init
-input.h/c   Tracks held WASD/arrow keys + mouse position
-render.h/c  Isometric projection math + coloured diamond drawing
-game.h/c    Owns all sub-systems; game_update() drives camera + hover
-
+*File*            *Responsibility*
+_main.c_          SDL3 callbacks only (AppInit, AppEvent, AppIterate, AppQuit). Creates window, wires all subsystems together, owns the render order. No game logic.
+_map.h/c_         64×64 isometric tile grid. TileType enum, Tile struct (type, elevation, buildable, fertility, movement_cost). Procedural island generator using two-octave value noise + radial island mask + LCG RNG.
+_camera.h/c_      Camera struct (offset_x/y). camera_init() centres the map on screen. Pan speed constant CAMERA_PAN_SPEED (pixels/sec, frame-rate independent).
+_input.h/c_       InputState struct. Tracks held WASD/arrow keys, raw mouse coords, converted logical coords (logical_x/y), and single-frame click events (left_click, right_click). input_clear_clicks() resets after consumption.
+_render.h/c_      All SDL draw calls. Isometric projection math (iso_to_screen, screen_to_iso with floorf fix). Draws tile map, placed buildings, placement ghost (green/red), hover outline, resource stockpile panel (top-left segmented bars).
+_game.h/c_        Top-level GameState struct that owns every subsystem. game_init(), game_update() (delta time, camera pan, mouse conversion, building ticks), game_place_building().
+_building.h/c_    BuildingDef static table (name, footprint, placement rules, production fields). Building instance struct (type, position, active flag, production timer). Placement validation (bounds, buildable, fertility, coast/forest adjacency). building_place().
+_resource.h/c_    ResourceType enum (WOOD, FISH, GRAIN, GOLD). Stockpile struct (int amount[RES_COUNT]). stockpile_add() with zero clamp. RES_COUNT used as sentinel for "no resource".
+_ui.h/c_          HUD bar (building slots with colour swatch + footprint dot grid, cog button with pixel-art icon). Menu overlay (dimmed background, panel, New Game/Save/Quit buttons). All hit-testing functions. Tooltip stub ready for SDL_ttf.
+_CMakeLists.txt_  CMake build config. C99, -Wall -Wextra -Wpedantic -Wshadow -Wconversion. Links SDL3::SDL3 and m (libm for floorf).
+_BUILD.md_        Build and run instructions for Fedora. SDL3 install, cmake commands, controls reference.
 
 
 # Phase 2: procedural island generator with value noise
