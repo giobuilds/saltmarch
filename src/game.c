@@ -8,6 +8,9 @@
 #include <stdlib.h>    /* malloc, free    */
 #include <string.h>   /* memset */
 
+/* Forward declaration — renderer is needed for coordinate conversion.
+ * We receive it via a new parameter on game_update(). */
+
 /* ---- game_init ----------------------------------------- */
 GameState *game_init(void)
 {
@@ -31,6 +34,7 @@ GameState *game_init(void)
     gs->building_count    = 0;
     gs->selected_building = BUILDING_NONE;
     gs->placement_valid   = 0;
+    gs->menu_open         = 0;   /* CHANGED: menu starts closed */
 
     return gs;
 }
@@ -47,6 +51,15 @@ void game_free(GameState *gs)
  *   2. Camera pan
  *   3. Hovered tile
  *   4. Placement validity for ghost rendering
+ * 
+ * CHANGED: takes SDL_Renderer* so we can convert window
+ * mouse coords to logical render coords via
+ * SDL_RenderCoordinatesFromWindow(). This is necessary because
+ * SDL_SetRenderLogicalPresentation() makes the render coordinate
+ * space (1920x1080) independent of the actual window pixel size.
+ * Mouse events arrive in window pixels; without conversion the
+ * HUD hit-test and tile hover will be wrong on any window that
+ * isn't exactly 1920x1080.
  * -------------------------------------------------------- */
 void game_update(GameState *gs, SDL_Renderer *renderer)
 {

@@ -17,6 +17,15 @@
  *
  * Each slot is a rectangle.  The selected slot gets a bright
  * border.  Hovering shows the building name above the bar.
+ * 
+ * Layout:
+ *   Left side  – building slots (Fisher, Warehouse, Farm, Lumberjack)
+ *   Right side – cog button that opens the game menu overlay
+ *
+ * Menu overlay (centred on screen):
+ *   [ New Game ]   ← stub
+ *   [ Save     ]   ← stub
+ *   [ Quit     ]   ← calls SDL_APP_SUCCESS
  * ========================================================= */
 
 #include <SDL3/SDL.h>
@@ -28,18 +37,48 @@
 #define HUD_SLOT_PAD    12    /* gap between slots            */
 #define HUD_MARGIN_LEFT 20    /* left edge inset              */
 
-/* Draw the entire HUD bar.
+/* Menu overlay dimensions */
+#define MENU_W           260
+#define MENU_H           220
+#define MENU_BTN_H        48
+#define MENU_BTN_PAD      16
+#define MENU_BTN_MARGIN   20
+
+/* ---- Building HUD -------------------------------------- 
+ * Draw the entire HUD bar.
  * selected  – currently selected BuildingType (or BUILDING_NONE)
  * mouse_x/y – current cursor position in screen pixels
  *             (used to highlight the hovered slot) */
 void ui_draw(SDL_Renderer *renderer,
              int screen_w, int screen_h,
              BuildingType selected,
-             int mouse_x, int mouse_y);
+             int mouse_x, int mouse_y, int menu_open);
 
 /* Hit-test: given a screen coordinate, return the BuildingType
  * whose HUD slot contains that point, or BUILDING_NONE. */
 BuildingType ui_hit_test(int screen_w, int screen_h,
+                         int mouse_x, int mouse_y);
+
+/* Returns 1 if the cog button was clicked. */
+int          ui_cog_hit_test(int screen_w, int screen_h,
+                             int mouse_x, int mouse_y);
+ 
+/* ---- Menu overlay -------------------------------------- */
+ 
+typedef enum {
+    MENU_HIT_NONE     = 0,
+    MENU_HIT_NEWGAME  = 1,
+    MENU_HIT_SAVE     = 2,
+    MENU_HIT_QUIT     = 3
+} MenuHit;
+ 
+/* Draw the menu overlay panel. Only called when menu_open == 1. */
+void    ui_menu_draw(SDL_Renderer *renderer,
+                     int screen_w, int screen_h,
+                     int mouse_x, int mouse_y);
+ 
+/* Hit-test the menu buttons. Returns MENU_HIT_NONE if no button hit. */
+MenuHit ui_menu_hit_test(int screen_w, int screen_h,
                          int mouse_x, int mouse_y);
 
 #endif /* UI_H */

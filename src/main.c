@@ -65,7 +65,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     /* --- Window & renderer ----------------------------- */
     if (!SDL_CreateWindowAndRenderer("Anno Clone - Phase 3",
-                                     SCREEN_W, SCREEN_H, 0,           /* no special flags */
+                                     SCREEN_W, SCREEN_H, SDL_WINDOW_FULLSCREEN,
                                      &window, &renderer)) {
         SDL_Log("Couldn't create window/renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -75,7 +75,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
      * 1920×1080 even if the OS scales the window. */
     SDL_SetRenderLogicalPresentation(renderer,
                                      SCREEN_W, SCREEN_H,
-                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                                     SDL_LOGICAL_PRESENTATION_STRETCH);
 
     /* --- Game state ------------------------------------ */
     gs = game_init();
@@ -98,7 +98,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     *appstate = app;
 
-    SDL_Log("Phase 3 ready. Click HUD to select, click map to place.");
+    SDL_Log("Phase 3 ready. Click HUD to select, click map to place. ESC or menu Quit button to exit.");
     return SDL_APP_CONTINUE;
 }
 
@@ -127,23 +127,57 @@ SDL_AppResult SDL_AppIterate(void *appstate)
  
     /* Left click on HUD → select building type */
     if (gs->input.left_click) {
-        BuildingType hud_hit = ui_hit_test(SCREEN_W, SCREEN_H,
+                /* CHANGED: if menu is open, only menu buttons respond */
+        if (gs->menu_open) {
+            MenuHit hit = ui_menu_hit_test(SCREEN_W, SCREEN_H,
                                            gs->input.logical_x,
                                            gs->input.logical_y);
-        if (hud_hit != BUILDING_NONE) {
-            /* Toggle: clicking the same button deselects it */
-            gs->selected_building =
-                (gs->selected_building == hud_hit)
-                ? BUILDING_NONE : hud_hit;
+            switch (hit) {
+            case MENU_HIT_QUIT:
+                return SDL_APP_SUCCESS;   /* clean exit */
+ 
+            case MENU_HIT_NEWGAME:
+            case MENU_HIT_SAVE:
+                SDL_Log("Stub: %s",
+                    hit == MENU_HIT_NEWGAME ? "New Game" : "Save");
+                gs->menu_open = 0;        /* close menu after stub action */
+                break;
+ 
+            case MENU_HIT_NONE:
+                /* Click outside buttons — close the menu */
+                gs->menu_open = 0;
+                break;
+            }
+ 
         } else {
-            /* Left click on map → place building */
-            game_place_building(gs);
+            /* CHANGED: check cog button first, then HUD slots, then map */
+            if (ui_cog_hit_test(SCREEN_W, SCREEN_H,
+                                gs->input.logical_x,
+                                gs->input.logical_y)) {
+                gs->menu_open = 1;
+                gs->selected_building = BUILDING_NONE; /* deselect on menu open */
+ 
+            } else {
+                BuildingType hud_hit = ui_hit_test(SCREEN_W, SCREEN_H,
+                                                   gs->input.logical_x,
+                                                   gs->input.logical_y);
+                if (hud_hit != BUILDING_NONE) {
+                    gs->selected_building =
+                        (gs->selected_building == hud_hit)
+                        ? BUILDING_NONE : hud_hit;
+                } else {
+                    game_place_building(gs);
+                }
+            }
         }
     }
  
     /* Right click → deselect */
     if (gs->input.right_click) {
-        gs->selected_building = BUILDING_NONE;
+        if (gs->menu_open)
+            gs->menu_open = 0;        /* CHANGED: right click closes menu */
+        else
+            gs->selected_building = BUILDING_NONE;
     }
  
     
@@ -168,10 +202,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                         gs->hovered_row, gs->hovered_col);
  
     /* HUD on top of everything */
-    ui_draw(app->r, SCREEN_W, SCREEN_H,
-            gs->selected_building,
-            gs->input.logical_x, gs->input.logical_y);
+    ui_draw(app->r, SCREEN_W, SCREEN_H, gs->selected_building, 
+            gs->input.logical_x, gs->input.logical_y, gs->menu_open);
  
+    /* CHANGED: draw menu overlay on top of everything when open */
+    if (gs->menu_open)
+        ui_menu_draw(app->r, SCREEN_W, SCREEN_H,
+                     gs->input.logical_x,
+                     gs->input.logical_y);
+
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;
 }

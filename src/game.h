@@ -15,13 +15,14 @@
  *   - placement_valid flag (can we place at the hovered tile?)
  * ========================================================= */
 
+#include <SDL3/SDL.h>
 #include "map.h"
 #include "camera.h"
 #include "input.h"
 #include "building.h"
 
-#define SCREEN_W 1280
-#define SCREEN_H 720
+#define SCREEN_W 1920
+#define SCREEN_H 1080
 
 typedef struct {
     Map        map;
@@ -51,6 +52,8 @@ typedef struct {
     /* 1 if the current hover position is a valid placement spot
      * for selected_building.  Used by render to colour the ghost. */
     int placement_valid;
+
+    int menu_open;  /* 1 when the cog menu overlay is open */
 } GameState;
 
 /* Allocate and initialise a new GameState.
