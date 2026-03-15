@@ -59,3 +59,15 @@ Fix isometric tile hit-test accuracy in screen_to_iso()
   (was testing against top-left corner of bounding box, not tile centre)
 - Replace (int) cast with floorf() for correct negative coordinate rounding
 - Add math.h include and link libm for floorf()
+
+# Phase 4: resource system with production ticks and stockpile HUD
+
+- Add ResourceType enum (Wood, Fish, Grain, Gold) and Stockpile struct
+- BuildingDef gains produces/consumes/tick_seconds fields
+- Building instance gains float timer for production accumulation
+- game_tick_buildings() fires per-frame: consumes input, adds output,
+  idles if input stock insufficient
+- render_resources() draws segmented bar panel top-left (10 segs = 100 units)
+- Production rates: Lumberjack 5s, Fisher's Hut 6s, Farm 8s
+- RES_COUNT used as sentinel for "no resource" in building definitions
+- Add resource.c to CMakeLists.txt
