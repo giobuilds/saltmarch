@@ -30,6 +30,7 @@ endif()
 #   cmake -DSDL3_DIR=/path/to/SDL3/build ..
 find_package(SDL3 REQUIRED CONFIG)
 find_package(SDL3_ttf REQUIRED CONFIG)
+find_package(SDL3_image REQUIRED CONFIG)
 
 # ---- Source files ----------------------------------------
 set(SOURCES
@@ -44,6 +45,7 @@ set(SOURCES
     src/resource.c
     src/fonts.c
     src/population.c
+    src/sprite.c
 )
 
 # ---- Executable ------------------------------------------
@@ -51,7 +53,7 @@ add_executable(anno_clone ${SOURCES})
 
 # Link against the SDL3 shared library target.
 # SDL3::SDL3 is the target name the SDL3 CMake config exports.
-target_link_libraries(anno_clone PRIVATE SDL3::SDL3 m SDL3_ttf::SDL3_ttf)   # m = libm for floorf()
+target_link_libraries(anno_clone PRIVATE SDL3::SDL3 m SDL3_ttf::SDL3_ttf SDL3_image::SDL3_image)   # m = libm for floorf()
 
 # ---- Install (optional) ----------------------------------
 install(TARGETS anno_clone DESTINATION bin)

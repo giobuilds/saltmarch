@@ -23,6 +23,7 @@
 #include "building.h"
 #include "resource.h"
 #include "population.h"   /* Phase 5 */
+#include "sprite.h"       /* Phase 6 */
 
 /* Draw the entire map for one frame.
  * Tiles are drawn back-to-front (painter's algorithm):
@@ -75,5 +76,5 @@ void iso_to_screen(int row, int col, const Camera *cam,
  
 void screen_to_iso(int sx, int sy, const Camera *cam,
                    int *out_row, int *out_col);
-                                     
+
 #endif /* RENDER_H */

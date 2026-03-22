@@ -16,6 +16,9 @@
  *
  * Add a small top margin (3 tile-heights) so the first row
  * is not clipped.
+ * 
+ * CHANGED Phase 6: offset_y start increased because TILE_H
+ *  is now 128 (was 32), so 3 tile-heights of top margin = 384px.
  * -------------------------------------------------------- */
 void camera_init(Camera *cam, int screen_w, int screen_h,
                  int map_cols, int map_rows)

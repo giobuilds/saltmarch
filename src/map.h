@@ -14,8 +14,8 @@
 #include <stdint.h>   /* uint32_t for seed */
 
 /* Tile pixel dimensions (unchanged) */
-#define TILE_W 64
-#define TILE_H 32
+#define TILE_W 256   /* CHANGED Phase 6: match spritesheet tile size */
+#define TILE_H 128   /* CHANGED Phase 6: 2:1 isometric ratio */
 
 /* Map size in tiles */
 #define MAP_COLS 64

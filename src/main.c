@@ -24,6 +24,7 @@
 #include "render.h"
 #include "ui.h"
 #include "fonts.h"    /* Phase 5 */
+#include "sprite.h"    /* Phase 6 */
 
 typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
 
@@ -96,6 +97,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     /* Phase 5: initialise SDL_ttf font rendering */
     if (!fonts_init())
         SDL_Log("Warning: fonts unavailable, text will not render");
+
+    /* Phase 6: load spritesheets from assets/tiles/ */
+    if (!sprites_load(renderer, "assets/tiles"))
+        SDL_Log("Warning: sprites unavailable, using coloured fallback");
  
     SDL_Log("Phase 5 ready. ESC or menu Quit button to exit.");
     return SDL_APP_CONTINUE;
@@ -232,8 +237,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 
     (void)result;   /* not checking exit code in Phase 1 */
 
+    sprites_free(); /* Phase 6: release sprite textures */
     fonts_quit();   /* Phase 5: release SDL_ttf resources */
-    
+
     if (app) {
         game_free(app->g);
         SDL_free(app);

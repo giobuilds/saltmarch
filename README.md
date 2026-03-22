@@ -93,3 +93,17 @@ Fix isometric tile hit-test accuracy in screen_to_iso()
 - Needs unmet: lose 1 resident per tick
 - Population counter top-right (Pop: N)
 - Link SDL3_ttf in CMakeLists.txt
+
+# Phase 6: sprite rendering from original spritesheets
+
+- Add sprite.h/c: loads terrain/building textures from 3 spritesheet files
+- Extract tiles by grid index at startup (no pre-processing needed)
+- Teal/black/magenta background removal via per-pixel alpha walk before scaling
+- Building composite: left wall + right wall + per-building roof tile
+- Roof index per building: house=0, farm=1, warehouse=2, fishers_hut=8, lumberjack=3
+- TILE_W/H updated to 256x128 to match spritesheet tile dimensions
+- render_map() uses SDL_RenderTexture(), falls back to diamonds if sprites missing
+- render_buildings() anchors building base to diamond bottom (sy + TILE_H)
+- camera_init() offset_y adjusted for new tile height
+- Link SDL3_image in CMakeLists.txt
+- Fix SDL3 API: SDL_MapRGB requires SDL_GetPixelFormatDetails(surf->format)
