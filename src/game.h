@@ -178,6 +178,17 @@ int game_find_building_at(const GameState *gs, int row, int col);
  * trade screen. */
 void game_sell_resource(GameState *gs, ResourceType res, int qty);
 
+/* Buys up to `qty` units of `res` for the stockpile, paying Gold at
+ * BUY_PRICE[res] (resource.h) — the same markup rate the build-
+ * confirmation popup's Gold-payment option uses. Clamps `qty` down
+ * to whatever's actually possible: storage headroom (capacity minus
+ * current amount) and Gold on hand, in that order. qty < 0 means
+ * "buy as much as both allow" (resolved against the live stockpile,
+ * mirroring game_sell_resource's qty < 0 = "sell all"). No-op if res
+ * is RES_GOLD or the resolved quantity is <= 0. Used by the
+ * Marketplace trade screen. */
+void game_buy_resource(GameState *gs, ResourceType res, int qty);
+
 /* Removes the building at buildings[idx] (marks it inactive — the
  * slot itself is left for building_place() to reuse later, same
  * pattern as every other active-flagged array here). Free — no

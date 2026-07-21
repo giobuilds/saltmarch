@@ -117,6 +117,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             if (hit == TRADE_HIT_SELL) {
                 if (qty < 0) qty = gs->stockpile.amount[res]; /* Sell All */
                 game_sell_resource(gs, res, qty);
+            } else if (hit == TRADE_HIT_BUY) {
+                /* qty < 0 ("Max") is resolved inside game_buy_resource
+                 * itself, since it needs both storage headroom and
+                 * Gold on hand to know what "max" means. */
+                game_buy_resource(gs, res, qty);
             } else {
                 /* TRADE_HIT_CLOSE or TRADE_HIT_NONE (click outside
                  * the panel) both dismiss the screen. */

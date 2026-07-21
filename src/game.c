@@ -484,6 +484,30 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty)
     stockpile_add(&gs->stockpile, RES_GOLD, qty * SELL_PRICE[res]);
 }
 
+/* ---- game_buy_resource --------------------------------------- */
+void game_buy_resource(GameState *gs, ResourceType res, int qty)
+{
+    int headroom, max_affordable;
+
+    if (res == RES_GOLD) return;
+
+    headroom = gs->stockpile.capacity - gs->stockpile.amount[res];
+    if (headroom < 0) headroom = 0;
+
+    max_affordable = (BUY_PRICE[res] > 0)
+                    ? gs->stockpile.amount[RES_GOLD] / BUY_PRICE[res]
+                    : 0;
+
+    if (qty < 0)
+        qty = (headroom < max_affordable) ? headroom : max_affordable;
+    if (qty > headroom)        qty = headroom;
+    if (qty > max_affordable)  qty = max_affordable;
+    if (qty <= 0) return;
+
+    stockpile_add(&gs->stockpile, RES_GOLD, -(qty * BUY_PRICE[res]));
+    stockpile_add(&gs->stockpile, res, qty);
+}
+
 /* ---- game_demolish_building --------------------------------- */
 void game_demolish_building(GameState *gs, int idx)
 {
