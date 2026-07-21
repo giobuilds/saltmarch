@@ -143,13 +143,30 @@ void ui_draw(SDL_Renderer *renderer,
         }
     
 
-            /* Tooltip stub */
+            /* Tooltip: building name, shown above the slot on hover */
         if (hovr) {
-            SDL_FRect tip = { r.x, r.y - 22.0f, r.w, 18.0f };
+            int   name_w = 0, name_h = 0;
+            int   have_size = font_measure_text(FONT_SMALL, def->name,
+                                                &name_w, &name_h);
+            float pad_x  = 8.0f;
+            float tip_w  = have_size ? (float)name_w + pad_x * 2.0f : r.w;
+            float tip_h  = have_size ? (float)name_h + 6.0f : 18.0f;
+            SDL_FRect tip = {
+                r.x + r.w / 2.0f - tip_w / 2.0f,
+                r.y - tip_h - 4.0f,
+                tip_w, tip_h
+            };
             SDL_SetRenderDrawColor(renderer, 50, 42, 28, 240);
             SDL_RenderFillRect(renderer, &tip);
             SDL_SetRenderDrawColor(renderer, 140, 120, 70, 255);
             SDL_RenderRect(renderer, &tip);
+
+            if (have_size) {
+                SDL_Color name_col = { 230, 215, 180, 255 };
+                font_draw_text(renderer, FONT_SMALL, def->name,
+                               (int)(tip.x + pad_x), (int)(tip.y + 3.0f),
+                               name_col);
+            }
         }
     }
  

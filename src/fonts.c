@@ -104,3 +104,12 @@ int font_draw_text(SDL_Renderer *renderer,
 
     return ret ? 1 : 0;
 }
+
+/* ---- font_measure_text ----------------------------------- */
+int font_measure_text(FontSize size, const char *text,
+                      int *out_w, int *out_h)
+{
+    if (!fonts_ready || size >= FONT_SIZE_COUNT) return 0;
+    if (!text || text[0] == '\0') return 0;
+    return TTF_GetStringSize(fonts[size], text, 0, out_w, out_h) ? 1 : 0;
+}

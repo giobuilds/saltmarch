@@ -44,4 +44,11 @@ int  font_draw_text(SDL_Renderer *renderer,
                     int x, int y,
                     SDL_Color colour);
 
+/* Measure the pixel size `text` would occupy at `size` without
+ * drawing it (used to size tooltip boxes to fit their label).
+ * Returns 1 on success, 0 if fonts are unavailable. */
+int  font_measure_text(FontSize size,
+                       const char *text,
+                       int *out_w, int *out_h);
+
 #endif /* FONTS_H */
