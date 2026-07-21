@@ -27,6 +27,8 @@ set(SOURCES
     src/trade_ui.c
     src/agent.c
     src/build_confirm_ui.c
+    src/demolish_confirm_ui.c
+    src/tier_upgrade_ui.c
 )
 
 add_executable(anno_clone ${SOURCES})

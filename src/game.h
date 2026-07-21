@@ -111,9 +111,27 @@ typedef struct {
 
     /* Demolish tool: 1 while active (mutually exclusive with
      * selected_building — selecting either clears the other).
-     * Clicking a building while active removes it via
-     * game_demolish_building(). */
+     * Clicking a building while active opens the demolish-
+     * confirmation popup below rather than destroying immediately. */
     int demolish_mode;
+
+    /* Bulldozer confirmation popup: opened instead of an immediate
+     * game_demolish_building() call when the demolish tool is active
+     * and the player clicks a building. demolish_confirm_idx is
+     * captured at popup-open time (same reasoning as
+     * build_confirm_row/col above — hovered_row/col drifts once the
+     * mouse moves to the popup's own buttons). */
+    int demolish_confirm_open;
+    int demolish_confirm_idx;
+
+    /* Tier-upgrade confirmation popup: opened when the player clicks
+     * an active, connected BUILDING_HOUSE with nothing selected and
+     * demolish_mode off (mirrors the Marketplace-click-opens-trade
+     * check right next to it). tier_upgrade_idx is captured at
+     * popup-open time, same reasoning as build_confirm_row/col and
+     * demolish_confirm_idx above. */
+    int tier_upgrade_open;
+    int tier_upgrade_idx;
 } GameState;
 
 /* Allocate and initialise a new GameState.
@@ -203,5 +221,20 @@ void game_buy_resource(GameState *gs, ResourceType res, int qty);
  * demolished building was a Warehouse. No-op if idx is out of range
  * or already inactive. */
 void game_demolish_building(GameState *gs, int idx);
+
+/* Gold cost to upgrade a Farmers' House (BUILDING_HOUSE) to a
+ * Workers' House (BUILDING_HOUSE_WORKER) via game_upgrade_house(). */
+#define TIER_UPGRADE_COST_GOLD 300
+
+/* Upgrades buildings[idx] from BUILDING_HOUSE to BUILDING_HOUSE_WORKER:
+ * checks Gold affordability, deducts TIER_UPGRADE_COST_GOLD, then
+ * mutates the building's type in place. Nothing else needs to change
+ * — PopData's residents/happy/timer stay exactly as they were (same
+ * array index), agents' home_idx references stay valid (the home
+ * didn't move), and pop_update()/connectivity/rendering/worker-
+ * assignment all already look up BUILDING_DEFS live by the (now
+ * different) type. No-op if idx is out of range, inactive, not a
+ * BUILDING_HOUSE, or Gold is insufficient. */
+void game_upgrade_house(GameState *gs, int idx);
 
 #endif /* GAME_H */

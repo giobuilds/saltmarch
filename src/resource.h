@@ -13,12 +13,20 @@
  * Spending mechanics arrive in Phase 5 with population needs.
  * ========================================================= */
 
-/* ---- Resource types ------------------------------------ */
+/* ---- Resource types ------------------------------------
+ * RES_GOLD stays last on purpose: trade_ui.c's TRADE_SELLABLE_COUNT
+ * (and its "Gold is excluded, conveniently the last slot" comment)
+ * depends on every tradeable good being inserted before it. */
 typedef enum {
     RES_WOOD  = 0,
     RES_FISH  = 1,
     RES_GRAIN = 2,
-    RES_GOLD  = 3,
+    /* Production chains, Phase 1 (Beer): Hop Farm -> Malthouse
+     * (Grain + Hops) -> Brewery. */
+    RES_HOPS  = 3,
+    RES_MALT  = 4,
+    RES_BEER  = 5,
+    RES_GOLD  = 6,
     RES_COUNT          /* always last */
 } ResourceType;
 

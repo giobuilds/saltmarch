@@ -44,6 +44,19 @@ typedef enum {
     BUILDING_HOUSE       =  4,   /* Phase 5 */
     BUILDING_ROAD        =  5,   /* Phase 2: roads/logistics */
     BUILDING_MARKETPLACE =  6,   /* Phase 4: manual trade screen */
+
+    /* Production chains, Phase 1 (Beer): a 3-stage chain proving out
+     * multi-input production (see BuildingDef.consumes[] below) and
+     * finally giving FERTILE_HOP (map.h) a consumer. */
+    BUILDING_HOP_FARM    =  7,   /* raw producer: Hops, needs FERTILE_HOP */
+    BUILDING_MALTHOUSE   =  8,   /* Grain + Hops -> Malt (multi-input) */
+    BUILDING_BREWERY     =  9,   /* Malt -> Beer */
+
+    /* Population tiers, Phase 1: reached only by upgrading an existing
+     * BUILDING_HOUSE (game_upgrade_house, game.c) — never placed
+     * directly from the HUD (see hud_placeable below). */
+    BUILDING_HOUSE_WORKER = 10,
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 
@@ -51,11 +64,20 @@ typedef enum {
  * Stored in BuildingDef.placement_flags.
  * The placement validator checks these against the map. */
 typedef enum {
-    PLACE_ANY_LAND     = 0,        /* no extra constraint      */
-    PLACE_NEEDS_COAST  = 1 << 0,   /* adjacent water required  */
-    PLACE_NEEDS_FOREST = 1 << 1,   /* adjacent forest required */
-    PLACE_NEEDS_FERTILE= 1 << 2,   /* all tiles must be fertile*/
+    PLACE_ANY_LAND        = 0,        /* no extra constraint      */
+    PLACE_NEEDS_COAST     = 1 << 0,   /* adjacent water required  */
+    PLACE_NEEDS_FOREST    = 1 << 1,   /* adjacent forest required */
+    PLACE_NEEDS_FERTILE   = 1 << 2,   /* any fertility bit set    */
+    /* Specifically FERTILE_HOP, not just "any fertility" — kept
+     * separate from PLACE_NEEDS_FERTILE above so Farm's existing
+     * (loose) behavior is untouched by adding this. */
+    PLACE_NEEDS_HOP_FERTILE = 1 << 3,
 } PlacementFlags;
+
+/* Production inputs a building can consume per tick. 2 covers every
+ * chain currently planned (nothing needs 3 simultaneous raw inputs);
+ * raise if a future chain genuinely needs more. */
+#define MAX_BUILDING_INPUTS 2
 
 /* ---- Static definition of one building type ------------ */
 typedef struct {
@@ -68,23 +90,36 @@ typedef struct {
 
     /* CHANGED Phase 4: production fields.
      * produces      – which resource this building outputs
-     *                 (RES_COUNT means "produces nothing")
+     *                 (RES_COUNT means "produces nothing"). Stays a
+     *                 single output — no planned chain needs 2.
      * produce_amt   – units produced per tick
-     * consumes      – which resource this building needs as input
-     *                 (RES_COUNT means "needs no input")
-     * consume_amt   – units consumed per tick
+     * consumes      – up to MAX_BUILDING_INPUTS inputs required per
+     *                 tick (RES_COUNT in a slot means "unused" — same
+     *                 sentinel convention as produces, just per-slot).
+     *                 All-or-nothing: a tick only fires if every
+     *                 non-RES_COUNT slot has enough stock.
+     * consume_amt   – units consumed per tick, parallel to consumes[]
      * tick_seconds  – real-time seconds between production ticks */
     ResourceType  produces;
     int           produce_amt;
-    ResourceType  consumes;
-    int           consume_amt;
+    ResourceType  consumes[MAX_BUILDING_INPUTS];
+    int           consume_amt[MAX_BUILDING_INPUTS];
     float         tick_seconds;
 
     /* One-time cost deducted from the stockpile when this
      * building is placed, indexed like Stockpile.amount[].
      * Unlike produces/consumes (a per-tick flow), this is a
-     * lump sum paid once at building_place() time. */
+     * lump sum paid once at building_place() time. Irrelevant for a
+     * building that's never placed directly (hud_placeable == 0) —
+     * see BUILDING_HOUSE_WORKER, reached only via game_upgrade_house(). */
     int           cost[RES_COUNT];
+
+    /* 1 if this type gets a HUD slot the player can select and place
+     * directly; 0 if it's only ever reached some other way (currently
+     * just BUILDING_HOUSE_WORKER, via upgrading a BUILDING_HOUSE).
+     * ui.c's HUD loop filters on this rather than assuming every
+     * BuildingType maps 1:1 to a placeable slot. */
+    int           hud_placeable;
 } BuildingDef;
 
 /* The global table of all building definitions.

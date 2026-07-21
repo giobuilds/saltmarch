@@ -34,6 +34,33 @@ static SDL_FRect cog_rect(int screen_w, int screen_h)
     return r;
 }
 
+/* ---- HUD-placeable building list -----------------------
+ * Not every BuildingType gets a HUD slot (e.g. BUILDING_HOUSE_WORKER
+ * is only ever reached by upgrading a placed House — see
+ * game_upgrade_house, game.c). These map a HUD slot POSITION
+ * (0..hud_slot_count()-1) to the BuildingType that actually occupies
+ * it, filtering out anything with hud_placeable == 0, so slot
+ * positions stay contiguous instead of leaving a gap for each
+ * excluded type. */
+static int hud_slot_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < BUILDING_TYPE_COUNT; i++)
+        if (BUILDING_DEFS[i].hud_placeable) n++;
+    return n;
+}
+
+static BuildingType hud_slot_type(int slot_index)
+{
+    int i, n = 0;
+    for (i = 0; i < BUILDING_TYPE_COUNT; i++) {
+        if (!BUILDING_DEFS[i].hud_placeable) continue;
+        if (n == slot_index) return (BuildingType)i;
+        n++;
+    }
+    return BUILDING_NONE;
+}
+
 /* Demolish button rectangle — right-anchored just left of the cog. */
 static SDL_FRect demolish_rect(int screen_w, int screen_h)
 {
@@ -66,12 +93,12 @@ static SDL_FRect menu_btn_rect(int screen_w, int screen_h, int i)
 BuildingType ui_hit_test(int screen_w, int screen_h,
                          int mouse_x, int mouse_y)
 {
-    int i;
-    for (i = 0; i < BUILDING_TYPE_COUNT; i++) {
+    int i, count = hud_slot_count();
+    for (i = 0; i < count; i++) {
         SDL_FRect r = slot_rect(screen_w, screen_h, i);
         if ((float)mouse_x >= r.x && (float)mouse_x < r.x + r.w &&
             (float)mouse_y >= r.y && (float)mouse_y < r.y + r.h) {
-            return (BuildingType)i;
+            return hud_slot_type(i);
         }
     }
     return BUILDING_NONE;
@@ -115,12 +142,13 @@ void ui_draw(SDL_Renderer *renderer,
         (float)screen_w,bar_y);
 
     /* --- Building slots --------------------------------- */
-    for (i = 0; i < BUILDING_TYPE_COUNT; i++) {
-        const BuildingDef *def  = &BUILDING_DEFS[i];
+    for (i = 0; i < hud_slot_count(); i++) {
+        BuildingType       t    = hud_slot_type(i);
+        const BuildingDef *def  = &BUILDING_DEFS[t];
         SDL_FRect          r    = slot_rect(screen_w, screen_h, i);
         int                hovr = ui_hit_test(screen_w, screen_h,
-                                              mouse_x, mouse_y) == i;
-        int                sel  = (selected == (BuildingType)i);
+                                              mouse_x, mouse_y) == t;
+        int                sel  = (selected == t);
 
         SDL_SetRenderDrawColor(renderer,
             (hovr || sel) ? 60 : 40,

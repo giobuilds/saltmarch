@@ -3,16 +3,22 @@
 #include "resource.h"
 
 const char *RESOURCE_NAMES[RES_COUNT] = {
-    "Wood",
-    "Fish",
-    "Grain",
-    "Gold"
+    [RES_WOOD]  = "Wood",
+    [RES_FISH]  = "Fish",
+    [RES_GRAIN] = "Grain",
+    [RES_HOPS]  = "Hops",
+    [RES_MALT]  = "Malt",
+    [RES_BEER]  = "Beer",
+    [RES_GOLD]  = "Gold",
 };
 
 const int SELL_PRICE[RES_COUNT] = {
     [RES_WOOD]  = 2,
     [RES_FISH]  = 3,
     [RES_GRAIN] = 2,
+    [RES_HOPS]  = 4,
+    [RES_MALT]  = 6,
+    [RES_BEER]  = 8,
     /* RES_GOLD left at 0 — unused, can't sell gold for gold */
 };
 
@@ -20,6 +26,9 @@ const int BUY_PRICE[RES_COUNT] = {
     [RES_WOOD]  = 5,
     [RES_FISH]  = 6,
     [RES_GRAIN] = 5,
+    [RES_HOPS]  = 8,
+    [RES_MALT]  = 12,
+    [RES_BEER]  = 16,
     /* RES_GOLD left at 0 — unused */
 };
 

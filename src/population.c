@@ -1,7 +1,29 @@
-/*  population.c  --  Residents and needs  (Phase 5)  */
+/*  population.c  --  Residents and needs  (Phase 5, tier-driven
+ *  needs added in the production-chains pass)  */
 
 #include "population.h"
 #include <SDL3/SDL.h>   /* SDL_Log */
+
+/* ---- Per-tier needs table --------------------------------
+ * Keyed by the house's actual BuildingType, so upgrading a house
+ * (game_upgrade_house, game.c — just mutates buildings[idx].type in
+ * place) automatically changes what pop_update() requires next tick,
+ * with zero other state to migrate. RES_COUNT in a needs[] slot means
+ * "unused" — same sentinel convention as BuildingDef.consumes[]. */
+static const TierDef TIER_DEFS[] = {
+    { BUILDING_HOUSE,        { RES_FISH, RES_GRAIN, RES_COUNT } },
+    { BUILDING_HOUSE_WORKER, { RES_FISH, RES_GRAIN, RES_BEER  } },
+};
+#define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
+
+static const TierDef *tier_def_for(BuildingType type)
+{
+    int i;
+    for (i = 0; i < TIER_DEF_COUNT; i++)
+        if (TIER_DEFS[i].house_type == type)
+            return &TIER_DEFS[i];
+    return NULL;   /* not a house type pop_update recognizes */
+}
 
 /* ---- pop_init ------------------------------------------ */
 void pop_init(PopData *p)
@@ -23,27 +45,38 @@ void pop_init(PopData *p)
 void pop_update(PopData pop[], const Building buildings[], int count,
                Stockpile *s, float dt)
 {
-    int i;
+    int i, j;
 
     for (i = 0; i < count; i++) {
-        PopData *p = &pop[i];
+        PopData       *p    = &pop[i];
+        const TierDef *tier;
+        int            needs_met, k;
+
         if (!p->active) continue;
 
         p->timer += dt;
         if (p->timer < NEEDS_INTERVAL) continue;
         p->timer = 0.0f;
 
-        /* --- Needs check: road-connected, plus FISH and GRAIN --
-         * A disconnected house has no route for a Warehouse to
-         * deliver food, so it's treated the same as needs unmet. */
-        if (buildings[i].connected &&
-            s->amount[RES_FISH]  > 0 &&
-            s->amount[RES_GRAIN] > 0 &&
-            p->residents > 0) {
+        tier = tier_def_for(buildings[i].type);
 
-            /* Consume one of each food type */
-            stockpile_add(s, RES_FISH,  -1);
-            stockpile_add(s, RES_GRAIN, -1);
+        /* --- Needs check: road-connected, plus every good this
+         * tier's TierDef lists (all-or-nothing, same philosophy as
+         * game_tick_buildings' multi-input production). A
+         * disconnected house has no route for a Warehouse to deliver
+         * anything, so it's treated the same as needs unmet. */
+        needs_met = buildings[i].connected && tier != NULL && p->residents > 0;
+        if (needs_met) {
+            for (k = 0; k < MAX_TIER_GOODS; k++) {
+                if (tier->needs[k] == RES_COUNT) continue;
+                if (s->amount[tier->needs[k]] <= 0) { needs_met = 0; break; }
+            }
+        }
+
+        if (needs_met) {
+            for (j = 0; j < MAX_TIER_GOODS; j++)
+                if (tier->needs[j] != RES_COUNT)
+                    stockpile_add(s, tier->needs[j], -1);
 
             /* Generate gold proportional to residents */
             stockpile_add(s, RES_GOLD,
@@ -65,11 +98,10 @@ void pop_update(PopData pop[], const Building buildings[], int count,
             if (p->residents > 0)
                 p->residents--;
 
-            SDL_Log("House %d: unhappy (%s%s%s), %d residents",
+            SDL_Log("House %d: unhappy (%s), %d residents",
                 i,
-                !buildings[i].connected ? "no road to Warehouse " : "",
-                s->amount[RES_FISH]  == 0 ? "no fish "  : "",
-                s->amount[RES_GRAIN] == 0 ? "no grain"  : "",
+                !buildings[i].connected ? "no road to Warehouse" :
+                    "missing a required good",
                 p->residents);
         }
     }

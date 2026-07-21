@@ -49,6 +49,10 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     gs->drag_last_row         = -1;
     gs->drag_last_col         = -1;
     gs->demolish_mode         = 0;
+    gs->demolish_confirm_open = 0;
+    gs->demolish_confirm_idx  = -1;
+    gs->tier_upgrade_open     = 0;
+    gs->tier_upgrade_idx      = -1;
 
     stockpile_init(&gs->stockpile);
     stockpile_add(&gs->stockpile, RES_GOLD, STARTING_GOLD);
@@ -209,13 +213,20 @@ int game_load(GameState *gs, const char *path)
     return 1;
 }
 
-/* ---- game_tick_buildings (unchanged from Phase 4) ------ */
+/* ---- game_tick_buildings --------------------------------
+ * Multi-input, all-or-nothing: every non-RES_COUNT slot in
+ * def->consumes[] must have enough stock before ANY of them are
+ * consumed (checked in a full pass first, so a building never
+ * partially consumes one input while lacking another). Single-input
+ * buildings behave exactly as before, since their second slot is
+ * always RES_COUNT. */
 static void game_tick_buildings(GameState *gs, float dt)
 {
-    int i;
+    int i, j;
     for (i = 0; i < gs->building_count; i++) {
         Building          *b   = &gs->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
+        int                can_run = 1;
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
         if (!b->connected) continue;      /* Phase 3: needs a road to a Warehouse */
@@ -225,13 +236,20 @@ static void game_tick_buildings(GameState *gs, float dt)
         if (b->timer < def->tick_seconds) continue;
         b->timer = 0.0f;
 
-        if (def->consumes != RES_COUNT) {
-            if (gs->stockpile.amount[def->consumes] < def->consume_amt) {
+        for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
+            if (def->consumes[j] == RES_COUNT) continue;
+            if (gs->stockpile.amount[def->consumes[j]] < def->consume_amt[j]) {
                 SDL_Log("%s idle: needs %d %s", def->name,
-                    def->consume_amt, RESOURCE_NAMES[def->consumes]);
-                continue;
+                    def->consume_amt[j], RESOURCE_NAMES[def->consumes[j]]);
+                can_run = 0;
+                break;
             }
-            stockpile_add(&gs->stockpile, def->consumes, -def->consume_amt);
+        }
+        if (!can_run) continue;
+
+        for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
+            if (def->consumes[j] == RES_COUNT) continue;
+            stockpile_add(&gs->stockpile, def->consumes[j], -def->consume_amt[j]);
         }
 
         if (def->produces != RES_COUNT) {
@@ -554,6 +572,18 @@ void game_demolish_building(GameState *gs, int idx)
 
     if (type == BUILDING_WAREHOUSE)
         game_recompute_storage_capacity(gs);
+}
+
+/* ---- game_upgrade_house -------------------------------------- */
+void game_upgrade_house(GameState *gs, int idx)
+{
+    if (idx < 0 || idx >= gs->building_count) return;
+    if (!gs->buildings[idx].active) return;
+    if (gs->buildings[idx].type != BUILDING_HOUSE) return;
+    if (gs->stockpile.amount[RES_GOLD] < TIER_UPGRADE_COST_GOLD) return;
+
+    stockpile_add(&gs->stockpile, RES_GOLD, -TIER_UPGRADE_COST_GOLD);
+    gs->buildings[idx].type = BUILDING_HOUSE_WORKER;
 }
 
 /* ---- game_recompute_storage_capacity ---------------------

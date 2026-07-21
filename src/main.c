@@ -11,6 +11,8 @@
 #include "ui.h"
 #include "trade_ui.h"  /* Phase 4 */
 #include "build_confirm_ui.h" /* fix pass: gold/resource payment choice */
+#include "demolish_confirm_ui.h" /* bulldozer confirmation */
+#include "tier_upgrade_ui.h" /* production chains: population tier upgrade */
 #include "fonts.h"    /* Phase 5 */
 
 typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
@@ -79,10 +81,36 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
+        /* Tier-upgrade confirmation: same top priority as the other
+         * confirm popups — mutually exclusive with them in practice. */
+        if (gs->tier_upgrade_open) {
+            TierUpgradeHit hit = tier_upgrade_ui_hit_test(SCREEN_W, SCREEN_H,
+                                                          gs->input.logical_x,
+                                                          gs->input.logical_y);
+            if (hit == TU_HIT_OK)
+                game_upgrade_house(gs, gs->tier_upgrade_idx);
+            /* TU_HIT_CANCEL or TU_HIT_NONE (click outside the panel)
+             * both dismiss with no upgrade. */
+            gs->tier_upgrade_open = 0;
+
+        /* Bulldozer confirmation: highest priority of all — mutually
+         * exclusive with build_confirm_open in practice (selecting a
+         * building type already clears demolish_mode and vice versa),
+         * but checked first regardless. */
+        } else if (gs->demolish_confirm_open) {
+            DemolishConfirmHit hit = demolish_confirm_ui_hit_test(SCREEN_W, SCREEN_H,
+                                                                  gs->input.logical_x,
+                                                                  gs->input.logical_y);
+            if (hit == DC_HIT_OK)
+                game_demolish_building(gs, gs->demolish_confirm_idx);
+            /* DC_HIT_CANCEL or DC_HIT_NONE (click outside the panel)
+             * both dismiss with no destruction. */
+            gs->demolish_confirm_open = 0;
+
         /* Fix pass: if the build-confirmation popup is open, only its
          * buttons respond (highest priority — mirrors trade_open/
          * menu_open below). */
-        if (gs->build_confirm_open) {
+        } else if (gs->build_confirm_open) {
             BuildConfirmHit hit = build_confirm_ui_hit_test(SCREEN_W, SCREEN_H,
                                                             gs->input.logical_x,
                                                             gs->input.logical_y);
@@ -185,14 +213,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     gs->demolish_mode = 0;
                 } else if (gs->demolish_mode) {
                     /* Fix pass: clicking a building while the demolish
-                     * tool is active removes it (roads included). */
+                     * tool is active opens a confirmation popup rather
+                     * than destroying immediately (roads included). */
                     int found = game_find_building_at(gs, gs->hovered_row,
                                                       gs->hovered_col);
-                    if (found >= 0)
-                        game_demolish_building(gs, found);
+                    if (found >= 0) {
+                        gs->demolish_confirm_open = 1;
+                        gs->demolish_confirm_idx  = found;
+                    }
                 } else if (gs->selected_building == BUILDING_NONE) {
                     /* Phase 4: nothing selected — clicking a placed,
-                     * connected Marketplace opens the trade screen
+                     * connected Marketplace opens the trade screen;
+                     * production chains: clicking a placed, connected
+                     * Farmers' House opens the tier-upgrade popup
                      * instead of doing nothing. */
                     int found = game_find_building_at(gs, gs->hovered_row,
                                                       gs->hovered_col);
@@ -201,6 +234,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                         gs->buildings[found].connected) {
                         gs->trade_open        = 1;
                         gs->trade_building_idx = found;
+                    } else if (found >= 0 &&
+                              gs->buildings[found].type == BUILDING_HOUSE &&
+                              gs->buildings[found].connected) {
+                        gs->tier_upgrade_open = 1;
+                        gs->tier_upgrade_idx  = found;
                     }
                 } else if (gs->selected_building == BUILDING_ROAD) {
                     /* Roads are exempt from the confirm popup — also
@@ -226,7 +264,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Right click: close confirm popup, trade screen, or menu if
      * open (highest priority first), else deselect */
     if (gs->input.right_click) {
-        if (gs->build_confirm_open)
+        if (gs->tier_upgrade_open)
+            gs->tier_upgrade_open = 0;       /* cancel, no upgrade */
+        else if (gs->demolish_confirm_open)
+            gs->demolish_confirm_open = 0;   /* cancel, no destruction */
+        else if (gs->build_confirm_open)
             gs->build_confirm_open = 0;
         else if (gs->trade_open)
             gs->trade_open = 0;       /* Phase 4 */
@@ -291,6 +333,21 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                               gs->selected_building, &gs->stockpile,
                               gs->build_confirm_payment,
                               gs->input.logical_x, gs->input.logical_y);
+
+    /* Bulldozer confirmation popup, drawn on top when open */
+    if (gs->demolish_confirm_open) {
+        BuildingType t = gs->buildings[gs->demolish_confirm_idx].type;
+        demolish_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
+                                 BUILDING_DEFS[t].name,
+                                 gs->input.logical_x, gs->input.logical_y);
+    }
+
+    /* Tier-upgrade confirmation popup, drawn on top when open */
+    if (gs->tier_upgrade_open)
+        tier_upgrade_ui_draw(app->r, SCREEN_W, SCREEN_H,
+                             TIER_UPGRADE_COST_GOLD,
+                             gs->stockpile.amount[RES_GOLD] >= TIER_UPGRADE_COST_GOLD,
+                             gs->input.logical_x, gs->input.logical_y);
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;
