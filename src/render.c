@@ -210,6 +210,12 @@ void render_buildings(SDL_Renderer *renderer,
                     draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
                     draw_diamond_outline(renderer, sx, sy, cam->zoom,
                                          255, 255, 255, 60);
+                    /* Phase 3: red outline if not road-connected to
+                     * a Warehouse (Warehouses/Roads are always
+                     * connected — see connectivity_update). */
+                    if (!b->connected)
+                        draw_diamond_outline(renderer, sx, sy, cam->zoom,
+                                             220, 40, 40, 200);
                 }
             }
         }

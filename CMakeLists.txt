@@ -23,6 +23,7 @@ set(SOURCES
     src/resource.c
     src/fonts.c
     src/population.c
+    src/connectivity.c
 )
 
 add_executable(anno_clone ${SOURCES})

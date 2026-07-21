@@ -20,7 +20,8 @@ void pop_init(PopData *p)
  * consumption — avoiding a sudden stockpile spike every
  * NEEDS_INTERVAL seconds.
  * -------------------------------------------------------- */
-void pop_update(PopData pop[], int count, Stockpile *s, float dt)
+void pop_update(PopData pop[], const Building buildings[], int count,
+               Stockpile *s, float dt)
 {
     int i;
 
@@ -32,8 +33,11 @@ void pop_update(PopData pop[], int count, Stockpile *s, float dt)
         if (p->timer < NEEDS_INTERVAL) continue;
         p->timer = 0.0f;
 
-        /* --- Needs check: requires FISH and GRAIN ---------- */
-        if (s->amount[RES_FISH]  > 0 &&
+        /* --- Needs check: road-connected, plus FISH and GRAIN --
+         * A disconnected house has no route for a Warehouse to
+         * deliver food, so it's treated the same as needs unmet. */
+        if (buildings[i].connected &&
+            s->amount[RES_FISH]  > 0 &&
             s->amount[RES_GRAIN] > 0 &&
             p->residents > 0) {
 
@@ -61,8 +65,9 @@ void pop_update(PopData pop[], int count, Stockpile *s, float dt)
             if (p->residents > 0)
                 p->residents--;
 
-            SDL_Log("House %d: unhappy (%s%s), %d residents",
+            SDL_Log("House %d: unhappy (%s%s%s), %d residents",
                 i,
+                !buildings[i].connected ? "no road to Warehouse " : "",
                 s->amount[RES_FISH]  == 0 ? "no fish "  : "",
                 s->amount[RES_GRAIN] == 0 ? "no grain"  : "",
                 p->residents);

@@ -12,7 +12,8 @@
  *   - a happiness flag (1 = needs met last tick, 0 = not)
  *
  * On each needs tick:
- *   If FISH > 0 AND GRAIN > 0 in the stockpile:
+ *   If the house is road-connected to a Warehouse (Phase 3) AND
+ *   FISH > 0 AND GRAIN > 0 in the stockpile:
  *     consume 1 FISH + 1 GRAIN
  *     generate GOLD_PER_RESIDENT * residents Gold
  *     happiness = 1
@@ -27,6 +28,7 @@
  * ========================================================= */
 
 #include "resource.h"
+#include "building.h"   /* Phase 3: Building.connected */
 
 #define HOUSE_CAPACITY      10     /* max residents per house       */
 #define NEEDS_INTERVAL      30.0f  /* seconds between needs checks  */
@@ -46,10 +48,13 @@ void pop_init(PopData *p);
 
 /* Called every frame for all active houses.
  * Advances timers, fires needs ticks, updates stockpile.
- * `pop`   – array of PopData, one per building slot
- * `count` – number of building slots to check
- * `s`     – global stockpile (read and written) */
-void pop_update(PopData pop[], int count, Stockpile *s, float dt);
+ * `pop`       – array of PopData, one per building slot
+ * `buildings` – parallel array (same indexing) — buildings[i].connected
+ *               gates whether pop[i]'s needs can be met at all this tick
+ * `count`     – number of building slots to check
+ * `s`         – global stockpile (read and written) */
+void pop_update(PopData pop[], const Building buildings[], int count,
+               Stockpile *s, float dt);
 
 /* Return the total population across all active houses. */
 int pop_total(const PopData pop[], int count);

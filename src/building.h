@@ -103,6 +103,17 @@ typedef struct {
      * When timer >= def->tick_seconds a tick fires and
      * timer resets to 0. */
     float        timer;
+
+    /* Phase 3: derived, not meaningfully persisted — recomputed
+     * every frame by connectivity_update() from the current road
+     * network, before it's read by game_tick_buildings()/
+     * pop_update(). 1 for a Warehouse or Road (neither needs a
+     * route to itself), otherwise 1 iff a road path reaches an
+     * active Warehouse. (It does get written byte-for-byte into
+     * save files along with the rest of the struct, but that's
+     * harmless: it's overwritten by the next connectivity_update()
+     * before anything reads it.) */
+    int          connected;
 } Building;
 
 /* ---- Placement validation ----------------------------- */

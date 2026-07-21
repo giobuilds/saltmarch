@@ -5,6 +5,7 @@
 #include "building.h"
 #include "resource.h"
 #include "population.h"
+#include "connectivity.h"
 #include "ui.h"
 #include <SDL3/SDL.h>
 #include <stdlib.h>
@@ -190,6 +191,7 @@ static void game_tick_buildings(GameState *gs, float dt)
         const BuildingDef *def = &BUILDING_DEFS[b->type];
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
+        if (!b->connected) continue;   /* Phase 3: needs a road to a Warehouse */
 
         b->timer += dt;
         if (b->timer < def->tick_seconds) continue;
@@ -280,10 +282,15 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
                 gs->hovered_row, gs->hovered_col, NULL, 0) &&
             building_can_afford(&gs->stockpile, gs->selected_building);
 
+    /* Phase 3: recompute road-network reachability before anything
+     * this frame reads Building.connected. */
+    connectivity_update(gs->buildings, gs->building_count);
+
     game_tick_buildings(gs, dt);
 
     /* Phase 5: update population needs */
-    pop_update(gs->pop_data, gs->building_count, &gs->stockpile, dt);
+    pop_update(gs->pop_data, gs->buildings, gs->building_count,
+               &gs->stockpile, dt);
 }
 
 /* ---- game_place_building -------------------------------
