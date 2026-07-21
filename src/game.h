@@ -84,6 +84,13 @@ void game_new(GameState *gs);
  * deterministically. Used by the "Save" menu button. */
 int  game_save(const GameState *gs, const char *path);
 
+/* Inverse of game_save(): restores buildings, population,
+ * stockpile and camera from `path`, regenerating the map from
+ * its stored seed. Returns 1 on success; on failure (missing,
+ * corrupt, or wrong-version file) returns 0 and leaves gs
+ * untouched. Used by the "Load" menu button. */
+int  game_load(GameState *gs, const char *path);
+
 #define SAVE_FILE_PATH "annoclone_save.dat"
 
 /* Called once per frame.  Moves the camera based on held

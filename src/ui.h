@@ -23,8 +23,9 @@
  *   Right side – cog button that opens the game menu overlay
  *
  * Menu overlay (centred on screen):
- *   [ New Game ]   ← stub
- *   [ Save     ]   ← stub
+ *   [ New Game ]   ← game_new():  fresh map seed, world cleared
+ *   [ Load     ]   ← game_load(SAVE_FILE_PATH)
+ *   [ Save     ]   ← game_save(SAVE_FILE_PATH)
  *   [ Quit     ]   ← calls SDL_APP_SUCCESS
  * ========================================================= */
 
@@ -39,10 +40,11 @@
 
 /* Menu overlay dimensions */
 #define MENU_W           260
-#define MENU_H           220
+#define MENU_H           284
 #define MENU_BTN_H        48
 #define MENU_BTN_PAD      16
 #define MENU_BTN_MARGIN   20
+#define MENU_BTN_COUNT     4
 
 /* ---- Building HUD -------------------------------------- 
  * Draw the entire HUD bar.
@@ -68,8 +70,9 @@ int          ui_cog_hit_test(int screen_w, int screen_h,
 typedef enum {
     MENU_HIT_NONE     = 0,
     MENU_HIT_NEWGAME  = 1,
-    MENU_HIT_SAVE     = 2,
-    MENU_HIT_QUIT     = 3
+    MENU_HIT_LOAD     = 2,
+    MENU_HIT_SAVE     = 3,
+    MENU_HIT_QUIT     = 4
 } MenuHit;
  
 /* Draw the menu overlay panel. Only called when menu_open == 1. */

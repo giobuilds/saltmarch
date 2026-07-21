@@ -29,7 +29,7 @@
  *      >= 0.70 → FOREST (elevated interior)
  *
  *  Step 4 – Gameplay metadata
- *    buildable, fertility, movement_cost are derived from type.
+ *    buildable and fertility are derived from type.
  *
  *  RANDOM NUMBER GENERATOR
  *  =======================
@@ -207,23 +207,19 @@ static void tile_set_metadata(Tile *t)
         t->buildable     = 1;
         t->fertility     = (t->elevation > 180)
                            ? FERTILE_HOP : FERTILE_GRAIN;
-        t->movement_cost = 1;
         break;
     case TILE_SAND:
         t->buildable     = 1;
         t->fertility     = FERTILE_NONE;
-        t->movement_cost = 2;
         break;
     case TILE_FOREST:
         t->buildable     = 0;
         t->fertility     = FERTILE_NONE;
-        t->movement_cost = 3;
         break;
     case TILE_WATER:
     default:
         t->buildable     = 0;
         t->fertility     = FERTILE_NONE;
-        t->movement_cost = 0;
         break;
     }
 }

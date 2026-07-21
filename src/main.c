@@ -96,6 +96,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->menu_open = 0;
                 break;
 
+            case MENU_HIT_LOAD:
+                game_load(gs, SAVE_FILE_PATH);
+                gs->menu_open = 0;
+                break;
+
             case MENU_HIT_NONE:
                 /* Click outside buttons — close the menu */
                 gs->menu_open = 0;

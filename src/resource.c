@@ -14,6 +14,7 @@ void stockpile_init(Stockpile *s)
     int i;
     for (i = 0; i < RES_COUNT; i++)
         s->amount[i] = 0;
+    s->capacity = BASE_STORAGE_CAP;
 }
 
 /* stockpile_add -------------------------------------------
@@ -27,4 +28,15 @@ void stockpile_add(Stockpile *s, ResourceType res, int delta)
     s->amount[res] += delta;
     if (s->amount[res] < 0)
         s->amount[res] = 0;
+    if (res != RES_GOLD && s->amount[res] > s->capacity)
+        s->amount[res] = s->capacity;
+}
+
+void stockpile_set_capacity(Stockpile *s, int capacity)
+{
+    int i;
+    s->capacity = capacity;
+    for (i = 0; i < RES_COUNT; i++)
+        if (i != RES_GOLD && s->amount[i] > capacity)
+            s->amount[i] = capacity;
 }

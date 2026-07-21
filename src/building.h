@@ -25,6 +25,11 @@
 /* ---- How many buildings can be placed at once ---------- */
 #define MAX_BUILDINGS 64
 
+/* Storage capacity added to every non-gold resource by each
+ * active Warehouse (see resource.h's BASE_STORAGE_CAP for the
+ * cap before any Warehouse is built). */
+#define WAREHOUSE_STORAGE_BONUS 100
+
 /* ---- Building type identifiers ------------------------- */
 typedef enum {
     BUILDING_NONE       = -1,   /* sentinel: nothing selected */
