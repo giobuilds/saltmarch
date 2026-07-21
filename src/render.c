@@ -59,7 +59,7 @@ void screen_to_iso(int sx, int sy, const Camera *cam,
 /* =========================================================
  * Fallback diamond drawing (no sprites)
  * ========================================================= */
-static void draw_diamond(SDL_Renderer *renderer,
+void render_draw_diamond(SDL_Renderer *renderer,
                          float bx, float by, float zoom,
                          SDL_Color top_col, SDL_Color bot_col)
 {
@@ -101,7 +101,7 @@ static void draw_diamond(SDL_Renderer *renderer,
     SDL_RenderGeometry(renderer, NULL, verts, 4, indices, 6);
 }
 
-static void draw_diamond_outline(SDL_Renderer *renderer,
+void render_draw_diamond_outline(SDL_Renderer *renderer,
                                  float bx, float by, float zoom,
                                  unsigned char r, unsigned char g,
                                  unsigned char b, unsigned char a)
@@ -152,7 +152,7 @@ void render_map(SDL_Renderer *renderer,
             if (sx + tw < 0 || sx > SCREEN_W ||
                 sy + th < 0 || sy > SCREEN_H)
                 continue;
-            draw_diamond(renderer, sx, sy, cam->zoom,
+            render_draw_diamond(renderer, sx, sy, cam->zoom,
                          TILE_COLOURS[t->type],
                          TILE_DARK[t->type]);
         }
@@ -168,7 +168,7 @@ void render_hovered_tile(SDL_Renderer *renderer,
     if (row < 0 || col < 0) return;
     iso_to_screen((float)row, (float)col, cam, &sx, &sy);
     /* CHANGED: pass zoom to outline */
-    draw_diamond_outline(renderer, sx, sy, cam->zoom, 255, 230, 50, 255);
+    render_draw_diamond_outline(renderer, sx, sy, cam->zoom, 255, 230, 50, 255);
 }
 
 /* ---- render_buildings ----------------------------------
@@ -207,14 +207,14 @@ void render_buildings(SDL_Renderer *renderer,
             for (r = b->row; r < b->row + def->tile_h; r++) {
                 for (c = b->col; c < b->col + def->tile_w; c++) {
                     iso_to_screen((float)r, (float)c, cam, &sx, &sy);
-                    draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
-                    draw_diamond_outline(renderer, sx, sy, cam->zoom,
+                    render_draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
+                    render_draw_diamond_outline(renderer, sx, sy, cam->zoom,
                                          255, 255, 255, 60);
                     /* Phase 3: red outline if not road-connected to
                      * a Warehouse (Warehouses/Roads are always
                      * connected — see connectivity_update). */
                     if (!b->connected)
-                        draw_diamond_outline(renderer, sx, sy, cam->zoom,
+                        render_draw_diamond_outline(renderer, sx, sy, cam->zoom,
                                              220, 40, 40, 200);
                 }
             }
@@ -249,7 +249,7 @@ void render_ghost(SDL_Renderer *renderer,
     for (r = row; r < row + def->tile_h; r++) {
         for (c = col; c < col + def->tile_w; c++) {
             iso_to_screen((float)r, (float)c, cam, &sx, &sy);
-            draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
+            render_draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
         }
     }
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);

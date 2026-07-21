@@ -2,6 +2,7 @@
 
 #include "ui.h"
 #include "fonts.h"
+#include "render.h"   /* render_draw_diamond for the world icon */
 #include <string.h>   /* strlen (unused yet, kept for later) */
 
 /* ---- slot_rect -----------------------------------------
@@ -73,6 +74,20 @@ static SDL_FRect demolish_rect(int screen_w, int screen_h)
     return r;
 }
 
+/* World-map button — right-anchored just left of the demolish
+ * button, derived the same way demolish_rect() is derived from
+ * cog_rect(). */
+static SDL_FRect world_rect(int screen_w, int screen_h)
+{
+    SDL_FRect dem = demolish_rect(screen_w, screen_h);
+    SDL_FRect r;
+    r.w = (float)HUD_SLOT_SIZE;
+    r.h = (float)HUD_SLOT_SIZE;
+    r.x = dem.x - (float)HUD_SLOT_PAD - r.w;
+    r.y = dem.y;
+    return r;
+}
+
 /* One menu button rectangle.
  * Buttons are stacked vertically, centred on the screen. */
 static SDL_FRect menu_btn_rect(int screen_w, int screen_h, int i)
@@ -120,12 +135,20 @@ int ui_demolish_hit_test(int screen_w, int screen_h,
             (float)mouse_y >= r.y && (float)mouse_y < r.y + r.h);
 }
 
+int ui_world_hit_test(int screen_w, int screen_h,
+                      int mouse_x, int mouse_y)
+{
+    SDL_FRect r = world_rect(screen_w, screen_h);
+    return ((float)mouse_x >= r.x && (float)mouse_x < r.x + r.w &&
+            (float)mouse_y >= r.y && (float)mouse_y < r.y + r.h);
+}
+
 /* ---- ui_draw ------------------------------------------- */
 void ui_draw(SDL_Renderer *renderer,
              int screen_w, int screen_h,
              BuildingType selected,
              int mouse_x, int mouse_y, int menu_open,
-             int demolish_active)
+             int demolish_active, int world_open)
 {
     int i;
     float bar_y = (float)(screen_h - HUD_HEIGHT);
@@ -219,6 +242,36 @@ void ui_draw(SDL_Renderer *renderer,
         }
     }
  
+    /* --- World/archipelago button ------------------------ */
+    {
+        SDL_FRect r    = world_rect(screen_w, screen_h);
+        int       hovr = ui_world_hit_test(screen_w, screen_h, mouse_x, mouse_y);
+
+        SDL_SetRenderDrawColor(renderer,
+            (hovr || world_open) ? 40 : 25,
+            (hovr || world_open) ? 62 : 38,
+            (hovr || world_open) ? 88 : 55, 255);
+        SDL_RenderFillRect(renderer, &r);
+
+        if (world_open)
+            SDL_SetRenderDrawColor(renderer, 255, 210, 50, 255);
+        else if (hovr)
+            SDL_SetRenderDrawColor(renderer, 120, 170, 220, 255);
+        else
+            SDL_SetRenderDrawColor(renderer, 60, 85, 115, 255);
+        SDL_RenderRect(renderer, &r);
+
+        /* Icon: three small islands on a sea, drawn as flat diamonds
+         * in the same abstract-geometry style as the cog and the
+         * demolish X (there is no sprite system). */
+        {
+            SDL_Color a = { 120, 180, 110, 255 }, b = { 80, 130, 75, 255 };
+            render_draw_diamond(renderer, r.x + 10.0f, r.y + 16.0f, 0.30f, a, b);
+            render_draw_diamond(renderer, r.x + 30.0f, r.y + 28.0f, 0.30f, a, b);
+            render_draw_diamond(renderer, r.x + 14.0f, r.y + 38.0f, 0.30f, a, b);
+        }
+    }
+
     /* --- Demolish button --------------------------------- */
     {
         SDL_FRect r    = demolish_rect(screen_w, screen_h);

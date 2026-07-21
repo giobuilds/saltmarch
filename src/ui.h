@@ -58,7 +58,7 @@ void ui_draw(SDL_Renderer *renderer,
              int screen_w, int screen_h,
              BuildingType selected,
              int mouse_x, int mouse_y, int menu_open,
-             int demolish_active);
+             int demolish_active, int world_open);
 
 /* Hit-test: given a screen coordinate, return the BuildingType
  * whose HUD slot contains that point, or BUILDING_NONE. */
@@ -72,6 +72,10 @@ int          ui_cog_hit_test(int screen_w, int screen_h,
 /* Returns 1 if the demolish tool button was clicked. */
 int          ui_demolish_hit_test(int screen_w, int screen_h,
                                   int mouse_x, int mouse_y);
+
+/* Returns 1 if the world/archipelago button was clicked. */
+int          ui_world_hit_test(int screen_w, int screen_h,
+                               int mouse_x, int mouse_y);
  
 /* ---- Menu overlay -------------------------------------- */
  

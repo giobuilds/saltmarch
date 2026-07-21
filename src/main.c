@@ -13,6 +13,7 @@
 #include "build_confirm_ui.h" /* fix pass: gold/resource payment choice */
 #include "demolish_confirm_ui.h" /* bulldozer confirmation */
 #include "tier_upgrade_ui.h" /* production chains: population tier upgrade */
+#include "world_ui.h"        /* archipelago overview */
 #include "fonts.h"    /* Phase 5 */
 
 typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
@@ -88,9 +89,27 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
+        /* Archipelago overview: checked before the confirm popups
+         * only in the sense that it cannot coexist with them —
+         * opening it is a HUD action, and the confirm popups are all
+         * closed by then. */
+        if (gs->world_open) {
+            int      target = -1;
+            WorldHit hit    = world_ui_hit_test(SCREEN_W, SCREEN_H, MAX_ISLANDS,
+                                                gs->input.logical_x,
+                                                gs->input.logical_y, &target);
+            if (hit == WORLD_HIT_ISLAND && target >= 0) {
+                game_set_current_island(gs, target);
+                isl = game_cur_island(gs);   /* the view just moved */
+            } else if (hit == WORLD_HIT_CLOSE) {
+                gs->world_open = 0;
+            }
+            /* WORLD_HIT_NONE: a click on open sea does nothing, so a
+             * misclick can't dismiss the map. Close or right-click. */
+
         /* Tier-upgrade confirmation: same top priority as the other
          * confirm popups — mutually exclusive with them in practice. */
-        if (gs->tier_upgrade_open) {
+        } else if (gs->tier_upgrade_open) {
             TierUpgradeHit hit = tier_upgrade_ui_hit_test(SCREEN_W, SCREEN_H,
                                                           gs->input.logical_x,
                                                           gs->input.logical_y);
@@ -203,6 +222,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->selected_building = BUILDING_NONE; /* deselect on menu open */
                 gs->demolish_mode = 0;
 
+            } else if (ui_world_hit_test(SCREEN_W, SCREEN_H,
+                                         gs->input.logical_x,
+                                         gs->input.logical_y)) {
+                gs->world_open        = 1;
+                gs->selected_building = BUILDING_NONE;
+                gs->demolish_mode     = 0;
+
             } else if (ui_demolish_hit_test(SCREEN_W, SCREEN_H,
                                             gs->input.logical_x,
                                             gs->input.logical_y)) {
@@ -271,7 +297,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Right click: close confirm popup, trade screen, or menu if
      * open (highest priority first), else deselect */
     if (gs->input.right_click) {
-        if (gs->tier_upgrade_open)
+        if (gs->world_open)
+            gs->world_open = 0;
+        else if (gs->tier_upgrade_open)
             gs->tier_upgrade_open = 0;       /* cancel, no upgrade */
         else if (gs->demolish_confirm_open)
             gs->demolish_confirm_open = 0;   /* cancel, no destruction */
@@ -321,7 +349,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             gs->input.logical_x,
             gs->input.logical_y,
             gs->menu_open,
-            gs->demolish_mode);
+            gs->demolish_mode,
+            gs->world_open);
 
     /* CHANGED: draw menu overlay on top of everything when open */
     if (gs->menu_open)
@@ -355,6 +384,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                              TIER_UPGRADE_COST_GOLD,
                              isl->stockpile.amount[RES_GOLD] >= TIER_UPGRADE_COST_GOLD,
                              gs->input.logical_x, gs->input.logical_y);
+
+    /* Archipelago overview on top of everything when open */
+    if (gs->world_open)
+        world_ui_draw(app->r, SCREEN_W, SCREEN_H,
+                      gs->islands, MAX_ISLANDS, gs->current_island,
+                      gs->input.logical_x, gs->input.logical_y);
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;

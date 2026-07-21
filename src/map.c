@@ -192,20 +192,56 @@ static float island_mask(int row, int col)
  * Section 4 – Classification and metadata
  * ========================================================= */
 
-static TileType height_to_type(float h)
+/* ---- Per-profile generation parameters -------------------
+ * Terrain semantics live in the classification step, not in the
+ * noise: biasing the noise fights the radial mask that defines island
+ * shape, whereas thresholds here cleanly decide what the same
+ * heightmap MEANS.
+ *
+ * hop_elev_min is the elevation above which grass is hop-fertile
+ * rather than grain-fertile (they are exclusive — that exclusivity is
+ * exactly what makes a hop-rich island grain-poor, and so what
+ * creates the need to trade). 256 means "never": no elevation can
+ * reach it, so the profile grows no hops at all.
+ *
+ * min_* are the requirements map_init()'s retry loop enforces, so a
+ * Highland is never generated without the hops that are its entire
+ * reason to exist, and the starting island is always playable. */
+typedef struct {
+    float water_max, sand_max, grass_max;
+    int   hop_elev_min;
+    int   min_hop, min_grain, min_forest;
+} ProfileParams;
+
+static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
+    /* Home: broad farmland and some woods, but NO hops — the reason
+     * the player has to go looking for another island. */
+    [PROFILE_TEMPERATE] = { 0.30f, 0.40f, 0.72f, 256,   0, 120,  8 },
+    /* Highland: hop country. Grass sits high and splits into hop
+     * above the cutoff / grain below, so grain is genuinely scarce —
+     * a Malthouse here starves without imported Grain. */
+    [PROFILE_HIGHLAND]  = { 0.30f, 0.38f, 0.60f, 103,  20,   8,  0 },
+    /* Woodland: timber. Forest starts lower, squeezing farmland. */
+    [PROFILE_WOODLAND]  = { 0.30f, 0.40f, 0.62f, 256,   0,  20, 60 },
+    /* Atoll: a wide beach ring and little else. Fish and not much. */
+    [PROFILE_ATOLL]     = { 0.30f, 0.50f, 0.80f, 256,   0,   0,  0 },
+};
+
+static TileType height_to_type(float h, MapProfile p)
 {
-    if (h < 0.30f) return TILE_WATER;
-    if (h < 0.40f) return TILE_SAND;
-    if (h < 0.72f) return TILE_GRASS;
+    const ProfileParams *pp = &PROFILE_PARAMS[p];
+    if (h < pp->water_max) return TILE_WATER;
+    if (h < pp->sand_max)  return TILE_SAND;
+    if (h < pp->grass_max) return TILE_GRASS;
     return TILE_FOREST;
 }
 
-static void tile_set_metadata(Tile *t)
+static void tile_set_metadata(Tile *t, MapProfile p)
 {
     switch (t->type) {
     case TILE_GRASS:
         t->buildable     = 1;
-        t->fertility     = (t->elevation > 180)
+        t->fertility     = (t->elevation > PROFILE_PARAMS[p].hop_elev_min)
                            ? FERTILE_HOP : FERTILE_GRAIN;
         break;
     case TILE_SAND:
@@ -228,7 +264,7 @@ static void tile_set_metadata(Tile *t)
  * Section 5 – Public API
  * ========================================================= */
 
-void map_init(Map *map, uint32_t seed)
+static void generate_once(Map *map, uint32_t seed, MapProfile profile)
 {
     int   r, c;
     float scale0, scale1;
@@ -236,7 +272,8 @@ void map_init(Map *map, uint32_t seed)
     memset(map, 0, sizeof(Map));
     map->rows = MAP_ROWS;
     map->cols = MAP_COLS;
-    map->seed = seed;
+    map->seed    = seed;
+    map->profile = profile;
 
     lcg_seed(seed);
 
@@ -277,10 +314,58 @@ void map_init(Map *map, uint32_t seed)
             h *= island_mask(r, c);
 
             t->elevation = (int)(h * 255.0f);
-            t->type      = height_to_type(h);
-            tile_set_metadata(t);
+            t->type      = height_to_type(h, profile);
+            tile_set_metadata(t, profile);
         }
     }
+}
+
+/* Does this map satisfy its profile's minimum-resource contract? */
+static int profile_satisfied(const Map *map, MapProfile p)
+{
+    const ProfileParams *pp = &PROFILE_PARAMS[p];
+    int r, c, hop = 0, grain = 0, forest = 0;
+
+    for (r = 0; r < MAP_ROWS; r++) {
+        for (c = 0; c < MAP_COLS; c++) {
+            const Tile *t = &map->tiles[r][c];
+            if (t->type == TILE_FOREST)        forest++;
+            if (t->fertility & FERTILE_HOP)    hop++;
+            if (t->fertility & FERTILE_GRAIN)  grain++;
+        }
+    }
+
+    return hop    >= pp->min_hop
+        && grain  >= pp->min_grain
+        && forest >= pp->min_forest;
+}
+
+/* ---- map_init -------------------------------------------
+ * Generate, then check the profile's contract, retrying with a
+ * derived seed until it holds. Without this, a "Highland" could roll
+ * zero hop tiles — which is a broken game rather than interesting
+ * scarcity, since hops are the whole reason to colonise it. Sampling
+ * showed the old unconditional generator produced zero hop tiles on
+ * roughly a third of seeds.
+ *
+ * map->seed keeps the REQUESTED seed, not the working one: the loop
+ * is deterministic given (requested seed, profile), so saving the
+ * request is what makes a save reproduce the island exactly. */
+void map_init(Map *map, uint32_t seed, MapProfile profile)
+{
+    uint32_t working = seed;
+    int      attempt;
+
+    for (attempt = 0; attempt < 32; attempt++) {
+        generate_once(map, working, profile);
+        if (profile_satisfied(map, profile)) break;
+        working = working * 1664525u + 1013904223u;
+    }
+
+    /* Falling out of the loop un-satisfied is possible in principle;
+     * accept the last attempt rather than spin forever. */
+    map->seed    = seed;
+    map->profile = profile;
 }
 
 Tile *map_get_tile(Map *map, int row, int col)

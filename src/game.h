@@ -108,6 +108,12 @@ typedef struct {
      * demolish_mode off. */
     int tier_upgrade_open;
     int tier_upgrade_idx;
+
+    /* Archipelago overview overlay (world_ui.c). Unlike the other
+     * overlays this one is not tied to any building, so it survives
+     * game_set_current_island() -- clicking an island in it switches
+     * the view and keeps the map open, which is the whole point. */
+    int world_open;
 } GameState;
 
 /* The island currently being viewed — the one every placement, UI

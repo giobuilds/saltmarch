@@ -49,7 +49,21 @@ void game_set_current_island(GameState *gs, int idx)
     gs->drag_last_col         = -1;
     gs->hovered_row           = -1;
     gs->hovered_col           = -1;
+    /* world_open is deliberately NOT cleared here: switching islands
+     * is the world map's own primary action, so closing it on switch
+     * would dismiss the overlay the moment you used it. */
 }
+
+/* The archipelago's fixed make-up. Island 0 is always the temperate
+ * home island the player starts on; the rest each hold something home
+ * lacks, which is what turns colonisation from optional into the way
+ * you get hops (and therefore Beer) at all. */
+static const MapProfile ISLAND_PROFILES[MAX_ISLANDS] = {
+    PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL
+};
+static const char *ISLAND_NAMES[MAX_ISLANDS] = {
+    "Home", "Highland", "Woodland", "Atoll"
+};
 
 /* ---- game_reset_world -----------------------------------
  * Regenerates the whole archipelago and clears all per-island state.
@@ -68,11 +82,21 @@ static void game_reset_world(GameState *gs, uint32_t seed)
         /* Derive each island's seed from the world seed so one number
          * still reproduces the entire archipelago. */
         uint32_t isl_seed = seed + (uint32_t)i * 2654435761u;
-        island_reset(&gs->islands[i], isl_seed, PROFILE_TEMPERATE,
-                     i == 0 ? "Home" : "Uncharted", i == 0);
+
+        island_reset(&gs->islands[i], isl_seed, ISLAND_PROFILES[i],
+                     ISLAND_NAMES[i], i == 0);
+
+        /* Stagger the job-assignment phase across islands.
+         * agents_assign_jobs() runs a full BFS per unemployed agent,
+         * so leaving every island in phase would bunch all of that
+         * onto the same frame every AGENT_ASSIGN_INTERVAL and read as
+         * a periodic hitch. */
+        gs->islands[i].agent_assign_timer =
+            (float)i * AGENT_ASSIGN_INTERVAL / (float)MAX_ISLANDS;
     }
 
     gs->current_island = 0;
+    gs->world_open     = 0;
 
     stockpile_add(&cur(gs)->stockpile, RES_GOLD, STARTING_GOLD);
 

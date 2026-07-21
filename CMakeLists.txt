@@ -30,6 +30,7 @@ set(SOURCES
     src/demolish_confirm_ui.c
     src/tier_upgrade_ui.c
     src/island.c
+    src/world_ui.c
 )
 
 add_executable(anno_clone ${SOURCES})

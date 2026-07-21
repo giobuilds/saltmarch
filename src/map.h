@@ -82,14 +82,25 @@ typedef struct {
     Tile tiles[MAP_ROWS][MAP_COLS];
     int  rows;
     int  cols;
-    uint32_t seed;            /* seed used to generate this map */
+    /* The seed REQUESTED of map_init(), not any internal working seed
+     * its validate-and-reseed loop may have settled on. Generation is
+     * deterministic given (requested seed, profile), so persisting the
+     * request is what lets a save reproduce the map exactly. */
+    uint32_t   seed;
+    MapProfile profile;
 } Map;
 
 /* ---- Function declarations ---------------------------- */
 
-/* Generate a new island using value noise seeded by `seed`.
- * Every field in every tile is fully initialised. */
-void map_init(Map *map, uint32_t seed);
+/* Generate a new island using value noise seeded by `seed`, shaped by
+ * `profile` (thresholds and fertility rules — see PROFILE_PARAMS in
+ * map.c). Every field in every tile is fully initialised.
+ *
+ * Retries with a derived seed until the result satisfies the
+ * profile's minimum-resource requirements, so a Highland always
+ * actually has hops and the starting island is always playable. The
+ * requested seed is what gets stored in map->seed. */
+void map_init(Map *map, uint32_t seed, MapProfile profile);
 
 /* Bounds-checked accessor.  Returns NULL if out of range. */
 Tile *map_get_tile(Map *map, int row, int col);

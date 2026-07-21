@@ -41,6 +41,20 @@ void render_agents(SDL_Renderer *renderer,
                    const Agent agents[], int count,
                    const Camera *cam);
 
+/* The flat-shaded isometric diamond every tile, building and ghost is
+ * drawn with. Exposed (rather than kept static in render.c) so the
+ * world-map overlay can draw island nodes with the same primitive
+ * instead of carrying a second copy of the geometry. Size is
+ * TILE_W x TILE_H scaled by `zoom`. */
+void render_draw_diamond(SDL_Renderer *renderer,
+                         float bx, float by, float zoom,
+                         SDL_Color top_col, SDL_Color bot_col);
+
+void render_draw_diamond_outline(SDL_Renderer *renderer,
+                                 float bx, float by, float zoom,
+                                 unsigned char r, unsigned char g,
+                                 unsigned char b, unsigned char a);
+
 /* CHANGED: returns float positions so zoomed tiles sit flush with no gaps.
  * Phase 5: row/col widened from int to float — every existing call
  * site passes integer tile coordinates, which convert implicitly and

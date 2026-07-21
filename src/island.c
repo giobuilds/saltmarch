@@ -11,7 +11,7 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
 {
     memset(isl, 0, sizeof(*isl));
 
-    map_init(&isl->map, seed);
+    map_init(&isl->map, seed, profile);
     camera_init(&isl->camera, SCREEN_W, SCREEN_H, MAP_COLS, MAP_ROWS);
 
     stockpile_init(&isl->stockpile);
