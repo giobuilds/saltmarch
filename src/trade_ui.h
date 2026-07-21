@@ -34,11 +34,15 @@
 #define TRADE_ROW_GAP      6    /* gap between a block's sell/buy rows */
 #define TRADE_CLOSE_H     36
 
-/* Tradeable resources: RES_WOOD, RES_FISH, RES_GRAIN. RES_GOLD is
- * excluded — you can't trade currency for itself — and conveniently
- * occupies the last ResourceType slot, so this count also doubles
- * as a valid ResourceType range [0, TRADE_SELLABLE_COUNT). */
-#define TRADE_SELLABLE_COUNT 3
+/* Every resource except RES_GOLD is tradeable — you can't trade
+ * currency for itself. RES_GOLD deliberately occupies the LAST
+ * ResourceType slot, so this count doubles as a valid ResourceType
+ * range [0, TRADE_SELLABLE_COUNT) and stays correct automatically as
+ * goods are added, provided new ones keep going in before RES_GOLD.
+ * (It did NOT stay correct when Hops/Malt/Beer were added — it was
+ * left at a hardcoded 3, silently making them untradeable. Deriving
+ * it from RES_COUNT is what stops that recurring.) */
+#define TRADE_SELLABLE_COUNT ((int)RES_GOLD)
 
 #define TRADE_H (TRADE_TITLE_H + TRADE_SELLABLE_COUNT * (TRADE_BLOCK_H + TRADE_BLOCK_PAD) \
                  + TRADE_CLOSE_H + TRADE_MARGIN * 2)

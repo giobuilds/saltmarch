@@ -4,7 +4,10 @@
 #include "trade_ui.h"
 #include "fonts.h"
 
-static const char *SELLABLE_NAMES[TRADE_SELLABLE_COUNT] = { "Wood", "Fish", "Grain" };
+/* Deliberately no local name table: RESOURCE_NAMES (resource.h) is
+ * already indexed by ResourceType and covers every good. A parallel
+ * array here is exactly the kind of duplicate enumeration that went
+ * stale when Hops/Malt/Beer were added. */
 static const char *SELL_BTN_LABELS[3] = { "+1", "+10", "All" };
 static const char *BUY_BTN_LABELS[3]  = { "+1", "+10", "Max" };
 
@@ -125,7 +128,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         SDL_RenderRect(renderer, &block);
 
         SDL_snprintf(buf, sizeof(buf), "%s: %d  (sell %dg / buy %dg)",
-                    SELLABLE_NAMES[i], s->amount[res],
+                    RESOURCE_NAMES[res], s->amount[res],
                     SELL_PRICE[res], BUY_PRICE[res]);
         font_draw_text(renderer, FONT_NORMAL, buf,
                        (int)(block.x + 10.0f), (int)(block.y + 4.0f), text_col);

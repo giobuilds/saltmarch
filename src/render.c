@@ -258,11 +258,20 @@ void render_ghost(SDL_Renderer *renderer,
 /* ---- render_resources ---------------------------------- */
 void render_resources(SDL_Renderer *renderer, const Stockpile *s)
 {
+    /* Designated initialisers, matching RESOURCE_NAMES/SELL_PRICE/
+     * BUY_PRICE (resource.c). These were positional and only covered
+     * 4 of 7 resources after Hops/Malt/Beer were added — which both
+     * shifted Gold's amber onto Hops and left Malt/Beer/Gold with
+     * {0,0,0,0} invisible swatches. Keyed initialisers make a missing
+     * entry obvious rather than silently wrong. */
     static const SDL_Color RES_COL[RES_COUNT] = {
-        { 139,  90,  43, 255 },
-        {  50, 180, 230, 255 },
-        { 240, 210,  50, 255 },
-        { 255, 195,   0, 255 },
+        [RES_WOOD]  = { 139,  90,  43, 255 },
+        [RES_FISH]  = {  50, 180, 230, 255 },
+        [RES_GRAIN] = { 240, 210,  50, 255 },
+        [RES_HOPS]  = { 120, 180,  70, 255 },
+        [RES_MALT]  = { 190, 150,  90, 255 },
+        [RES_BEER]  = { 220, 160,  40, 255 },
+        [RES_GOLD]  = { 255, 195,   0, 255 },
     };
     SDL_Color text_col  = { 220, 200, 160, 255 };
     SDL_Color label_col = { 160, 140, 100, 255 };

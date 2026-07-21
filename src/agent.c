@@ -87,7 +87,10 @@ void agents_sync(Agent agents[], int *agent_count,
     for (i = 0; i < building_count; i++) {
         int live, target, k;
 
-        if (!buildings[i].active || buildings[i].type != BUILDING_HOUSE) continue;
+        /* Any residential tier, not just BUILDING_HOUSE — testing the
+         * concrete type here meant an upgraded Worker's House silently
+         * stopped having its agents spawned/despawned. */
+        if (!buildings[i].active || !pop_is_house_type(buildings[i].type)) continue;
         if (!pop_data[i].active) continue;
 
         live   = count_live_agents_for_home(agents, *agent_count, i);

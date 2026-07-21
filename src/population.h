@@ -82,4 +82,12 @@ void pop_update(PopData pop[], const Building buildings[], int count,
 /* Return the total population across all active houses. */
 int pop_total(const PopData pop[], int count);
 
+/* Returns 1 if `type` is a residential building — i.e. one that has a
+ * TierDef and so is driven by pop_update(). Callers must use this
+ * rather than testing `type == BUILDING_HOUSE`: agents_sync() (agent.c)
+ * did exactly that and consequently stopped managing agents entirely
+ * for any house upgraded to BUILDING_HOUSE_WORKER, while its PopData
+ * kept updating. One predicate, one place to update per new tier. */
+int pop_is_house_type(BuildingType type);
+
 #endif /* POPULATION_H */

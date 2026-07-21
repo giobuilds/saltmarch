@@ -25,6 +25,11 @@ static const TierDef *tier_def_for(BuildingType type)
     return NULL;   /* not a house type pop_update recognizes */
 }
 
+int pop_is_house_type(BuildingType type)
+{
+    return tier_def_for(type) != NULL;
+}
+
 /* ---- pop_init ------------------------------------------ */
 void pop_init(PopData *p)
 {

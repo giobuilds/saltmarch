@@ -29,7 +29,19 @@
 #include "population.h"
 #include "connectivity.h"   /* Pt */
 
-#define MAX_AGENTS        2000
+/* Agent is ~1060 bytes (path[] below is 1KB of it), so this cap
+ * dominates memory: at 2000 it was 2.1MB, i.e. ~96% of GameState.
+ * 512 allows 51 fully-grown houses (HOUSE_CAPACITY 10) and keeps the
+ * upcoming per-island allocation affordable — four islands land at
+ * roughly today's total footprint. find_free_agent_slot() already
+ * returns -1 and drops silently at the cap, so this is a soft ceiling. */
+#define MAX_AGENTS         512
+
+/* Do NOT shrink this to save memory: build_commute_path() passes
+ * MAX_AGENT_PATH - 1 to connectivity_path_to(), which returns 0 for a
+ * longer route. Too small a cap silently yields agents that never
+ * reach work, surfacing as "my Brewery stopped producing" with no
+ * error anywhere. Cap MAX_AGENTS instead. */
 #define MAX_AGENT_PATH     128
 
 #define AGENT_SPEED_ROAD     3.0f   /* tiles/sec while on a road waypoint */
