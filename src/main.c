@@ -179,6 +179,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     render_buildings(app->r, gs->buildings,
                      gs->building_count, &gs->camera);
 
+    /* Phase 5: walking population agents */
+    render_agents(app->r, gs->agents, gs->agent_count, &gs->camera);
+
     if (gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
         render_ghost(app->r, &gs->camera,
                      gs->selected_building,

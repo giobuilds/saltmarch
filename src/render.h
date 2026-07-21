@@ -7,6 +7,7 @@
 #include "building.h"
 #include "resource.h"
 #include "population.h"   /* Phase 5 */
+#include "agent.h"         /* Phase 5: walking population agents */
 
 void render_clear(SDL_Renderer *renderer);
 
@@ -35,8 +36,19 @@ void render_population(SDL_Renderer *renderer,
                        int total_pop,
                        int screen_w);
 
-/* CHANGED: returns float positions so zoomed tiles sit flush with no gaps */
-void iso_to_screen(int row, int col, const Camera *cam,
+/* Phase 5: one small marker per active walking agent. */
+void render_agents(SDL_Renderer *renderer,
+                   const Agent agents[], int count,
+                   const Camera *cam);
+
+/* CHANGED: returns float positions so zoomed tiles sit flush with no gaps.
+ * Phase 5: row/col widened from int to float — every existing call
+ * site passes integer tile coordinates, which convert implicitly and
+ * losslessly (tile indices are 0-63), so this is source-compatible.
+ * It's what lets render_agents() project an agent's fractional
+ * position through the exact same isometric transform as everything
+ * else, with no separate function needed. */
+void iso_to_screen(float row, float col, const Camera *cam,
                    float *out_x, float *out_y);
 
 void screen_to_iso(int sx, int sy, const Camera *cam,

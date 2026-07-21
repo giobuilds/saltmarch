@@ -24,6 +24,7 @@
 #include "building.h"
 #include "resource.h"
 #include "population.h"   /* Phase 5 */
+#include "agent.h"         /* Phase 5: walking population agents */
 
 #define SCREEN_W 1920
 #define SCREEN_H 1080
@@ -75,6 +76,20 @@ typedef struct {
      * Only slots where buildings[i].type == BUILDING_HOUSE
      * and pop_data[i].active == 1 are meaningful. */
     PopData      pop_data[MAX_BUILDINGS];
+
+    /* Phase 5: walking population agents — ephemeral (not saved;
+     * game_load() rebuilds them from the restored pop_data via the
+     * same agents_sync() a normal frame uses). One per resident,
+     * synced against pop_data[].residents every frame. */
+    Agent        agents[MAX_AGENTS];
+    int          agent_count;
+
+    /* Phase 5: seconds since the last agent_assign_jobs() pass —
+     * periodic rather than every frame, since open jobs only change
+     * when a producer is placed or a house's population grows (see
+     * agent.h's doc comment on why buildings never need reassignment
+     * — there's no demolish tool). */
+    float        agent_assign_timer;
 } GameState;
 
 /* Allocate and initialise a new GameState.
