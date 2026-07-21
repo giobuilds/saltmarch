@@ -85,6 +85,14 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         RES_COUNT,      0,   RES_COUNT,     0,   0.0f,
         { [RES_GOLD] = 5 }
     },
+    /* Phase 4: Marketplace — no passive production; it's a pure
+     * gateway building. Clicking a placed, road-connected one opens
+     * the manual trade screen (see trade_ui.c, game_sell_resource). */
+    {
+        "Marketplace",  2, 2, PLACE_ANY_LAND,      200, 140,  60,
+        RES_COUNT,      0,   RES_COUNT,     0,   0.0f,
+        { [RES_WOOD] = 30, [RES_GOLD] = 200 }
+    },
 };
 
 /* =========================================================

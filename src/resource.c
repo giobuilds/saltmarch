@@ -9,6 +9,13 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     "Gold"
 };
 
+const int SELL_PRICE[RES_COUNT] = {
+    [RES_WOOD]  = 2,
+    [RES_FISH]  = 3,
+    [RES_GRAIN] = 2,
+    /* RES_GOLD left at 0 — unused, can't sell gold for gold */
+};
+
 void stockpile_init(Stockpile *s)
 {
     int i;

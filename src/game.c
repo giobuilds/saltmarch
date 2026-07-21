@@ -36,6 +36,8 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     gs->selected_building = BUILDING_NONE;
     gs->placement_valid   = 0;
     gs->menu_open         = 0;
+    gs->trade_open        = 0;
+    gs->trade_building_idx = -1;
 
     stockpile_init(&gs->stockpile);
     stockpile_add(&gs->stockpile, RES_GOLD, STARTING_GOLD);
@@ -325,6 +327,39 @@ void game_place_building(GameState *gs)
      * newly built Warehouse takes effect immediately. */
     if (gs->selected_building == BUILDING_WAREHOUSE)
         game_recompute_storage_capacity(gs);
+}
+
+/* ---- game_find_building_at ------------------------------- */
+int game_find_building_at(const GameState *gs, int row, int col)
+{
+    int i;
+
+    if (row < 0 || col < 0) return -1;
+
+    for (i = 0; i < gs->building_count; i++) {
+        const Building    *b   = &gs->buildings[i];
+        const BuildingDef *def;
+
+        if (!b->active) continue;
+        def = &BUILDING_DEFS[b->type];
+
+        if (row >= b->row && row < b->row + def->tile_h &&
+            col >= b->col && col < b->col + def->tile_w)
+            return i;
+    }
+
+    return -1;
+}
+
+/* ---- game_sell_resource ------------------------------------ */
+void game_sell_resource(GameState *gs, ResourceType res, int qty)
+{
+    if (res == RES_GOLD) return;
+    if (qty > gs->stockpile.amount[res]) qty = gs->stockpile.amount[res];
+    if (qty <= 0) return;
+
+    stockpile_add(&gs->stockpile, res, -qty);
+    stockpile_add(&gs->stockpile, RES_GOLD, qty * SELL_PRICE[res]);
 }
 
 /* ---- game_recompute_storage_capacity ---------------------

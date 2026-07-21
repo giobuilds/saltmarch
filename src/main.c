@@ -9,6 +9,7 @@
 #include "game.h"
 #include "render.h"
 #include "ui.h"
+#include "trade_ui.h"  /* Phase 4 */
 #include "fonts.h"    /* Phase 5 */
 
 typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
@@ -77,8 +78,26 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
+        /* Phase 4: if the trade screen is open, only its buttons
+         * respond (mirrors the menu_open branch below). */
+        if (gs->trade_open) {
+            ResourceType res;
+            int          qty;
+            TradeHit     hit = trade_ui_hit_test(SCREEN_W, SCREEN_H,
+                                                 gs->input.logical_x,
+                                                 gs->input.logical_y,
+                                                 &res, &qty);
+            if (hit == TRADE_HIT_SELL) {
+                if (qty < 0) qty = gs->stockpile.amount[res]; /* Sell All */
+                game_sell_resource(gs, res, qty);
+            } else {
+                /* TRADE_HIT_CLOSE or TRADE_HIT_NONE (click outside
+                 * the panel) both dismiss the screen. */
+                gs->trade_open = 0;
+            }
+
         /* CHANGED: if menu is open, only menu buttons respond */
-        if (gs->menu_open) {
+        } else if (gs->menu_open) {
             MenuHit hit = ui_menu_hit_test(SCREEN_W, SCREEN_H,
                                            gs->input.logical_x,
                                            gs->input.logical_y);
@@ -123,6 +142,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     gs->selected_building =
                         (gs->selected_building == hud_hit)
                         ? BUILDING_NONE : hud_hit;
+                } else if (gs->selected_building == BUILDING_NONE) {
+                    /* Phase 4: nothing selected — clicking a placed,
+                     * connected Marketplace opens the trade screen
+                     * instead of doing nothing. */
+                    int found = game_find_building_at(gs, gs->hovered_row,
+                                                      gs->hovered_col);
+                    if (found >= 0 &&
+                        gs->buildings[found].type == BUILDING_MARKETPLACE &&
+                        gs->buildings[found].connected) {
+                        gs->trade_open        = 1;
+                        gs->trade_building_idx = found;
+                    }
                 } else {
                     game_place_building(gs);
                 }
@@ -130,9 +161,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
     }
 
-    /* Right click: close menu if open, else deselect building */
+    /* Right click: close trade screen or menu if open, else deselect */
     if (gs->input.right_click) {
-        if (gs->menu_open)
+        if (gs->trade_open)
+            gs->trade_open = 0;       /* Phase 4 */
+        else if (gs->menu_open)
             gs->menu_open = 0;        /* CHANGED: right click closes menu */
         else
             gs->selected_building = BUILDING_NONE;
@@ -175,6 +208,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         ui_menu_draw(app->r, SCREEN_W, SCREEN_H,
                      gs->input.logical_x,
                      gs->input.logical_y);
+
+    /* Phase 4: draw the trade screen on top when open */
+    if (gs->trade_open)
+        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &gs->stockpile,
+                     gs->input.logical_x, gs->input.logical_y);
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;

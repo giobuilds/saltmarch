@@ -43,6 +43,7 @@ typedef enum {
     BUILDING_LUMBERJACK  = 3,
     BUILDING_HOUSE       =  4,   /* Phase 5 */
     BUILDING_ROAD        =  5,   /* Phase 2: roads/logistics */
+    BUILDING_MARKETPLACE =  6,   /* Phase 4: manual trade screen */
     BUILDING_TYPE_COUNT
 } BuildingType;
 
