@@ -77,6 +77,14 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         RES_COUNT,      0,   RES_COUNT,     0,   0.0f,   /* pop_update handles gold, not tick system */
         { [RES_WOOD] = 15, [RES_GOLD] = 80 }
     },
+    /* Phase 2: Road — no production; PLACE_ANY_LAND is sufficient
+     * to keep it off water/forest, since building_can_place already
+     * requires tile->buildable, which those tile types never have. */
+    {
+        "Road",         1, 1, PLACE_ANY_LAND,      110, 105, 100,
+        RES_COUNT,      0,   RES_COUNT,     0,   0.0f,
+        { [RES_GOLD] = 5 }
+    },
 };
 
 /* =========================================================

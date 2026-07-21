@@ -22,8 +22,12 @@
 #include "resource.h"
 #include <stddef.h>   /* size_t */
 
-/* ---- How many buildings can be placed at once ---------- */
-#define MAX_BUILDINGS 64
+/* ---- How many buildings can be placed at once ----------
+ * Raised from 64 (Phase 2, roads): a road is a BUILDING_ROAD
+ * entry like any other building, so a real road network shares
+ * this same budget instead of getting its own cap. 600 is
+ * generous for a 64x64 map's buildable tile count. */
+#define MAX_BUILDINGS 600
 
 /* Storage capacity added to every non-gold resource by each
  * active Warehouse (see resource.h's BASE_STORAGE_CAP for the
@@ -38,6 +42,7 @@ typedef enum {
     BUILDING_FARM        = 2,
     BUILDING_LUMBERJACK  = 3,
     BUILDING_HOUSE       =  4,   /* Phase 5 */
+    BUILDING_ROAD        =  5,   /* Phase 2: roads/logistics */
     BUILDING_TYPE_COUNT
 } BuildingType;
 
