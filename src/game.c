@@ -37,6 +37,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     gs->menu_open         = 0;
 
     stockpile_init(&gs->stockpile);
+    stockpile_add(&gs->stockpile, RES_GOLD, STARTING_GOLD);
 }
 
 /* ---- game_init ----------------------------------------- */
@@ -274,9 +275,10 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
 
     gs->placement_valid = 0;
     if (gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
-        gs->placement_valid = building_can_place(&gs->map,
-            gs->selected_building, gs->hovered_row, gs->hovered_col,
-            NULL, 0);
+        gs->placement_valid =
+            building_can_place(&gs->map, gs->selected_building,
+                gs->hovered_row, gs->hovered_col, NULL, 0) &&
+            building_can_afford(&gs->stockpile, gs->selected_building);
 
     game_tick_buildings(gs, dt);
 
@@ -289,16 +291,23 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
  * -------------------------------------------------------- */
 void game_place_building(GameState *gs)
 {
-    int idx;
+    int idx, i;
+    const BuildingDef *def;
 
     if (gs->selected_building == BUILDING_NONE) return;
     if (gs->hovered_row < 0) return;
+    if (!building_can_afford(&gs->stockpile, gs->selected_building)) return;
 
     idx = building_place(gs->buildings, &gs->building_count,
                          &gs->map, gs->selected_building,
                          gs->hovered_row, gs->hovered_col);
 
     if (idx < 0) return;
+
+    def = &BUILDING_DEFS[gs->selected_building];
+    for (i = 0; i < RES_COUNT; i++)
+        if (def->cost[i] > 0)
+            stockpile_add(&gs->stockpile, (ResourceType)i, -def->cost[i]);
 
     /* Phase 5: if a house was just placed, activate its PopData */
     if (gs->selected_building == BUILDING_HOUSE)

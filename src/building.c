@@ -50,27 +50,32 @@
  * ========================================================= */
 const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     /*  name            w  h  flags                  R    G    B
-     *  produces       amt  consumes       amt  tick  */
+     *  produces       amt  consumes       amt  tick   cost */
     {
         "Fisher's Hut", 1, 1, PLACE_NEEDS_COAST,   210, 180, 100,
-        RES_FISH,       1,   RES_COUNT,     0,   6.0f
+        RES_FISH,       1,   RES_COUNT,     0,   6.0f,
+        { [RES_GOLD] = 60 }   /* raw producer: Gold only, no bootstrap chicken-and-egg */
     },
     {
         "Warehouse",    2, 2, PLACE_ANY_LAND,       160, 100,  60,
-        RES_COUNT,      0,   RES_COUNT,     0,   0.0f   /* no production */
+        RES_COUNT,      0,   RES_COUNT,     0,   0.0f,   /* no production */
+        { [RES_WOOD] = 20, [RES_GOLD] = 150 }
     },
     {
         "Farm",         2, 2, PLACE_NEEDS_FERTILE,   80, 160,  50,
-        RES_GRAIN,      1,   RES_COUNT,     0,   8.0f
+        RES_GRAIN,      1,   RES_COUNT,     0,   8.0f,
+        { [RES_GOLD] = 80 }
     },
     {
         "Lumberjack",   1, 1, PLACE_NEEDS_FOREST,  120,  80,  40,
-        RES_WOOD,       1,   RES_COUNT,     0,   5.0f
+        RES_WOOD,       1,   RES_COUNT,     0,   5.0f,
+        { [RES_GOLD] = 60 }
     },
     /* Phase 5: House — residents live here, generate gold when fed */
     {
         "House",        1, 1, PLACE_ANY_LAND,      210, 190, 160,
-        RES_COUNT,      0,   RES_COUNT,     0,   0.0f   /* pop_update handles gold, not tick system */
+        RES_COUNT,      0,   RES_COUNT,     0,   0.0f,   /* pop_update handles gold, not tick system */
+        { [RES_WOOD] = 15, [RES_GOLD] = 80 }
     },
 };
 
@@ -218,4 +223,19 @@ int building_place(Building buildings[], int *count,
     (*count)++;
 
     return i;
+}
+
+/* =========================================================
+ * building_can_afford
+ * ========================================================= */
+int building_can_afford(const Stockpile *s, BuildingType type)
+{
+    const BuildingDef *def = &BUILDING_DEFS[type];
+    int i;
+
+    for (i = 0; i < RES_COUNT; i++)
+        if (s->amount[i] < def->cost[i])
+            return 0;
+
+    return 1;
 }

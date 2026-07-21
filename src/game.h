@@ -28,6 +28,9 @@
 #define SCREEN_W 1920
 #define SCREEN_H 1080
 
+/* Gold the player starts every new game with. */
+#define STARTING_GOLD 1000
+
 typedef struct {
     Map        map;
     Camera     camera;

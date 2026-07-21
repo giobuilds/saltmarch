@@ -73,6 +73,12 @@ typedef struct {
     ResourceType  consumes;
     int           consume_amt;
     float         tick_seconds;
+
+    /* One-time cost deducted from the stockpile when this
+     * building is placed, indexed like Stockpile.amount[].
+     * Unlike produces/consumes (a per-tick flow), this is a
+     * lump sum paid once at building_place() time. */
+    int           cost[RES_COUNT];
 } BuildingDef;
 
 /* The global table of all building definitions.
@@ -105,6 +111,13 @@ int building_can_place(const Map *map,
                        BuildingType type,
                        int row, int col,
                        char *reason, size_t reason_len);
+
+/* Returns 1 if `s` holds enough of every resource in
+ * BUILDING_DEFS[type].cost[] to afford placing it. Deliberately
+ * separate from building_can_place() (which only knows about the
+ * map) so "can't afford" and "can't place here" stay distinct
+ * reasons a caller can tell apart. */
+int building_can_afford(const Stockpile *s, BuildingType type);
 
 /* Place a building into the buildings array.
  * Returns the index of the new building, or -1 if the array
