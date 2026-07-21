@@ -6,12 +6,43 @@
 #include "resource.h"
 #include "population.h"
 #include "connectivity.h"
+#include "agent.h"
 #include "ui.h"
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 #include <string.h>
 
 static void game_recompute_storage_capacity(GameState *gs);
+
+/* Phase 5: how many starter Houses game_reset_world() auto-places,
+ * each pre-filled to HOUSE_CAPACITY residents — 10 * 10 = 100,
+ * satisfying "start with 100 population." Deliberately placed via
+ * building_place() directly (bypassing game_place_building()'s cost
+ * deduction — these are given, not purchased) and just as subject to
+ * Phase 3's connectivity gate as any player-built House: with no
+ * Warehouse/roads yet at turn 0, they'll start losing residents every
+ * NEEDS_INTERVAL until connected — a deliberate early-game pressure,
+ * not an oversight. */
+#define STARTER_HOUSE_COUNT 10
+
+static void place_starter_houses(GameState *gs)
+{
+    int placed = 0, r, c;
+
+    for (r = 0; r < MAP_ROWS && placed < STARTER_HOUSE_COUNT; r++) {
+        for (c = 0; c < MAP_COLS && placed < STARTER_HOUSE_COUNT; c++) {
+            int idx;
+            if (!building_can_place(&gs->map, BUILDING_HOUSE, r, c, NULL, 0))
+                continue;
+            idx = building_place(gs->buildings, &gs->building_count,
+                                 &gs->map, BUILDING_HOUSE, r, c);
+            if (idx < 0) continue;
+            pop_init(&gs->pop_data[idx]);
+            gs->pop_data[idx].residents = HOUSE_CAPACITY;
+            placed++;
+        }
+    }
+}
 
 /* ---- game_reset_world -----------------------------------
  * Regenerates the map and clears all placed buildings, the
@@ -32,15 +63,22 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 
     memset(gs->buildings, 0, sizeof(gs->buildings));
     memset(gs->pop_data,  0, sizeof(gs->pop_data));
-    gs->building_count    = 0;
-    gs->selected_building = BUILDING_NONE;
-    gs->placement_valid   = 0;
-    gs->menu_open         = 0;
-    gs->trade_open        = 0;
-    gs->trade_building_idx = -1;
+    memset(gs->agents,    0, sizeof(gs->agents));
+    gs->building_count     = 0;
+    gs->agent_count         = 0;
+    gs->agent_assign_timer  = 0.0f;
+    gs->selected_building   = BUILDING_NONE;
+    gs->placement_valid     = 0;
+    gs->menu_open           = 0;
+    gs->trade_open          = 0;
+    gs->trade_building_idx  = -1;
 
     stockpile_init(&gs->stockpile);
     stockpile_add(&gs->stockpile, RES_GOLD, STARTING_GOLD);
+
+    place_starter_houses(gs);
+    agents_sync(gs->agents, &gs->agent_count, gs->buildings, gs->pop_data,
+               gs->building_count);
 }
 
 /* ---- game_init ----------------------------------------- */
@@ -179,6 +217,14 @@ int game_load(GameState *gs, const char *path)
 
     game_recompute_storage_capacity(gs);
 
+    /* Phase 5: agents aren't persisted (see agent.h) — rebuild them
+     * fresh from the just-restored pop_data instead. */
+    memset(gs->agents, 0, sizeof(gs->agents));
+    gs->agent_count        = 0;
+    gs->agent_assign_timer = 0.0f;
+    agents_sync(gs->agents, &gs->agent_count, gs->buildings, gs->pop_data,
+               gs->building_count);
+
     SDL_Log("Game loaded from %s (seed=%u, %d buildings)",
             path, hdr.seed, gs->building_count);
     return 1;
@@ -193,7 +239,8 @@ static void game_tick_buildings(GameState *gs, float dt)
         const BuildingDef *def = &BUILDING_DEFS[b->type];
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
-        if (!b->connected) continue;   /* Phase 3: needs a road to a Warehouse */
+        if (!b->connected) continue;      /* Phase 3: needs a road to a Warehouse */
+        if (b->worker_count < 1) continue; /* Phase 5: needs a worker physically present */
 
         b->timer += dt;
         if (b->timer < def->tick_seconds) continue;
@@ -288,11 +335,32 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
      * this frame reads Building.connected. */
     connectivity_update(gs->buildings, gs->building_count);
 
+    /* game_tick_buildings() reads worker_count as of the END of last
+     * frame's agents_update() call below — a harmless one-frame lag,
+     * the same pattern already established for `connected` relative
+     * to a newly-placed building. */
     game_tick_buildings(gs, dt);
 
-    /* Phase 5: update population needs */
+    /* Phase 5: update population needs (uses this frame's `connected`) */
     pop_update(gs->pop_data, gs->buildings, gs->building_count,
                &gs->stockpile, dt);
+
+    /* Phase 5: reconcile agents[] against the residents counts
+     * pop_update() may have just changed, periodically assign jobs,
+     * then advance every agent's state machine/position and retally
+     * worker_count for next frame's game_tick_buildings(). */
+    agents_sync(gs->agents, &gs->agent_count, gs->buildings, gs->pop_data,
+               gs->building_count);
+
+    gs->agent_assign_timer += dt;
+    if (gs->agent_assign_timer >= AGENT_ASSIGN_INTERVAL) {
+        gs->agent_assign_timer = 0.0f;
+        agents_assign_jobs(gs->agents, gs->agent_count,
+                           gs->buildings, gs->building_count);
+    }
+
+    agents_update(gs->agents, gs->agent_count, gs->buildings,
+                 gs->building_count, dt);
 }
 
 /* ---- game_place_building -------------------------------

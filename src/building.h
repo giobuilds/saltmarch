@@ -115,6 +115,13 @@ typedef struct {
      * harmless: it's overwritten by the next connectivity_update()
      * before anything reads it.) */
     int          connected;
+
+    /* Phase 5: derived like `connected` above — zeroed and retallied
+     * every frame by agents_update() (agent.c) from currently
+     * AGENT_WORKING agents. game_tick_buildings() requires
+     * worker_count >= 1 (for any building with tick_seconds > 0) on
+     * top of `connected`: the "physically present" labor-supply gate. */
+    int          worker_count;
 } Building;
 
 /* ---- Placement validation ----------------------------- */

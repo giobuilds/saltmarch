@@ -33,15 +33,15 @@ static const SDL_Color TILE_DARK[TILE_TYPE_COUNT] = {
 /* =========================================================
  * Coordinate conversion
  * ========================================================= */
-void iso_to_screen(int row, int col, const Camera *cam,
+void iso_to_screen(float row, float col, const Camera *cam,
                    float *out_x, float *out_y)
 {
     /* CHANGED: float output so zoomed tile corners sit flush.
      * Integer truncation caused sub-pixel gaps between tiles. */
     float hw = (float)(TILE_W / 2) * cam->zoom;
     float hh = (float)(TILE_H / 2) * cam->zoom;
-    *out_x = cam->offset_x + (float)(col - row) * hw;
-    *out_y = cam->offset_y + (float)(col + row) * hh;
+    *out_x = cam->offset_x + (col - row) * hw;
+    *out_y = cam->offset_y + (col + row) * hh;
 }
 
 void screen_to_iso(int sx, int sy, const Camera *cam,
@@ -148,7 +148,7 @@ void render_map(SDL_Renderer *renderer,
     for (r = 0; r < map->rows; r++) {
         for (c = 0; c < map->cols; c++) {
             const Tile *t = &map->tiles[r][c];
-            iso_to_screen(r, c, cam, &sx, &sy);
+            iso_to_screen((float)r, (float)c, cam, &sx, &sy);
             if (sx + tw < 0 || sx > SCREEN_W ||
                 sy + th < 0 || sy > SCREEN_H)
                 continue;
@@ -166,7 +166,7 @@ void render_hovered_tile(SDL_Renderer *renderer,
 {
     float sx, sy;
     if (row < 0 || col < 0) return;
-    iso_to_screen(row, col, cam, &sx, &sy);
+    iso_to_screen((float)row, (float)col, cam, &sx, &sy);
     /* CHANGED: pass zoom to outline */
     draw_diamond_outline(renderer, sx, sy, cam->zoom, 255, 230, 50, 255);
 }
@@ -206,7 +206,7 @@ void render_buildings(SDL_Renderer *renderer,
             bot.a = 255;
             for (r = b->row; r < b->row + def->tile_h; r++) {
                 for (c = b->col; c < b->col + def->tile_w; c++) {
-                    iso_to_screen(r, c, cam, &sx, &sy);
+                    iso_to_screen((float)r, (float)c, cam, &sx, &sy);
                     draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
                     draw_diamond_outline(renderer, sx, sy, cam->zoom,
                                          255, 255, 255, 60);
@@ -248,7 +248,7 @@ void render_ghost(SDL_Renderer *renderer,
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     for (r = row; r < row + def->tile_h; r++) {
         for (c = col; c < col + def->tile_w; c++) {
-            iso_to_screen(r, c, cam, &sx, &sy);
+            iso_to_screen((float)r, (float)c, cam, &sx, &sy);
             draw_diamond(renderer, sx, sy, cam->zoom, top, bot);
         }
     }
@@ -336,4 +336,41 @@ void render_population(SDL_Renderer *renderer,
     SDL_RenderRect(renderer, &bg);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     font_draw_text(renderer, FONT_NORMAL, buf, screen_w-105, 13, col);
+}
+
+/* ---- render_agents ---------------------------------------
+ * Phase 5: one small filled square per active agent, projected
+ * through iso_to_screen() (now widened to accept the fractional
+ * row/col an agent mid-walk actually has) and centred on the tile
+ * diamond's centroid. Same small-square technique already used for
+ * the HUD's building-size dot-grid annotation in ui.c — no new
+ * drawing primitive needed. */
+void render_agents(SDL_Renderer *renderer,
+                   const Agent agents[], int count,
+                   const Camera *cam)
+{
+    static const SDL_Color AGENT_COLOUR = { 250, 220, 130, 255 };
+    const float DOT = 5.0f;
+    float hw, hh;
+    int i;
+
+    hw = (float)(TILE_W / 2) * cam->zoom;
+    hh = (float)(TILE_H / 2) * cam->zoom;
+
+    SDL_SetRenderDrawColor(renderer,
+        AGENT_COLOUR.r, AGENT_COLOUR.g, AGENT_COLOUR.b, AGENT_COLOUR.a);
+
+    for (i = 0; i < count; i++) {
+        SDL_FRect dot;
+        float     sx, sy;
+
+        if (!agents[i].active) continue;
+
+        iso_to_screen(agents[i].row, agents[i].col, cam, &sx, &sy);
+        dot.x = sx + hw - DOT / 2.0f;
+        dot.y = sy + hh - DOT / 2.0f;
+        dot.w = DOT;
+        dot.h = DOT;
+        SDL_RenderFillRect(renderer, &dot);
+    }
 }
