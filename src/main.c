@@ -75,8 +75,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 {
     App       *app = (App *)appstate;
     GameState *gs  = app->g;
+    Island    *isl;
 
     game_update(gs, app->r);
+
+    /* Everything below acts on the island currently being viewed;
+     * game_update() has already simulated every settled one. Fetched
+     * after game_update() because a menu action there (New Game /
+     * Load) can change which island is current. */
+    isl = game_cur_island(gs);
 
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
@@ -143,7 +150,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                                  gs->input.logical_y,
                                                  &res, &qty);
             if (hit == TRADE_HIT_SELL) {
-                if (qty < 0) qty = gs->stockpile.amount[res]; /* Sell All */
+                if (qty < 0) qty = isl->stockpile.amount[res]; /* Sell All */
                 game_sell_resource(gs, res, qty);
             } else if (hit == TRADE_HIT_BUY) {
                 /* qty < 0 ("Max") is resolved inside game_buy_resource
@@ -230,13 +237,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     int found = game_find_building_at(gs, gs->hovered_row,
                                                       gs->hovered_col);
                     if (found >= 0 &&
-                        gs->buildings[found].type == BUILDING_MARKETPLACE &&
-                        gs->buildings[found].connected) {
+                        isl->buildings[found].type == BUILDING_MARKETPLACE &&
+                        isl->buildings[found].connected) {
                         gs->trade_open        = 1;
                         gs->trade_building_idx = found;
                     } else if (found >= 0 &&
-                              gs->buildings[found].type == BUILDING_HOUSE &&
-                              gs->buildings[found].connected) {
+                              isl->buildings[found].type == BUILDING_HOUSE &&
+                              isl->buildings[found].connected) {
                         gs->tier_upgrade_open = 1;
                         gs->tier_upgrade_idx  = found;
                     }
@@ -249,7 +256,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     game_try_place_road(gs, gs->hovered_row, gs->hovered_col);
                 } else if (gs->selected_building != BUILDING_NONE &&
                           gs->hovered_row >= 0 &&
-                          building_can_place(&gs->map, gs->selected_building,
+                          building_can_place(&isl->map, gs->selected_building,
                                             gs->hovered_row, gs->hovered_col,
                                             NULL, 0)) {
                     gs->build_confirm_open    = 1;
@@ -284,28 +291,28 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* --- Render ---------------------------------------- */
     render_clear(app->r);
-    render_map(app->r, &gs->map, &gs->camera);
-    render_buildings(app->r, gs->buildings,
-                     gs->building_count, &gs->camera);
+    render_map(app->r, &isl->map, &isl->camera);
+    render_buildings(app->r, isl->buildings,
+                     isl->building_count, &isl->camera);
 
     /* Phase 5: walking population agents */
-    render_agents(app->r, gs->agents, gs->agent_count, &gs->camera);
+    render_agents(app->r, isl->agents, isl->agent_count, &isl->camera);
 
     if (gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
-        render_ghost(app->r, &gs->camera,
+        render_ghost(app->r, &isl->camera,
                      gs->selected_building,
                      gs->hovered_row, gs->hovered_col,
                      gs->placement_valid);
 
-    render_hovered_tile(app->r, &gs->camera,
+    render_hovered_tile(app->r, &isl->camera,
                         gs->hovered_row, gs->hovered_col);
 
     /* Phase 4: resource stockpile panel */
-    render_resources(app->r, &gs->stockpile);
+    render_resources(app->r, &isl->stockpile);
 
     /* Phase 5: population counter */
     render_population(app->r,
-                      pop_total(gs->pop_data, gs->building_count),
+                      pop_total(isl->pop_data, isl->building_count),
                       SCREEN_W);
 
     /* CHANGED: pass menu_open flag to ui_draw */
@@ -324,19 +331,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Phase 4: draw the trade screen on top when open */
     if (gs->trade_open)
-        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &gs->stockpile,
+        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &isl->stockpile,
                      gs->input.logical_x, gs->input.logical_y);
 
     /* Fix pass: draw the build-confirmation popup on top when open */
     if (gs->build_confirm_open)
         build_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                              gs->selected_building, &gs->stockpile,
+                              gs->selected_building, &isl->stockpile,
                               gs->build_confirm_payment,
                               gs->input.logical_x, gs->input.logical_y);
 
     /* Bulldozer confirmation popup, drawn on top when open */
     if (gs->demolish_confirm_open) {
-        BuildingType t = gs->buildings[gs->demolish_confirm_idx].type;
+        BuildingType t = isl->buildings[gs->demolish_confirm_idx].type;
         demolish_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
                                  BUILDING_DEFS[t].name,
                                  gs->input.logical_x, gs->input.logical_y);
@@ -346,7 +353,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->tier_upgrade_open)
         tier_upgrade_ui_draw(app->r, SCREEN_W, SCREEN_H,
                              TIER_UPGRADE_COST_GOLD,
-                             gs->stockpile.amount[RES_GOLD] >= TIER_UPGRADE_COST_GOLD,
+                             isl->stockpile.amount[RES_GOLD] >= TIER_UPGRADE_COST_GOLD,
                              gs->input.logical_x, gs->input.logical_y);
 
     SDL_RenderPresent(app->r);

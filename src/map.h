@@ -36,6 +36,28 @@ typedef enum {
     FERTILE_HOP    = 1 << 1,   /* beer production chain   */
 } Fertility;
 
+/* ---- Island terrain profiles ----------------------------
+ * Which flavour of island a Map represents. Stored in Map (and in
+ * Island, and in the save file) from the island refactor onward so
+ * that adding the per-profile generation behaviour later needs no
+ * save-format change.
+ *
+ * Only PROFILE_TEMPERATE — today's exact generation — has distinct
+ * behaviour so far; the others are declared now and become
+ * meaningful when map_init() learns to vary its thresholds by
+ * profile. Their eventual roles:
+ *   HIGHLAND – hop-rich, grain-poor (the reason to colonise)
+ *   WOODLAND – timber-rich, little fertile ground
+ *   ATOLL    – almost all coast: fish and not much else
+ * ========================================================= */
+typedef enum {
+    PROFILE_TEMPERATE = 0,
+    PROFILE_HIGHLAND  = 1,
+    PROFILE_WOODLAND  = 2,
+    PROFILE_ATOLL     = 3,
+    PROFILE_COUNT
+} MapProfile;
+
 /* ---- Tile types ---------------------------------------- */
 typedef enum {
     TILE_GRASS  = 0,

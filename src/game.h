@@ -4,40 +4,47 @@
 /* =========================================================
  * game.h  --  Top-level game state
  *
- * GameState owns every sub-system: the map, the camera,
- * and the input tracker.  A single pointer to GameState
- * is stored in SDL's appstate so all three callbacks
- * (AppInit, AppEvent, AppIterate) can reach it.
- * 
- * New in Phase 3:
- *   - buildings[] array + building_count
- *   - selected_building (what the player has picked to place)
- *   - placement_valid flag (can we place at the hovered tile?)
- * 
- * New in Phase 5: PopData array and fonts added.
+ * GameState owns the archipelago plus everything genuinely global:
+ * input, frame timing, which island is being viewed, and the UI
+ * overlay flags. A single pointer to GameState is stored in SDL's
+ * appstate so all three callbacks (AppInit, AppEvent, AppIterate)
+ * can reach it.
+ *
+ * Everything that is per-landmass — map, camera, stockpile,
+ * buildings, population, agents — lives in Island (island.h). The
+ * game logic here operates on the CURRENT island via cur()/
+ * game_cur_island(); the per-island simulation itself is
+ * island_update(), which runs for every settled island each frame,
+ * not just the one on screen.
  * ========================================================= */
 
 #include <SDL3/SDL.h>
 #include "map.h"
-#include "camera.h"
+#include "camera.h"      /* also provides SCREEN_W / SCREEN_H */
 #include "input.h"
 #include "building.h"
 #include "resource.h"
-#include "population.h"   /* Phase 5 */
-#include "agent.h"         /* Phase 5: walking population agents */
+#include "population.h"
+#include "agent.h"
+#include "island.h"
 
-#define SCREEN_W 1920
-#define SCREEN_H 1080
-
-/* Gold the player starts every new game with. */
+/* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
 
 typedef struct {
-    Map        map;
-    Camera     camera;
+    /* ---- The archipelago ----------------------------------
+     * Every island exists from world-gen; `settled` (island.h)
+     * decides which are simulated and buildable. current_island is
+     * the one being viewed and the one all placement/UI actions
+     * apply to — see cur() in game.c and game_set_current_island(). */
+    Island islands[MAX_ISLANDS];
+    int    current_island;
+
     InputState input;
 
-    /* Tile currently under the mouse cursor (-1 if none) */
+    /* Tile currently under the mouse cursor on the CURRENT island
+     * (-1 if none). Global rather than per-island: it describes where
+     * the pointer is right now, not a property of a landmass. */
     int hovered_row;
     int hovered_col;
 
@@ -49,48 +56,23 @@ typedef struct {
     Uint64 last_tick;
     float delta_time;
 
-    /* ---- Phase 3: building placement ---- */
-    Building     buildings[MAX_BUILDINGS];
-    int          building_count;
- 
     /* Which building type the player has selected from the HUD.
      * BUILDING_NONE (-1) means nothing selected. */
     BuildingType selected_building;
- 
+
     /* 1 if the current hover position is a valid placement spot
      * for selected_building.  Used by render to colour the ghost. */
     int placement_valid;
 
     int menu_open;  /* 1 when the cog menu overlay is open */
-    Stockpile stockpile;
 
-    /* Phase 4: manual trade screen. trade_open mirrors menu_open's
-     * overlay pattern; trade_building_idx is the buildings[] index
-     * of the Marketplace that opened it (needed so a future
-     * per-marketplace mechanic has somewhere to hang off of, though
-     * v1's trade logic only reads the shared Stockpile). */
+    /* Manual trade screen. trade_open mirrors menu_open's overlay
+     * pattern; trade_building_idx indexes the CURRENT island's
+     * buildings[] — every *_idx below is current-island-relative,
+     * which is safe because game_set_current_island() closes every
+     * overlay rather than trying to keep them alive across a switch. */
     int trade_open;
     int trade_building_idx;
-
-    /* Phase 5: one PopData per building slot.
-     * Only slots where buildings[i].type == BUILDING_HOUSE
-     * and pop_data[i].active == 1 are meaningful. */
-    PopData      pop_data[MAX_BUILDINGS];
-
-    /* Phase 5: walking population agents — ephemeral (not saved;
-     * game_load() rebuilds them from the restored pop_data via the
-     * same agents_sync() a normal frame uses). One per resident,
-     * synced against pop_data[].residents every frame. */
-    Agent        agents[MAX_AGENTS];
-    int          agent_count;
-
-    /* Phase 5: seconds since the last agent_assign_jobs() pass —
-     * periodic rather than every frame, since open jobs mostly only
-     * change when a producer is placed, a house's population grows,
-     * or one is demolished (game_demolish_building already snaps any
-     * agent working there back to unemployed immediately; the next
-     * periodic pass just picks up the resulting reassignment). */
-    float        agent_assign_timer;
 
     /* Build-confirmation popup: every building except Road goes
      * through this instead of placing instantly (Road is exempt —
@@ -117,22 +99,30 @@ typedef struct {
 
     /* Bulldozer confirmation popup: opened instead of an immediate
      * game_demolish_building() call when the demolish tool is active
-     * and the player clicks a building. demolish_confirm_idx is
-     * captured at popup-open time (same reasoning as
-     * build_confirm_row/col above — hovered_row/col drifts once the
-     * mouse moves to the popup's own buttons). */
+     * and the player clicks a building. */
     int demolish_confirm_open;
     int demolish_confirm_idx;
 
     /* Tier-upgrade confirmation popup: opened when the player clicks
      * an active, connected BUILDING_HOUSE with nothing selected and
-     * demolish_mode off (mirrors the Marketplace-click-opens-trade
-     * check right next to it). tier_upgrade_idx is captured at
-     * popup-open time, same reasoning as build_confirm_row/col and
-     * demolish_confirm_idx above. */
+     * demolish_mode off. */
     int tier_upgrade_open;
     int tier_upgrade_idx;
 } GameState;
+
+/* The island currently being viewed — the one every placement, UI
+ * action and *_idx field in GameState refers to. Never NULL:
+ * current_island is always a valid index. */
+Island *game_cur_island(GameState *gs);
+
+/* Switch the viewed island. Closes every overlay and clears
+ * selected_building / demolish_mode / the road-drag state, because
+ * all of those (and every *_idx field) are current-island-relative —
+ * keeping a popup alive across a switch would leave it pointing at an
+ * unrelated building on the new island. No-op if idx is out of range.
+ * Switching to an unsettled island is allowed: you can look at an
+ * island before you can build on it. */
+void game_set_current_island(GameState *gs, int idx);
 
 /* Allocate and initialise a new GameState.
  * Returns NULL on allocation failure. */
