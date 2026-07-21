@@ -55,8 +55,27 @@ typedef struct {
     int          route_leg;      /* 0 = A->B, 1 = B->A */
 } Ship;
 
-/* Advance every voyage. Ships docked or inactive are untouched. */
-void ships_update(Ship ships[], int ship_count, float dt);
+/* Move `qty` units of `res` between a ship's hold and a SPECIFIC
+ * island (positive loads onto the ship, negative unloads), clamped by
+ * what is actually present, by the hold's per-resource limit, and by
+ * the island's storage capacity. RES_GOLD is exempt from both limits,
+ * being currency rather than bulk cargo. Returns units actually
+ * moved, which may be fewer than asked — partial transfers are always
+ * preferred to refusing, because a ship that insists on a full hold
+ * deadlocks a route the moment supply dips.
+ *
+ * Shared by the manual Load/Unload buttons (via game_ship_transfer,
+ * which adds the "must be docked at the island you're looking at"
+ * rule) and by automated routes, so the two cannot drift apart on
+ * something as easy to get wrong as capacity clamping. */
+int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty);
+
+/* Advance every voyage, and run any active trade route: on arrival,
+ * unload the inbound good, load the outbound one, and depart again.
+ * Needs the islands because a route moves goods into and out of their
+ * stockpiles without the player being present. */
+void ships_update(Ship ships[], int ship_count,
+                  Island islands[], int island_count, float dt);
 
 /* Total units of `res` currently in transit or sitting in holds —
  * the term that makes world conservation checkable: for any resource,

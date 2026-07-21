@@ -41,7 +41,10 @@ typedef enum {
     WORLD_HIT_SHIP     = 3,  /* a ship marker — *out_ship is set       */
     WORLD_HIT_LOAD     = 4,  /* load a resource  — *out_res is set     */
     WORLD_HIT_UNLOAD   = 5,  /* unload a resource — *out_res is set    */
-    WORLD_HIT_COLONISE = 6   /* found a colony with the selected ship  */
+    WORLD_HIT_COLONISE = 6,  /* found a colony with the selected ship  */
+    WORLD_HIT_ROUTE_OUT   = 7, /* cycle the outbound (A->B) good       */
+    WORLD_HIT_ROUTE_BACK  = 8, /* cycle the return (B->A) good         */
+    WORLD_HIT_ROUTE_TOGGLE= 9  /* start/stop the repeating route       */
 } WorldHit;
 
 /* Draw the overview. `islands` is the whole archipelago and

@@ -118,7 +118,7 @@ static SDL_FRect panel_rect(int screen_w, int screen_h)
 {
     SDL_FRect r;
     r.w = (float)WORLD_PANEL_W;
-    r.h = (float)(RES_COUNT * WORLD_ROW_H + 110);
+    r.h = (float)(RES_COUNT * WORLD_ROW_H + 210);
     r.x = (float)screen_w - r.w - 40.0f;
     r.y = 90.0f;
     (void)screen_h;
@@ -133,6 +133,19 @@ static SDL_FRect cargo_btn_rect(int screen_w, int screen_h, int res, int i)
     r.w = 52.0f; r.h = 20.0f;
     r.x = p.x + p.w - 10.0f - (2.0f - (float)i) * (r.w + 6.0f);
     r.y = p.y + 56.0f + (float)res * (float)WORLD_ROW_H;
+    return r;
+}
+
+/* Route controls sit under the cargo manifest: outbound good,
+ * return good, then the on/off toggle. */
+static SDL_FRect route_btn_rect(int screen_w, int screen_h, int which)
+{
+    SDL_FRect p = panel_rect(screen_w, screen_h);
+    SDL_FRect r;
+    r.w = p.w - 20.0f; r.h = 24.0f;
+    r.x = p.x + 10.0f;
+    r.y = p.y + 62.0f + (float)RES_COUNT * (float)WORLD_ROW_H
+        + (float)which * 28.0f;
     return r;
 }
 
@@ -220,9 +233,18 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             float ax, ay, bx, by;
             float hw = (float)TILE_W * WORLD_NODE_ZOOM / 2.0f;
             float hh = (float)TILE_H * WORLD_NODE_ZOOM / 2.0f;
-            if (!ships[si].active || ships[si].at_island >= 0) continue;
-            node_origin(screen_w, screen_h, ships[si].from_island, &ax, &ay);
-            node_origin(screen_w, screen_h, ships[si].to_island,   &bx, &by);
+            if (!ships[si].active) continue;
+            /* Draw the lane for a voyage in progress, and also for an
+             * idle ship's standing route, so an established trade
+             * link stays visible between runs. */
+            if (ships[si].at_island >= 0 && !ships[si].route_active) continue;
+            if (ships[si].at_island >= 0) {
+                node_origin(screen_w, screen_h, ships[si].route_a, &ax, &ay);
+                node_origin(screen_w, screen_h, ships[si].route_b, &bx, &by);
+            } else {
+                node_origin(screen_w, screen_h, ships[si].from_island, &ax, &ay);
+                node_origin(screen_w, screen_h, ships[si].to_island,   &bx, &by);
+            }
             SDL_RenderLine(renderer, ax + hw, ay + hh, bx + hw, by + hh);
         }
     }
@@ -306,6 +328,60 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            docked ? txt : dim);
         }
 
+        /* --- Trade route ------------------------------------ */
+        {
+            static const char *NONE = "(nothing)";
+            SDL_FRect ro = route_btn_rect(screen_w, screen_h, 0);
+            SDL_FRect rb = route_btn_rect(screen_w, screen_h, 1);
+            SDL_FRect rt = route_btn_rect(screen_w, screen_h, 2);
+            /* A route repeats the ship's last voyage, so it needs one
+             * to repeat: sail somewhere manually, then switch it on. */
+            int can_route = (sh->from_island != sh->to_island);
+            SDL_Color on  = { 190, 235, 200, 255 };
+
+            SDL_snprintf(buf, sizeof(buf), "Carry out: %s",
+                        sh->route_res_ab == RES_COUNT ? NONE
+                                                      : RESOURCE_NAMES[sh->route_res_ab]);
+            SDL_SetRenderDrawColor(renderer, 38, 58, 80, 255);
+            SDL_RenderFillRect(renderer, &ro);
+            SDL_SetRenderDrawColor(renderer, 95, 130, 165, 255);
+            SDL_RenderRect(renderer, &ro);
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(ro.x + 8.0f), (int)(ro.y + 4.0f), txt);
+
+            SDL_snprintf(buf, sizeof(buf), "Bring back: %s",
+                        sh->route_res_ba == RES_COUNT ? NONE
+                                                      : RESOURCE_NAMES[sh->route_res_ba]);
+            SDL_SetRenderDrawColor(renderer, 38, 58, 80, 255);
+            SDL_RenderFillRect(renderer, &rb);
+            SDL_SetRenderDrawColor(renderer, 95, 130, 165, 255);
+            SDL_RenderRect(renderer, &rb);
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(rb.x + 8.0f), (int)(rb.y + 4.0f), txt);
+
+            if (sh->route_active)
+                SDL_snprintf(buf, sizeof(buf), "Route RUNNING: %s <-> %s  (stop)",
+                            islands[sh->route_a].name, islands[sh->route_b].name);
+            else if (can_route)
+                SDL_snprintf(buf, sizeof(buf), "Start route: %s <-> %s",
+                            islands[sh->from_island].name, islands[sh->to_island].name);
+            else
+                SDL_snprintf(buf, sizeof(buf), "Sail somewhere to set a route");
+
+            SDL_SetRenderDrawColor(renderer,
+                sh->route_active ? 40 : (can_route ? 38 : 28),
+                sh->route_active ? 95 : (can_route ? 58 : 40),
+                sh->route_active ? 55 : (can_route ? 80 : 52), 255);
+            SDL_RenderFillRect(renderer, &rt);
+            SDL_SetRenderDrawColor(renderer,
+                sh->route_active ? 120 : 95, sh->route_active ? 200 : 130,
+                sh->route_active ? 130 : 165, 255);
+            SDL_RenderRect(renderer, &rt);
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(rt.x + 8.0f), (int)(rt.y + 4.0f),
+                           sh->route_active ? on : (can_route ? txt : dim));
+        }
+
         {
             SDL_FRect cb = colonise_btn_rect(screen_w, screen_h);
             int can = sh->at_island >= 0
@@ -359,6 +435,12 @@ WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
         int res;
         if (point_in(colonise_btn_rect(screen_w, screen_h), mouse_x, mouse_y))
             return WORLD_HIT_COLONISE;
+        if (point_in(route_btn_rect(screen_w, screen_h, 0), mouse_x, mouse_y))
+            return WORLD_HIT_ROUTE_OUT;
+        if (point_in(route_btn_rect(screen_w, screen_h, 1), mouse_x, mouse_y))
+            return WORLD_HIT_ROUTE_BACK;
+        if (point_in(route_btn_rect(screen_w, screen_h, 2), mouse_x, mouse_y))
+            return WORLD_HIT_ROUTE_TOGGLE;
         for (res = 0; res < RES_COUNT; res++) {
             if (point_in(cargo_btn_rect(screen_w, screen_h, res, 0),
                         mouse_x, mouse_y)) {

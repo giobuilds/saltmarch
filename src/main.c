@@ -148,6 +148,40 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 }
                 break;
 
+            case WORLD_HIT_ROUTE_OUT:
+            case WORLD_HIT_ROUTE_BACK:
+                if (gs->world_selected_ship >= 0) {
+                    Ship *sh = &gs->ships[gs->world_selected_ship];
+                    ResourceType *slot = (hit == WORLD_HIT_ROUTE_OUT)
+                                       ? &sh->route_res_ab : &sh->route_res_ba;
+                    /* Cycle through every good and back to "nothing",
+                     * so one button covers the whole choice without a
+                     * dropdown widget this codebase has no idiom for.
+                     * RES_COUNT is the "carry nothing" state, which is
+                     * what makes one-way runs expressible. */
+                    *slot = (*slot >= RES_COUNT) ? (ResourceType)0
+                                                 : (ResourceType)(*slot + 1);
+                }
+                break;
+
+            case WORLD_HIT_ROUTE_TOGGLE:
+                if (gs->world_selected_ship >= 0) {
+                    Ship *sh = &gs->ships[gs->world_selected_ship];
+                    if (sh->route_active) {
+                        sh->route_active = 0;
+                    } else if (sh->from_island != sh->to_island) {
+                        /* A route simply repeats the voyage the ship
+                         * last made, so there is no separate
+                         * pick-two-islands mode to build or explain. */
+                        sh->route_a      = sh->from_island;
+                        sh->route_b      = sh->to_island;
+                        sh->route_qty    = SHIP_CARGO_CAPACITY;
+                        sh->route_leg    = (sh->at_island == sh->route_b) ? 0 : 1;
+                        sh->route_active = 1;
+                    }
+                }
+                break;
+
             case WORLD_HIT_CLOSE:
                 gs->world_open = 0;
                 break;

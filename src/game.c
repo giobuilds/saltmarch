@@ -458,7 +458,7 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
         island_update(&gs->islands[i], dt);
 
     /* Voyages advance independently of any island. */
-    ships_update(gs->ships, gs->ship_count, dt);
+    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS, dt);
 }
 
 /* ---- commit_placement -----------------------------------
@@ -716,11 +716,13 @@ int game_build_ship(GameState *gs)
     return slot;
 }
 
-/* ---- game_ship_transfer ----------------------------------- */
+/* ---- game_ship_transfer -----------------------------------
+ * The manual Load/Unload path: adds the "must be docked at the island
+ * you are currently looking at" rule, then defers the actual clamping
+ * to ship_transfer_at() so it cannot disagree with what routes do. */
 void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
 {
-    Island *isl;
-    Ship   *sh;
+    Ship *sh;
 
     if (ship_idx < 0 || ship_idx >= gs->ship_count) return;
     sh = &gs->ships[ship_idx];
@@ -728,40 +730,8 @@ void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
 
     /* Only ever moves goods across a dock, never across open water. */
     if (sh->at_island != gs->current_island) return;
-    isl = cur(gs);
 
-    if (qty > 0) {                    /* island -> ship */
-        /* Gold is exempt from the hold limit, exactly as it is exempt
-         * from stockpile capacity (resource.h): it is currency, not
-         * bulk cargo. Without this a ship could never carry the
-         * COLONY_FOUNDING_GOLD needed to found a colony, since the
-         * grant is many times a single resource's hold capacity. */
-        if (res != RES_GOLD) {
-            int space = SHIP_CARGO_CAPACITY - sh->cargo[res];
-            if (qty > space) qty = space;
-        }
-        if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
-        if (qty <= 0) return;
-
-        stockpile_add(&isl->stockpile, res, -qty);
-        sh->cargo[res] += qty;
-    } else if (qty < 0) {             /* ship -> island */
-        int want = -qty;
-        if (want > sh->cargo[res]) want = sh->cargo[res];
-        if (want <= 0) return;
-
-        /* stockpile_add() clamps non-Gold to capacity, which would
-         * silently destroy the overflow, so only move what fits. */
-        if (res != RES_GOLD) {
-            int headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
-            if (headroom < 0) headroom = 0;
-            if (want > headroom) want = headroom;
-            if (want <= 0) return;
-        }
-
-        sh->cargo[res] -= want;
-        stockpile_add(&isl->stockpile, res, want);
-    }
+    ship_transfer_at(sh, cur(gs), res, qty);
 }
 
 /* ---- game_colonise ---------------------------------------- */
