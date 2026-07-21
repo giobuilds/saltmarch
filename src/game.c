@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void game_recompute_storage_capacity(GameState *gs);
+
 /* ---- game_reset_world -----------------------------------
  * Regenerates the map and clears all placed buildings, the
  * population, and the stockpile. Shared by game_init() (on a
@@ -115,6 +117,65 @@ int game_save(const GameState *gs, const char *path)
 
     SDL_CloseIO(io);
     SDL_Log("Game saved to %s (seed=%u, %d buildings)",
+            path, hdr.seed, gs->building_count);
+    return 1;
+}
+
+/* ---- game_load --------------------------------------------
+ * Inverse of game_save(): regenerates the map from the stored
+ * seed, then restores buildings/pop_data/stockpile/camera.
+ * Rejects the file (returns 0, gs untouched) if it's missing,
+ * has the wrong magic/version, or is truncated. */
+int game_load(GameState *gs, const char *path)
+{
+    SDL_IOStream *io = SDL_IOFromFile(path, "rb");
+    SaveHeader    hdr;
+    size_t        buildings_bytes, pop_bytes;
+
+    if (!io) {
+        SDL_Log("game_load: could not open %s: %s", path, SDL_GetError());
+        return 0;
+    }
+
+    if (SDL_ReadIO(io, &hdr, sizeof(hdr)) != sizeof(hdr) ||
+        hdr.magic   != SAVE_MAGIC ||
+        hdr.version != SAVE_VERSION ||
+        hdr.building_count < 0 || hdr.building_count > MAX_BUILDINGS) {
+        SDL_Log("game_load: %s is not a valid save file", path);
+        SDL_CloseIO(io);
+        return 0;
+    }
+
+    buildings_bytes = sizeof(Building) * (size_t)hdr.building_count;
+    pop_bytes       = sizeof(PopData)  * (size_t)hdr.building_count;
+
+    memset(gs->buildings, 0, sizeof(gs->buildings));
+    memset(gs->pop_data,  0, sizeof(gs->pop_data));
+
+    if (SDL_ReadIO(io, gs->buildings, buildings_bytes)    != buildings_bytes ||
+        SDL_ReadIO(io, gs->pop_data,  pop_bytes)          != pop_bytes ||
+        SDL_ReadIO(io, &gs->stockpile, sizeof(Stockpile)) != sizeof(Stockpile)) {
+        SDL_Log("game_load: %s is truncated or corrupt", path);
+        SDL_CloseIO(io);
+        return 0;
+    }
+    SDL_CloseIO(io);
+
+    map_init(&gs->map, hdr.seed);
+    gs->building_count  = hdr.building_count;
+    gs->camera.offset_x = hdr.cam_offset_x;
+    gs->camera.offset_y = hdr.cam_offset_y;
+    gs->camera.zoom     = hdr.cam_zoom;
+
+    gs->hovered_row       = -1;
+    gs->hovered_col       = -1;
+    gs->selected_building = BUILDING_NONE;
+    gs->placement_valid   = 0;
+    gs->menu_open         = 0;
+
+    game_recompute_storage_capacity(gs);
+
+    SDL_Log("Game loaded from %s (seed=%u, %d buildings)",
             path, hdr.seed, gs->building_count);
     return 1;
 }
@@ -237,7 +298,32 @@ void game_place_building(GameState *gs)
                          &gs->map, gs->selected_building,
                          gs->hovered_row, gs->hovered_col);
 
+    if (idx < 0) return;
+
     /* Phase 5: if a house was just placed, activate its PopData */
-    if (idx >= 0 && gs->selected_building == BUILDING_HOUSE)
+    if (gs->selected_building == BUILDING_HOUSE)
         pop_init(&gs->pop_data[idx]);
+
+    /* Warehouses raise how much of each non-gold resource the
+     * stockpile can hold; recompute after every placement so a
+     * newly built Warehouse takes effect immediately. */
+    if (gs->selected_building == BUILDING_WAREHOUSE)
+        game_recompute_storage_capacity(gs);
+}
+
+/* ---- game_recompute_storage_capacity ---------------------
+ * The stockpile's per-resource cap is BASE_STORAGE_CAP plus
+ * WAREHOUSE_STORAGE_BONUS for every active Warehouse. Gold is
+ * exempt (see resource.h) so this only affects Wood/Fish/Grain. */
+static void game_recompute_storage_capacity(GameState *gs)
+{
+    int i, warehouses = 0;
+
+    for (i = 0; i < gs->building_count; i++)
+        if (gs->buildings[i].active &&
+            gs->buildings[i].type == BUILDING_WAREHOUSE)
+            warehouses++;
+
+    stockpile_set_capacity(&gs->stockpile,
+        BASE_STORAGE_CAP + warehouses * WAREHOUSE_STORAGE_BONUS);
 }

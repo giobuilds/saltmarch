@@ -6,7 +6,7 @@
  *
  * Phase 2 changes vs Phase 1:
  *   - MAP_COLS/ROWS expanded to 64x64
- *   - Tile gains buildable, fertility, movement_cost fields
+ *   - Tile gains buildable and fertility fields
  *   - New Fertility bitmask enum
  *   - map_init() now takes a seed for the noise generator
  * ========================================================= */
@@ -25,13 +25,15 @@
  * A tile can support multiple crop types simultaneously.
  * Stored as a bitmask so we can write e.g.:
  *   t->fertility = FERTILE_GRAIN | FERTILE_HOP;
- * -------------------------------------------------------- */
+ *
+ * FERTILE_HOP is assigned by tile_set_metadata() (map.c) on
+ * high-elevation grass but no building consumes it yet — it's
+ * live world-gen data waiting on a future beer-chain building,
+ * not dead code. */
 typedef enum {
     FERTILE_NONE   = 0,
     FERTILE_GRAIN  = 1 << 0,   /* wheat fields, bakeries  */
     FERTILE_HOP    = 1 << 1,   /* beer production chain   */
-    FERTILE_POTATO = 1 << 2,   /* schnapps chain          */
-    FERTILE_PEPPER = 1 << 3,   /* reserved for new world  */
 } Fertility;
 
 /* ---- Tile types ---------------------------------------- */
@@ -51,7 +53,6 @@ typedef struct {
     /* Gameplay fields */
     int       buildable;      /* 1 if a building may be placed here  */
     Fertility fertility;      /* which crops grow here (bitmask)     */
-    int       movement_cost;  /* reserved for pathfinding (Phase 6+) */
 } Tile;
 
 /* ---- The whole map ------------------------------------- */

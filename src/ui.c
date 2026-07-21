@@ -220,13 +220,14 @@ void ui_draw(SDL_Renderer *renderer,
  * Menu overlay
  * ========================================================= */
  
-static const char *MENU_LABELS[3] = { "New Game", "Save", "Quit" };
- 
+static const char *MENU_LABELS[MENU_BTN_COUNT] =
+    { "New Game", "Load", "Save", "Quit" };
+
 MenuHit ui_menu_hit_test(int screen_w, int screen_h,
                          int mouse_x, int mouse_y)
 {
     int i;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < MENU_BTN_COUNT; i++) {
         SDL_FRect r = menu_btn_rect(screen_w, screen_h, i);
         if ((float)mouse_x >= r.x && (float)mouse_x < r.x + r.w &&
             (float)mouse_y >= r.y && (float)mouse_y < r.y + r.h)
@@ -274,14 +275,15 @@ void ui_menu_draw(SDL_Renderer *renderer,
     }
  
     /* --- Buttons --------------------------------------- */
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < MENU_BTN_COUNT; i++) {
         SDL_FRect r    = menu_btn_rect(screen_w, screen_h, i);
         MenuHit   hov  = ui_menu_hit_test(screen_w, screen_h,
                                           mouse_x, mouse_y);
         int       hovr = (hov == (MenuHit)(i + 1));
- 
-        /* Quit button gets a reddish tint to signal danger */
-        if (i == 2) {
+
+        /* Quit is always the last button; give it a reddish
+         * tint to signal danger. */
+        if (i == MENU_BTN_COUNT - 1) {
             SDL_SetRenderDrawColor(renderer,
                 hovr ? 120 : 80,
                 hovr ? 35  : 22,
@@ -304,9 +306,10 @@ void ui_menu_draw(SDL_Renderer *renderer,
         /* Button label */
         {
             SDL_Color label_col;
-            label_col.r = (i == 2) ? 220 : 190;
-            label_col.g = (i == 2) ?  80 : 165;
-            label_col.b = (i == 2) ?  80 : 100;
+            int is_quit = (i == MENU_BTN_COUNT - 1);
+            label_col.r = is_quit ? 220 : 190;
+            label_col.g = is_quit ?  80 : 165;
+            label_col.b = is_quit ?  80 : 100;
             label_col.a = 255;
             font_draw_text(renderer, FONT_NORMAL, MENU_LABELS[i],
                            (int)(r.x + 12.0f),
