@@ -25,6 +25,11 @@ typedef enum {
 /* Human-readable name for each resource (for debug / future UI). */
 extern const char *RESOURCE_NAMES[RES_COUNT];
 
+/* Gold paid per unit sold at the Marketplace's trade screen
+ * (Phase 4). Fixed for v1 — no supply/demand pricing. RES_GOLD's
+ * slot is unused (you can't sell currency for itself). */
+extern const int SELL_PRICE[RES_COUNT];
+
 /* Per-resource storage cap before any Warehouse is built.
  * See building.h's WAREHOUSE_STORAGE_BONUS for how building one
  * raises this. Gold is exempt (see stockpile_add). */

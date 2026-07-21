@@ -63,6 +63,14 @@ typedef struct {
     int menu_open;  /* 1 when the cog menu overlay is open */
     Stockpile stockpile;
 
+    /* Phase 4: manual trade screen. trade_open mirrors menu_open's
+     * overlay pattern; trade_building_idx is the buildings[] index
+     * of the Marketplace that opened it (needed so a future
+     * per-marketplace mechanic has somewhere to hang off of, though
+     * v1's trade logic only reads the shared Stockpile). */
+    int trade_open;
+    int trade_building_idx;
+
     /* Phase 5: one PopData per building slot.
      * Only slots where buildings[i].type == BUILDING_HOUSE
      * and pop_data[i].active == 1 are meaningful. */
@@ -103,5 +111,17 @@ void game_update(GameState *gs, SDL_Renderer *renderer);  /* CHANGED: needs rend
 /* Called when the player left-clicks on the map.
  * Attempts to place selected_building at the hovered tile. */
 void game_place_building(GameState *gs);
+
+/* Returns the buildings[] index of the active building whose
+ * footprint contains (row, col), or -1 if none. Used to detect a
+ * click on an already-placed building (e.g. opening the Marketplace
+ * trade screen) as opposed to placing a new one. */
+int game_find_building_at(const GameState *gs, int row, int col);
+
+/* Sells up to `qty` units of `res` from the stockpile for Gold at
+ * SELL_PRICE[res] (resource.h). Clamps `qty` to what's in stock;
+ * a no-op if res is RES_GOLD or qty <= 0. Used by the Marketplace
+ * trade screen. */
+void game_sell_resource(GameState *gs, ResourceType res, int qty);
 
 #endif /* GAME_H */
