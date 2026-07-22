@@ -18,7 +18,8 @@ cmake --build build -j$(nproc)
 ./build/saltmarch
 ```
 
-Requires `SDL3` and `SDL3_ttf` (see `BUILD.md`). Builds with
+Requires `SDL3` and `SDL3_ttf` (see `BUILD.md`). The font is bundled,
+so there is no font package to install and no install step. Builds with
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion`; **zero warnings is the
 bar** — treat any new one as a bug, not noise.
 
@@ -65,6 +66,7 @@ saltmarch/
 │   ├── build_confirm_ui.c/h   Cost confirmation (resources or Gold)
 │   ├── demolish_confirm_ui.c/h  "Destroy this building?"
 │   └── tier_upgrade_ui.c/h    Spend-Gold-to-confirm (upgrade, build ship)
+├── assets/fonts/              Bundled Liberation Sans (OFL-1.1)
 ├── CMakeLists.txt
 ├── BUILD.md
 └── UI_PLAN.md                 Planned UI reorganisation (not yet started)

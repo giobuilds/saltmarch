@@ -59,11 +59,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app->g = gs;
     *appstate = app;
 
-    /* Text rendering is optional: fonts_init() failing is logged and the
-     * game still runs, it just draws no labels. See BUILD.md — the font
-     * path is hardcoded in fonts.h. */
+    /* A missing font is not cosmetic: every resource count, price and
+     * menu label is text, so without it the game renders but cannot be
+     * played. We still start (so the map is at least inspectable) but
+     * log at ERROR severity, and the CI smoke test asserts the
+     * "Fonts loaded:" line — otherwise this fails silently and green,
+     * which is exactly how it went unnoticed that the font path only
+     * ever existed on Fedora. */
     if (!fonts_init())
-        SDL_Log("Warning: fonts unavailable, text will not render");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Fonts unavailable — no text will render, and the game "
+                     "is not usable in this state. See BUILD.md.");
 
     SDL_Log("Ready. ESC or the menu's Quit button to exit.");
     return SDL_APP_CONTINUE;

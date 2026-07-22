@@ -1,2 +1,5 @@
-build/
-annoclone_save.dat
+# Build directories (build/, build-werror/, build-release/, ...)
+build*/
+
+# Runtime save file — see SAVE_FILE_PATH in src/game.h
+saltmarch_save.dat

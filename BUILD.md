@@ -3,19 +3,16 @@
 ## 1. Install dependencies
 
 ```bash
-sudo dnf install SDL3-devel SDL3_ttf-devel liberation-sans-fonts
+sudo dnf install SDL3-devel SDL3_ttf-devel
 ```
 
-All three are required:
+Both are `find_package(... REQUIRED)` in `CMakeLists.txt`, so cmake
+fails to configure without either.
 
-- **SDL3** and **SDL3_ttf** — both are `find_package(... REQUIRED)` in
-  `CMakeLists.txt`, so cmake fails to configure without either.
-- **liberation-sans-fonts** — a *runtime* dependency. `fonts.h` hardcodes
-  `/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf`.
-  Without it the game still builds and runs, but logs
-  `Warning: fonts unavailable` and draws no text at all — which makes it
-  effectively unusable, since resource counts, prices and every menu
-  label are text.
+**No font package is needed.** Liberation Sans is bundled in
+`assets/fonts/` and loaded relative to the executable, so the same build
+works on Linux, macOS and Windows. `cmake --build` stages `assets/`
+beside the binary automatically — there is no install step.
 
 If SDL3 or SDL3_ttf are not in the Fedora repos for your version, build
 from source:
@@ -102,9 +99,10 @@ to a Warehouse, or nothing happens.
 - **"SDL3 not found" / "SDL3_ttf not found"** – install `SDL3-devel` and
   `SDL3_ttf-devel`, then re-run cmake. Delete `build/` first if cmake has
   already cached a failed configure.
-- **No text anywhere, `Warning: fonts unavailable` in the log** – install
-  `liberation-sans-fonts`. The path is hardcoded in `src/fonts.h`; edit
-  `FONT_PATH` if your distribution puts it elsewhere.
+- **No text anywhere, `Fonts unavailable` in the log** – the bundled
+  font was not found. It should sit at `assets/fonts/` next to the
+  executable; a plain `cmake --build` puts it there. If you moved the
+  binary, move `assets/` with it. The log names every location searched.
 - **Black screen** – check `SDL_Log` output in the terminal; renderer
   errors are printed there.
 - **Segfault at startup** – run under `gdb ./build/saltmarch` and check
