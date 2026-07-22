@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run redundant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (Fedora, GCC)
+    runs-on: ubuntu-latest
+
+    # Runs in a Fedora container rather than on the Ubuntu runner
+    # directly, because SDL3 is genuinely not packaged for Ubuntu 24.04
+    # (which is what ubuntu-latest currently is) -- it ships SDL2 only.
+    # Building SDL3 and SDL3_ttf from source and caching them is the
+    # alternative, and is what the macOS and Windows jobs will have to
+    # do when they are added. On Linux the container is both simpler
+    # and more honest: it installs exactly what BUILD.md tells a human
+    # to install, so the documented path is what gets exercised.
+    container: fedora:latest
+
+    steps:
+      - name: Install toolchain and dependencies
+        run: dnf install -y gcc cmake make git
+
+      # v5, not v4: v4 runs on Node 20, which GitHub has deprecated and
+      # now force-runs on Node 24 while emitting a warning on every run.
+      - uses: actions/checkout@v5
+
+      - name: Install SDL3 and SDL3_ttf
+        # Exactly the command in BUILD.md. No font package: the font is
+        # bundled in assets/ and loaded relative to the executable.
+        run: dnf install -y SDL3-devel SDL3_ttf-devel
+
+      - name: Configure
+        # SALTMARCH_WERROR makes any warning fatal. It is opt-in so that
+        # local builds are never blocked mid-experiment, and enforced
+        # here so the project's "zero warnings" rule is a rule rather
+        # than a convention that quietly erodes.
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DSALTMARCH_WERROR=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Smoke test
+        # Not just "did it compile" -- launches the real binary headless
+        # and asserts it stays alive, loads its font, generates the
+        # archipelago and logs no errors. See the script's header for
+        # why the font assertion specifically matters.
+        run: ./ci/smoke-test.sh ./build/saltmarch 5
