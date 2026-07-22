@@ -59,11 +59,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app->g = gs;
     *appstate = app;
 
-    /* Phase 5: initialise SDL_ttf font rendering */
+    /* Text rendering is optional: fonts_init() failing is logged and the
+     * game still runs, it just draws no labels. See BUILD.md — the font
+     * path is hardcoded in fonts.h. */
     if (!fonts_init())
         SDL_Log("Warning: fonts unavailable, text will not render");
 
-    SDL_Log("Phase 5 ready. ESC or menu Quit button to exit.");
+    SDL_Log("Ready. ESC or the menu's Quit button to exit.");
     return SDL_APP_CONTINUE;
 }
 
