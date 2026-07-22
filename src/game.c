@@ -172,7 +172,7 @@ typedef struct {
     Stockpile stockpile;
 } IslandRecord;
 
-#define SAVE_MAGIC   0x414E4E4Fu  /* "ANNO" */
+#define SAVE_MAGIC   0x53414C54u  /* "SALT" */
 #define SAVE_VERSION 3u
 
 int game_save(const GameState *gs, const char *path)
@@ -384,7 +384,7 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
 
     /* Zoom toward cursor on mouse wheel scroll. Keeps the tile under
      * the cursor stationary while zooming — the same behaviour as
-     * Google Maps or Anno 1800. */
+     * Google Maps. */
     if (gs->input.scroll_y != 0.0f) {
         float old_zoom = isl->camera.zoom;
         float new_zoom = old_zoom + gs->input.scroll_y * ZOOM_STEP;

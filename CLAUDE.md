@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-An Anno 1800-style isometric city-builder written in C99 with SDL3. Single-executable game: procedural island generation, tile-based building placement, a resource/production chain, and a population/needs simulation. No sprites currently — terrain and buildings render as flat-shaded isometric diamonds (colored per tile/building type).
+An isometric city-builder written in C99 with SDL3. Single-executable game: procedural island generation, tile-based building placement, a resource/production chain, and a population/needs simulation. No sprites currently — terrain and buildings render as flat-shaded isometric diamonds (colored per tile/building type).
 
 ## Build & run
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
-./build/anno_clone
+./build/saltmarch
 ```
 
 Requires `SDL3-devel` and `SDL3_ttf-devel` (Fedora package names; see BUILD.md for building SDL3 from source if not packaged). There is no test suite, linter, or CI config in this repo — verification is manual (build cleanly, run the binary, exercise the feature in-window).

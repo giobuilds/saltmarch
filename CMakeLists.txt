@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(anno_clone C)
+project(saltmarch C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -34,9 +34,9 @@ set(SOURCES
     src/ship.c
 )
 
-add_executable(anno_clone ${SOURCES})
+add_executable(saltmarch ${SOURCES})
 
-target_link_libraries(anno_clone PRIVATE
+target_link_libraries(saltmarch PRIVATE
     SDL3::SDL3
     SDL3_ttf::SDL3_ttf
     m

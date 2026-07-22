@@ -1,4 +1,4 @@
-# Building Anno Clone on Fedora Linux
+# Building Saltmarch on Fedora Linux
 
 ## 1. Install dependencies
 
@@ -37,7 +37,7 @@ sudo cmake --install build
 ## 2. Configure and build
 
 ```bash
-cd anno_clone          # this project directory
+cd saltmarch           # this project directory
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
 ```
@@ -52,7 +52,7 @@ cmake --build build -j$(nproc)
 ## 3. Run
 
 ```bash
-./build/anno_clone
+./build/saltmarch
 ```
 
 ## Controls
@@ -107,7 +107,7 @@ to a Warehouse, or nothing happens.
   `FONT_PATH` if your distribution puts it elsewhere.
 - **Black screen** – check `SDL_Log` output in the terminal; renderer
   errors are printed there.
-- **Segfault at startup** – run under `gdb ./build/anno_clone` and check
+- **Segfault at startup** – run under `gdb ./build/saltmarch` and check
   the backtrace with `bt`.
 - **A building sits idle and produces nothing** – it needs all three of:
   a road path to a Warehouse (disconnected buildings are outlined red), a

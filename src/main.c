@@ -1,4 +1,4 @@
-/*  main.c  --  Anno Clone  (Phase 3 - menu update)
+/*  main.c  --  Saltmarch
  *  by Giovanni Dick  -  2026
  */
 
@@ -28,7 +28,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     (void)argc; (void)argv;
 
-    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING,    "Anno Clone");
+    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING,    "Saltmarch");
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.3.0");
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING,    "game");
 
@@ -37,7 +37,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_CreateWindowAndRenderer("Anno Clone",
+    if (!SDL_CreateWindowAndRenderer("Saltmarch",
                                      SCREEN_W, SCREEN_H,
                                      SDL_WINDOW_FULLSCREEN,   /* CHANGED */
                                      &window, &renderer)) {

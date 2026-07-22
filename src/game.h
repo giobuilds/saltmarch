@@ -173,7 +173,7 @@ int  game_save(const GameState *gs, const char *path);
  * untouched. Used by the "Load" menu button. */
 int  game_load(GameState *gs, const char *path);
 
-#define SAVE_FILE_PATH "annoclone_save.dat"
+#define SAVE_FILE_PATH "saltmarch_save.dat"
 
 /* Called once per frame.  Moves the camera based on held
  * keys and updates the hovered tile from mouse position. */

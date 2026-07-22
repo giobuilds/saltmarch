@@ -1,7 +1,6 @@
-# Anno Clone
+# Saltmarch
 
-An Anno-1800-style isometric city builder written from scratch in C99 with
-SDL3. Procedural archipelago generation, road logistics, production
+An isometric city builder written from scratch in C99 with SDL3. Procedural archipelago generation, road logistics, production
 chains, a walking population that must physically staff its workplaces,
 ship colonisation and automated trade routes.
 
@@ -16,7 +15,7 @@ works the way it does — several record bugs that shaped the design.
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
-./build/anno_clone
+./build/saltmarch
 ```
 
 Requires `SDL3` and `SDL3_ttf` (see `BUILD.md`). Builds with
@@ -44,7 +43,7 @@ and assert real behaviour (see *Verification* below).
 ## Architecture
 
 ```
-anno_clone/
+saltmarch/
 ├── src/
 │   ├── main.c                 SDL3 callbacks, click cascade, render order
 │   ├── game.c/h               GameState: archipelago, overlays, save/load
