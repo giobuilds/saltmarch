@@ -11,10 +11,10 @@
  * scales with resolution without any procedural placement. Home sits
  * left-of-centre; the rest fan out around it. */
 static const struct { float fx, fy; } NODE_POS[MAX_ISLANDS] = {
-    { 0.28f, 0.50f },   /* Home     */
-    { 0.55f, 0.30f },   /* Highland */
-    { 0.72f, 0.62f },   /* Woodland */
-    { 0.44f, 0.76f },   /* Atoll    */
+    { 0.28f, 0.50f },   /* Saltford  */
+    { 0.55f, 0.30f },   /* Brinehold */
+    { 0.72f, 0.62f },   /* Tidefast  */
+    { 0.44f, 0.76f },   /* Marrowbay */
 };
 
 /* Tint per profile, so an island reads as "the wooded one" at a

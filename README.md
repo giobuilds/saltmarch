@@ -261,10 +261,11 @@ The `assets/` tree no longer exists.
   cleared state *before* reading and could half-clobber the world on a
   truncated file, despite its doc comment promising otherwise).
 - **Phase 2 — resource profiles and the archipelago overview.** Four
-  islands (Temperate / Highland / Woodland / Atoll) with a
+  islands — Saltford, Brinehold, Tidefast and Marrowbay, on
+  temperate / highland / woodland / atoll terrain — with a
   validate-and-reseed generator, plus a world-map overlay. Measured: the
-  home island offers **zero** placeable Hop Farm sites, Highland offers
-  hundreds.
+  home island Saltford offers **zero** placeable Hop Farm sites, while
+  Brinehold offers hundreds.
 - **Phase 3 — shipyards, ships and colonisation.** Save format v3. Cargo
   in transit belongs to no stockpile. Acceptance test: a colony produced
   Hops while the home stockpile stayed bit-for-bit unchanged.
@@ -281,7 +282,7 @@ The `assets/` tree no longer exists.
   zooms the world behind it.
 - **`building_can_place()`'s `reason` string is never shown** — every
   caller passes `NULL`.
-- **Atoll generates more farmland than its flavour implies**; nothing
+- **Marrowbay generates more farmland than its atoll flavour implies**; nothing
   depends on it, but it reads oddly.
 - Scarcity currently constrains only Hops and Wood. Fish and Grain are
   available on every island.

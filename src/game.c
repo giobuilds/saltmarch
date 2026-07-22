@@ -57,15 +57,20 @@ void game_set_current_island(GameState *gs, int idx)
      * would dismiss the overlay the moment you used it. */
 }
 
-/* The archipelago's fixed make-up. Island 0 is always the temperate
- * home island the player starts on; the rest each hold something home
- * lacks, which is what turns colonisation from optional into the way
- * you get hops (and therefore Beer) at all. */
+/* The archipelago's fixed make-up. Island 0 is always Saltford, the
+ * temperate home island the player starts on; the rest each hold
+ * something Saltford lacks, which is what turns colonisation from
+ * optional into the way you get hops (and therefore Beer) at all.
+ *
+ * Names are place names; the MapProfile beside each is the TERRAIN it
+ * sits on. The two are deliberately independent — Brinehold is a
+ * settlement that happens to occupy highland, the way a real town name
+ * says nothing about its geology. */
 static const MapProfile ISLAND_PROFILES[MAX_ISLANDS] = {
     PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL
 };
 static const char *ISLAND_NAMES[MAX_ISLANDS] = {
-    "Home", "Highland", "Woodland", "Atoll"
+    "Saltford", "Brinehold", "Tidefast", "Marrowbay"
 };
 
 /* ---- game_reset_world -----------------------------------
