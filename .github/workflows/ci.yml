@@ -62,6 +62,16 @@ jobs:
         # why the font assertion specifically matters.
         run: ./ci/smoke-test.sh ./build/saltmarch 5
 
+      - name: Determinism replay
+        # Record a scripted session to a .smlog, then replay it. --replay
+        # rebuilds the world from (seed + command log) a second time and
+        # asserts it lands on the same hash, so a non-zero exit means the
+        # sim went nondeterministic -- the cross-platform determinism
+        # fuzzer the MMO plan calls for. No display needed (SDL_Init(0)).
+        run: |
+          ./build/saltmarch --record fixture.smlog --seed 12345
+          ./build/saltmarch --replay fixture.smlog
+
   macos:
     name: macOS ${{ matrix.arch }} (Clang)
     runs-on: ${{ matrix.os }}
@@ -93,6 +103,11 @@ jobs:
 
       - name: Smoke test
         run: ./ci/smoke-test.sh ./build/saltmarch 5
+
+      - name: Determinism replay
+        run: |
+          ./build/saltmarch --record fixture.smlog --seed 12345
+          ./build/saltmarch --replay fixture.smlog
 
   windows:
     name: Windows (MSVC)
@@ -146,3 +161,9 @@ jobs:
         # keeps it LF so bash does not choke on CRLF.
         shell: bash
         run: ./ci/smoke-test.sh ./build/Debug/saltmarch.exe 5
+
+      - name: Determinism replay
+        shell: bash
+        run: |
+          ./build/Debug/saltmarch.exe --record fixture.smlog --seed 12345
+          ./build/Debug/saltmarch.exe --replay fixture.smlog

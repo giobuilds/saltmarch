@@ -3,3 +3,7 @@ build*/
 
 # Runtime save file — see SAVE_FILE_PATH in src/game.h
 saltmarch_save.dat
+
+# Recorded command-log / replay files and test scratch (Phase 1d)
+*.smlog
+test_save_replay.tmp

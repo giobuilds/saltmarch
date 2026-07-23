@@ -179,49 +179,47 @@ void game_new(GameState *gs)
     game_reset_world(gs, (uint32_t)SDL_GetTicksNS());
 }
 
-/* ---- Save format ------------------------------------------
- * v2: the archipelago. Header, then one record per island followed
- * by that island's live buildings[] and pop_data[] entries.
+/* ---- game_new_seeded ------------------------------------- */
+void game_new_seeded(GameState *gs, uint32_t seed)
+{
+    game_reset_world(gs, seed);
+}
+
+/* ---- Save format v5: the world as (seed + command log) ----
+ * MMO_PLAN Phase 1d. A save is no longer a snapshot of buildings,
+ * population and stockpiles — it is the world seed, the tick the world
+ * had reached, and the ordered command log. Loading reconstructs the
+ * world by regenerating from the seed and replaying the log, so LOADING
+ * IS THE F9 TEST: a save that loads to the same place it was saved from
+ * is a save whose determinism just got proven end to end.
  *
- * Tile grids are still never written — map_init(seed) regenerates
- * each deterministically. Agents are still never written; they are
- * rebuilt from pop_data via agents_sync() after load.
+ * This makes saves tiny (a few hundred commands, not four 64x64 worlds)
+ * and is the exact shape a server checkpoint or a shared replay file
+ * takes later. The .smlog files the --replay CLI consumes are simply
+ * these save files.
  *
- * profile/settled/name are in the record from the start even though
- * only PROFILE_TEMPERATE and island 0 use them today, so adding
- * per-profile generation later needs no further version bump.
+ * Pre-v5 full-state saves are intentionally NOT loadable: the game is
+ * pre-release, and maintaining a second (now derivable) load path earns
+ * nothing. A pre-v5 file is rejected with a clear message.
  * -------------------------------------------------------- */
 typedef struct {
     uint32_t magic;
     uint32_t version;
-    int32_t  island_count;
+    uint32_t world_seed;
     int32_t  current_island;
-    int32_t  ship_count;      /* v3: fleet follows the islands */
+    uint64_t sim_tick_no;
+    int32_t  cmd_count;
 } SaveHeader;
 
-typedef struct {
-    uint32_t  seed;
-    int32_t   profile;
-    int32_t   settled;
-    char      name[ISLAND_NAME_LEN];
-    int32_t   building_count;
-    float     cam_offset_x;
-    float     cam_offset_y;
-    float     cam_zoom;
-    Stockpile stockpile;
-} IslandRecord;
-
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
-/* v4 (Phase 1b): Building.timer and PopData.timer are integer sim ticks,
- * not float seconds. Same byte width, different meaning, so the version
- * bump is what stops a v3 save loading its float timers as garbage. */
-#define SAVE_VERSION 4u
+#define SAVE_VERSION 5u           /* v5: seed + command log (Phase 1d) */
 
 int game_save(const GameState *gs, const char *path)
 {
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     SaveHeader    hdr;
-    int           i, ok = 1;
+    size_t        log_bytes = sizeof(Command) * (size_t)gs->cmd_count;
+    int           ok;
 
     if (!io) {
         SDL_Log("game_save: could not open %s: %s", path, SDL_GetError());
@@ -230,38 +228,14 @@ int game_save(const GameState *gs, const char *path)
 
     hdr.magic          = SAVE_MAGIC;
     hdr.version        = SAVE_VERSION;
-    hdr.island_count   = MAX_ISLANDS;
+    hdr.world_seed     = gs->world_seed;
     hdr.current_island = gs->current_island;
-    hdr.ship_count     = gs->ship_count;
+    hdr.sim_tick_no    = gs->sim_tick_no;
+    hdr.cmd_count      = gs->cmd_count;
 
-    ok = (SDL_WriteIO(io, &hdr, sizeof(hdr)) == sizeof(hdr));
-
-    for (i = 0; ok && i < MAX_ISLANDS; i++) {
-        const Island *isl = &gs->islands[i];
-        IslandRecord  rec;
-        size_t        b_bytes = sizeof(Building) * (size_t)isl->building_count;
-        size_t        p_bytes = sizeof(PopData)  * (size_t)isl->building_count;
-
-        memset(&rec, 0, sizeof(rec));
-        rec.seed           = isl->map.seed;
-        rec.profile        = (int32_t)isl->profile;
-        rec.settled        = isl->settled;
-        rec.building_count = isl->building_count;
-        rec.cam_offset_x   = isl->camera.offset_x;
-        rec.cam_offset_y   = isl->camera.offset_y;
-        rec.cam_zoom       = isl->camera.zoom;
-        rec.stockpile      = isl->stockpile;
-        SDL_strlcpy(rec.name, isl->name, ISLAND_NAME_LEN);
-
-        ok = SDL_WriteIO(io, &rec, sizeof(rec)) == sizeof(rec)
-          && (b_bytes == 0 || SDL_WriteIO(io, isl->buildings, b_bytes) == b_bytes)
-          && (p_bytes == 0 || SDL_WriteIO(io, isl->pop_data,  p_bytes) == p_bytes);
-    }
-
-    if (ok && gs->ship_count > 0) {
-        size_t sbytes = sizeof(Ship) * (size_t)gs->ship_count;
-        ok = SDL_WriteIO(io, gs->ships, sbytes) == sbytes;
-    }
+    ok = SDL_WriteIO(io, &hdr, sizeof(hdr)) == sizeof(hdr)
+      && (log_bytes == 0 ||
+          SDL_WriteIO(io, gs->cmd_log, log_bytes) == log_bytes);
 
     if (!ok) {
         SDL_Log("game_save: write to %s failed: %s", path, SDL_GetError());
@@ -270,28 +244,27 @@ int game_save(const GameState *gs, const char *path)
     }
 
     SDL_CloseIO(io);
-    SDL_Log("Game saved to %s (%d islands, %d ships)",
-            path, MAX_ISLANDS, gs->ship_count);
+    SDL_Log("Game saved to %s (seed %u, tick %llu, %d commands)",
+            path, gs->world_seed,
+            (unsigned long long)gs->sim_tick_no, gs->cmd_count);
     return 1;
 }
 
 /* ---- game_load --------------------------------------------
- * Inverse of game_save(). Genuinely atomic, unlike the version this
- * replaces: that one memset gs->buildings/pop_data BEFORE reading and
- * could return 0 part-way through a truncated file, leaving the world
- * half-clobbered despite its doc comment promising otherwise. With N
- * islands that would leave islands 0..k restored and the rest garbage
- * with nonsense `settled` flags. So: slurp the whole file, validate
- * every declared count against the real byte length, and only then
- * commit anything into gs. */
+ * Reconstruct the world from a v5 save: regenerate from the seed, load
+ * the command log, and replay it up to the saved tick. On success the
+ * world equals what F9 would rebuild, so replay_valid stays 1 (unlike
+ * the old full-state load) — the self-check works immediately after a
+ * load. Validates the file fully before touching gs, so a truncated or
+ * wrong-version file leaves the current world untouched. */
 int game_load(GameState *gs, const char *path)
 {
     SDL_IOStream *io = SDL_IOFromFile(path, "rb");
     Sint64        size_s;
-    size_t        size, off;
+    size_t        size, need;
     unsigned char *buf;
     SaveHeader    hdr;
-    int           i;
+    const Command *cmds;
 
     if (!io) {
         SDL_Log("game_load: could not open %s: %s", path, SDL_GetError());
@@ -309,7 +282,7 @@ int game_load(GameState *gs, const char *path)
     buf = (unsigned char *)malloc(size);
     if (!buf) { SDL_CloseIO(io); return 0; }
 
-    if (SDL_ReadIO(io, buf, size) != size) {
+    if ((size_t)SDL_ReadIO(io, buf, size) != size) {
         SDL_Log("game_load: %s could not be read in full", path);
         SDL_CloseIO(io);
         free(buf);
@@ -318,100 +291,47 @@ int game_load(GameState *gs, const char *path)
     SDL_CloseIO(io);
 
     memcpy(&hdr, buf, sizeof(hdr));
-    if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION ||
-        hdr.island_count <= 0 || hdr.island_count > MAX_ISLANDS ||
-        hdr.current_island < 0 || hdr.current_island >= hdr.island_count ||
-        hdr.ship_count < 0 || hdr.ship_count > MAX_SHIPS) {
-        SDL_Log("game_load: %s is not a valid v%u save file", path, SAVE_VERSION);
+    if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION) {
+        SDL_Log("game_load: %s is not a v%u (seed+log) save file",
+                path, SAVE_VERSION);
+        free(buf);
+        return 0;
+    }
+    if (hdr.cmd_count < 0 ||
+        hdr.current_island < 0 || hdr.current_island >= MAX_ISLANDS) {
+        SDL_Log("game_load: %s has an invalid header", path);
+        free(buf);
+        return 0;
+    }
+    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count;
+    if (need > size) {
+        SDL_Log("game_load: %s is truncated", path);
         free(buf);
         return 0;
     }
 
-    /* Validation pass: walk the whole file without touching gs. */
-    off = sizeof(hdr);
-    for (i = 0; i < hdr.island_count; i++) {
-        IslandRecord rec;
-        size_t       need;
+    /* Rebuild tick 0 from the seed (this sets replay_valid = 1), install
+     * the logged commands, then replay them up to the saved tick. */
+    game_reset_world(gs, hdr.world_seed);
 
-        if (off + sizeof(rec) > size) { free(buf); goto truncated; }
-        memcpy(&rec, buf + off, sizeof(rec));
-        off += sizeof(rec);
-
-        if (rec.building_count < 0 || rec.building_count > MAX_BUILDINGS) {
-            SDL_Log("game_load: %s declares a bad building count", path);
-            free(buf);
-            return 0;
-        }
-        need = (sizeof(Building) + sizeof(PopData)) * (size_t)rec.building_count;
-        if (off + need > size) { free(buf); goto truncated; }
-        off += need;
+    cmds = (const Command *)(buf + sizeof(hdr));
+    if (!command_log_set(gs, cmds, hdr.cmd_count)) {
+        SDL_Log("game_load: out of memory installing %d commands",
+                hdr.cmd_count);
+        free(buf);
+        return 0;
     }
-    if (off + sizeof(Ship) * (size_t)hdr.ship_count > size) {
-        free(buf); goto truncated;
-    }
-
-    /* Commit pass: everything validated, so nothing below can fail. */
-    off = sizeof(hdr);
-    for (i = 0; i < hdr.island_count; i++) {
-        IslandRecord rec;
-        Island      *isl = &gs->islands[i];
-        size_t       b_bytes, p_bytes;
-
-        memcpy(&rec, buf + off, sizeof(rec));
-        off += sizeof(rec);
-
-        b_bytes = sizeof(Building) * (size_t)rec.building_count;
-        p_bytes = sizeof(PopData)  * (size_t)rec.building_count;
-
-        island_reset(isl, rec.seed, (MapProfile)rec.profile,
-                     rec.name, rec.settled);
-
-        if (b_bytes) memcpy(isl->buildings, buf + off, b_bytes);
-        off += b_bytes;
-        if (p_bytes) memcpy(isl->pop_data, buf + off, p_bytes);
-        off += p_bytes;
-
-        isl->building_count  = rec.building_count;
-        isl->stockpile       = rec.stockpile;
-        isl->camera.offset_x = rec.cam_offset_x;
-        isl->camera.offset_y = rec.cam_offset_y;
-        isl->camera.zoom     = rec.cam_zoom;
-
-        /* Agents aren't persisted (see agent.h) — rebuild them from
-         * the just-restored pop_data. island_reset() already zeroed
-         * the array and its count. */
-        agents_sync(isl->agents, &isl->agent_count, isl->buildings,
-                    isl->pop_data, isl->building_count);
-    }
-    memset(gs->ships, 0, sizeof(gs->ships));
-    gs->ship_count = hdr.ship_count;
-    if (hdr.ship_count > 0)
-        memcpy(gs->ships, buf + off, sizeof(Ship) * (size_t)hdr.ship_count);
-    gs->world_selected_ship = -1;
-
-    /* A v4 save restores full state, not a seed+log, so the world here
-     * is NOT the replay of any command log: discard the funnel and mark
-     * the F9 self-check unavailable until Phase 1d makes loading itself
-     * a replay. New commands from here still log and apply normally. */
-    gs->cmd_count            = 0;
-    gs->cmd_applied          = 0;
-    gs->sim_tick_no          = 0;
-    gs->sim_acc_ns           = 0;
-    gs->replay_valid         = 0;
-    gs->replay_state         = 0;
-    gs->replay_show_until_ns = 0;
-
     free(buf);
+
+    while (gs->sim_tick_no < hdr.sim_tick_no)
+        sim_run_one_tick(gs);
 
     game_set_current_island(gs, hdr.current_island);
 
-    SDL_Log("Game loaded from %s (%d islands, %d ships)",
-            path, hdr.island_count, hdr.ship_count);
+    SDL_Log("Game loaded from %s (seed %u, replayed to tick %llu, %d commands)",
+            path, hdr.world_seed,
+            (unsigned long long)gs->sim_tick_no, gs->cmd_count);
     return 1;
-
-truncated:
-    SDL_Log("game_load: %s is truncated", path);
-    return 0;
 }
 
 /* ---- game_update ---------------------------------------

@@ -19,6 +19,7 @@
 #include "game.h"
 #include <SDL3/SDL.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const char *const KIND_NAMES[CMD_COUNT] = {
     "PLACE_BUILDING", "PLACE_ROAD", "DEMOLISH", "SELL_RESOURCE",
@@ -65,6 +66,26 @@ int command_submit(GameState *gs, const Command *c)
     stamped.player_id = 0;
 
     return cmd_log_push(gs, &stamped);
+}
+
+int command_log_set(GameState *gs, const Command *cmds, int n)
+{
+    if (n < 0) return 0;
+
+    if (n > gs->cmd_cap) {
+        int      ncap = gs->cmd_cap ? gs->cmd_cap : 64;
+        Command *p;
+        while (ncap < n) ncap *= 2;
+        p = (Command *)realloc(gs->cmd_log, (size_t)ncap * sizeof(Command));
+        if (!p) return 0;
+        gs->cmd_log = p;
+        gs->cmd_cap = ncap;
+    }
+
+    if (n > 0) memcpy(gs->cmd_log, cmds, (size_t)n * sizeof(Command));
+    gs->cmd_count   = n;
+    gs->cmd_applied = 0;
+    return 1;
 }
 
 void command_log_free(GameState *gs)

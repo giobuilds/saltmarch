@@ -219,6 +219,13 @@ uint64_t sim_hash(const GameState *gs);
  * no work and reports state 3 = n/a. */
 int game_verify_determinism(GameState *gs);
 
+/* Replace the command log with a copy of `n` commands from `cmds`,
+ * growing the allocation as needed, and reset cmd_applied to 0 so the
+ * whole log is pending re-application. Used by game_load()/replay to
+ * install a log read from disk. Returns 1 on success, 0 on OOM (the log
+ * is left unchanged on failure). */
+int  command_log_set(GameState *gs, const Command *cmds, int n);
+
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
 
@@ -247,6 +254,11 @@ void game_free(GameState *gs);
  * population and stockpile all cleared. Input/timing state is left
  * untouched. Used by the "New Game" menu button. */
 void game_new(GameState *gs);
+
+/* Like game_new(), but with an explicit world seed rather than a
+ * time-based one — a deterministic new game. Used by tests and the
+ * --record CLI so a session can be reproduced exactly. */
+void game_new_seeded(GameState *gs, uint32_t seed);
 
 /* Serialize gs (map seed, buildings, population, stockpile, camera)
  * to `path`. Returns 1 on success, 0 on failure (see SDL_GetError()).
