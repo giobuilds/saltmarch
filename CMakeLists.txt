@@ -63,6 +63,7 @@ set(SOURCES
     src/faction.c
     src/feed.c
     src/net.c
+    src/escrow_ui.c
 )
 
 add_executable(saltmarch ${SOURCES})

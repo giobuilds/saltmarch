@@ -46,6 +46,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->tier_upgrade_idx      = -1;
     gs->ship_build_open       = 0;
     gs->ship_build_idx        = -1;
+    gs->escrow_open           = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
     gs->placement_valid       = 0;

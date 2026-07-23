@@ -146,6 +146,11 @@ typedef struct {
     /* Market debug overlay toggle (F10) — cosmetic, not sim state. */
     int  faction_debug;
 
+    /* Harbor escrow panel (Phase 5): open for the CURRENT island's
+     * harbor. Owner-gated at open time; current-island-relative like
+     * every other overlay, so island switches close it. */
+    int  escrow_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed

@@ -18,6 +18,7 @@
 #include "fonts.h"    /* Phase 5 */
 #include "feed.h"     /* MMO Phase 4: shared voyage feed */
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
+#include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
  * They are client chrome: ghosts never enter sim_hash, the net session
@@ -445,6 +446,33 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
+        /* Phase 5: harbor escrow panel — same modal priority band as
+         * the confirm popups; every action emits a Command. */
+        } else if (gs->escrow_open) {
+            ResourceType eres;
+            EscrowHit    ehit = escrow_ui_hit_test(SCREEN_W, SCREEN_H,
+                                                   gs->input.logical_x,
+                                                   gs->input.logical_y,
+                                                   &eres);
+            switch (ehit) {
+            case ESCROW_HIT_TAKE:
+                game_escrow_take(gs, gs->current_island, eres,
+                                 isl->escrow[eres]);
+                break;
+            case ESCROW_HIT_PUT:
+                game_escrow_put(gs, gs->current_island, eres, 10);
+                break;
+            case ESCROW_HIT_DOCKING:
+                game_set_docking(gs, gs->current_island,
+                                 !isl->docking_allowed);
+                break;
+            case ESCROW_HIT_CLOSE:
+            case ESCROW_HIT_NONE:
+            default:
+                gs->escrow_open = 0;
+                break;
+            }
+
         /* Phase 4: if the trade screen is open, only its buttons
          * respond (mirrors the menu_open branch below). */
         } else if (gs->trade_open) {
@@ -562,6 +590,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                             gs->ship_build_open = 1;
                             gs->ship_build_idx  = found;
                             break;
+                        case BUILDING_HARBOR:
+                            /* The escrow panel is the OWNER's desk;
+                             * a visitor viewing the island gets no
+                             * controls (their side of the airlock is
+                             * their ship's transfer buttons). */
+                            if (isl->owner == gs->local_player_id)
+                                gs->escrow_open = 1;
+                            break;
                         default:
                             break;   /* not an interactive building */
                         }
@@ -592,6 +628,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->input.right_click) {
         if (gs->world_open)
             gs->world_open = 0;
+        else if (gs->escrow_open)
+            gs->escrow_open = 0;
         else if (gs->ship_build_open)
             gs->ship_build_open = 0;
         else if (gs->tier_upgrade_open)
@@ -657,6 +695,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->trade_open)
         trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &isl->stockpile, &gs->faction,
                      gs->input.logical_x, gs->input.logical_y);
+
+    /* Phase 5: harbor escrow panel on top when open */
+    if (gs->escrow_open)
+        escrow_ui_draw(app->r, SCREEN_W, SCREEN_H, isl,
+                       gs->input.logical_x, gs->input.logical_y);
 
     /* Fix pass: draw the build-confirmation popup on top when open */
     if (gs->build_confirm_open)
