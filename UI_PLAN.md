@@ -1,320 +1,426 @@
-# UI/UX Reorganisation Plan
+# UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
 > Status: **planned, not started.** Written for a future session to pick up
 > cold. Nothing in here has been implemented.
+>
+> Supersedes the v1 plan (in git history), which was written before
+> MMO_PLAN.md existed. The capacity measurements, the two verified bugs, and
+> the no-layout-library decision carry over unchanged; the phase structure
+> and several core decisions are re-cut around the MMO architecture.
 
-## Why
+## Why the redesign
 
-The roadmap is ~19 production chains implying **25+ goods and 30-40
-buildings**. The current UI is 1585 lines across six hand-rolled files and
-will not survive that.
+v1 solved capacity cliffs for a single-player UI that reads live `GameState`
+and calls mutators directly. MMO_PLAN.md changes three ground truths:
 
-Measured against the real constants (not estimated — computed from
-`ui.h`, `trade_ui.h` and `render.c`):
+1. **Every mutation becomes a `Command` through `sim_apply()`.** UI buttons
+   stop being callers and become command *emitters*. Click-to-effect gains
+   real latency: a tick boundary now (100ms), an N-tick lockstep delay in
+   co-op later. A UI that pretends actions are instantaneous will read as
+   laggy and will hide rejected commands as eaten clicks.
+2. **The sim becomes SDL-free, tick-driven and deterministic.** UI code that
+   reads sim state mid-tick, mutates anything, or steps the RNG is a desync
+   source — MMO_PLAN's risk register item #1 is "a mutation path escapes the
+   funnel", and the UI is where those paths live.
+3. **Fixed price tables die** (elastic faction market, Phase 3), and
+   surfaces arrive that v1 never imagined: command rejection feedback, ghost
+   ships from an untrusted feed, harbor-escrow offers, desync/staleness
+   readouts.
 
-| surface | capacity | used today | headroom |
-|---|---|---|---|
-| **Trade screen** (`TRADE_H = 110 + 102*N`) | **10 goods** | **6** | **4 goods** |
-| Dock bar (right-anchored buttons start at x=1684) | 22 buildings | 11 | 11 |
-| Resource panel (22px rows) | ~43 goods | 7 | 36 |
+What survives from v1 intact: the capacity math (trade screen is the
+nearest cliff at 10 goods; dock bar at 22; resource panel at ~43), both
+pre-existing bugs (overlay-blind mouse wheel; `building_can_place()`'s dead
+`reason` string), pagination-not-scrolling, category tabs on the dock bar,
+rule-driven vitals, and the phase-per-PR verification convention.
 
-**The nearest cliff is the trade screen, not the dock bar.** It is 1028px
-at 9 goods and 1130px at 10 — 50px off-screen. The failure is *silent*:
-buttons render outside the window and simply stop being clickable. Four
-more resources triggers it.
+### The no-layout-library decision is *strengthened*
 
-### Two pre-existing bugs found while measuring
-
-Both verified, both worth folding into this work:
-
-1. **Mouse wheel is not overlay-aware.** `game_update()` (`game.c`) applies
-   `input.scroll_y` to camera zoom with no check on any overlay flag, so
-   scrolling over an open modal silently zooms the world behind it.
-2. **`building_can_place()`'s `reason` string is dead code.** Every call
-   site passes `NULL, 0`. The "why can't I build here" explanation has
-   existed since the original build and has never been shown to a player.
-
----
-
-## Decisions
-
-### No layout library — build a ~250-line in-house `ui_kit`
-
-Nuklear and Clay were both evaluated. **Neither earns its place.**
-
-The decisive argument is specific to this repo: **Clay's hover/hit model
-requires a retained layout pass**, which would break the headless
-`.o`-linking test programs that are the *only* automated verification
-available in this environment (there is no `xdotool`, so anything visual
-needs a human). Those tests work precisely because `*_hit_test()` is a
-pure function of `(screen_w, screen_h, x, y)`.
-
-Supporting arguments:
-- The canvas is a fixed 1920x1080 (`SDL_LOGICAL_PRESENTATION_STRETCH`), so
-  the single biggest reason to want a layout engine — responsive reflow —
-  does not apply.
-- The shapes actually needed are a horizontal strip of equal cells, a
-  vertical stack of equal rows, and a centred panel. Three functions.
-- Third-party headers under `-Wall -Wextra -Wpedantic -Wshadow
-  -Wconversion` means institutionalising a warning exemption, against
-  CLAUDE.md's "treat new warnings as bugs, not noise to suppress".
-- Ethos: this repo deliberately *deleted* `src/sprite.c`. A third-party
-  layout engine to position ~40 rectangles is what that deletion was about.
-
-**Nuklear** is additionally all-or-nothing: it owns the frame, input
-capture, font atlas and command buffer (~20k lines), and its official SDL
-backends target SDL2, not SDL3. Adopting it for one panel still costs the
-entire pipeline plus a re-skin to match the existing palette.
-
-**Keep Clay as a documented fallback.** If variable resolution or
-wrapped-text panels (a tooltip/encyclopedia system) ever arrive, revisit:
-its `CLAY_RENDER_COMMAND_TYPE_RECTANGLE/TEXT/BORDER` maps almost 1:1 onto
-`SDL_RenderFillRect` / `font_draw_text` / `SDL_RenderRect`, so later
-adoption stays cheap.
-
-### Category tabs on the existing dock bar (not a full-screen build menu)
-
-### Rule-driven vitals strip + inventory overlay (not "show everything")
+v1 rejected Clay/Nuklear because retained layout would break the headless
+pure-function hit tests. The MMO plan raises the stakes on exactly that
+property: a UI built from pure functions over plain structs is one that
+*cannot* mutate sim state, can be driven by the `.smlog` replay harness in
+CI, and can render a past tick or a remote server's state without knowing
+the difference. Purity stops being a testing convenience and becomes part
+of the determinism doctrine. Clay remains a documented fallback under the
+same conditions as v1.
 
 ---
 
-## The three-layer framing
+## The five load-bearing decisions
 
-The clutter fixes are **design** decisions; layout plumbing only helps
-*implement* them. Two amendments to that:
+### 1. UI is a pure function of a snapshot
 
-1. **The plumbing has a correctness role.** `TRADE_H` is a compile-time
-   macro nobody compares against `SCREEN_H` — that is exactly why the
-   overflow is silent. Moving to *measured-then-clamped* geometry converts
-   "renders off-screen" into "paginates", eliminating a defect class
-   regardless of any UX choice.
-2. **A data-model layer gates the other two.** Category tabs are not
-   implementable until `BuildingDef` carries a category; rule-driven
-   vitals are not until resources do.
+New SDL-free header `src/ui_snapshot.h`: a `UiSnapshot` of plain structs,
+copied once per frame **after** the tick-accumulator loop — per settled
+island: name/hue, stockpile amounts + capacities, faction bid/ask, resident
+totals, compacted building list `{type,row,col,active,ticks_remaining}`;
+plus ships and `sim_tick_no`. A curated snapshot is <10 KB; even a blind
+copy is ~100 KB/frame — negligible.
 
-Order of work: **data model → UX design → plumbing.**
+Every overlay's `*_build(UiList *, const UiSnapshot *, const UiState *)`
+takes the snapshot, **never** `GameState *`. This makes "UI stepped the RNG
+/ mutated the stockpile" a compile error instead of a grep target, and
+makes the snapshot's origin — live sim, replayed past tick, remote server —
+invisible to UI code.
 
-> **Use designated initialisers for every new parallel table.** The
-> `RES_COL` bug — 4 positional entries for 7 resources, silently
-> mis-colouring Hops and blanking Malt/Beer/Gold — is exactly this failure
-> mode. `RESOURCE_NAMES` / `SELL_PRICE` / `BUY_PRICE` already do it right.
+`UiState` (a new struct: `hud_category`, trade page, `inventory_open`, open
+overlay) is client state: excluded from `sim_hash`, never serialised into
+saves, and itself a pure fold over the input stream (see decision 5's CI
+harness).
 
----
+**Hard rule, enforced by the harness build:** no layout decision may
+consult TTF text measurement. Rows are fixed-height, columns fixed-width.
+The headless harness links the UI `.o` files *without* SDL_ttf; if a layout
+needs a font metric, the harness fails to link and the rule has been
+broken.
 
-## `ui_kit.c` / `.h` — scope
+### 2. The UI speaks Command, in stable identities
 
-Not a framework. The smallest thing that makes geometry authored once.
+Every player action ends in `command_submit()`. The confirm-popup flows,
+the road-drag loop, trade buttons — none of them call sim mutators (this is
+MMO_PLAN Phase 1a's split, stated from the UI side).
 
-- **Layout cursor**: `UiLayout { SDL_FRect bounds; float y; float pad; }`,
-  with `ui_row(&lay, h)` returning a rect and advancing, and
-  `ui_split_h(row, n, i, gap)` for button groups. Panel height becomes a
-  **measured output** rather than a `#define`d input.
-- **Widget list**: `UiItem { SDL_FRect r; int id; const char *label; ... }`
-  in a fixed, stack-allocated `UiList` — no malloc.
-- `ui_kit_draw(renderer, list, mx, my)` / `ui_kit_hit(list, x, y)`, plus
-  the one canonical `ui_point_in()` replacing the four verbatim copies in
-  `trade_ui.c`, `build_confirm_ui.c`, `demolish_confirm_ui.c` and
-  `tier_upgrade_ui.c`.
+**Ban positional indices at the UI-to-command boundary.** UiList ids encode
+*identity* — the resource enum value, the building type, the entity id —
+never "row 3 on page 2" or "slot 5 under this tab". Pagination plus a
+growing `RES_COUNT` means positional encoding silently changes meaning
+across versions, and a click recorded positionally becomes a wrong-resource
+`CMD_SELL` when an old `.smlog` replays against a newer def table — the
+nastiest desync class, invisible until replay. Additionally: **list
+ordering is frozen while an overlay is open**; rule-driven reflow (alert
+sorting, pagination) may re-sort only between open/close, so the row cannot
+move between the frame that drew it and the click.
 
-**Each overlay gains one `*_build(UiList*, ...)`**; then `*_draw()` =
-build + `ui_kit_draw`, and `*_hit_test()` = build + `ui_kit_hit`.
+### 3. Rejection is a first-class rendered signal
 
-Critical property: **the list is built per call, never retained**, so
-`*_hit_test(screen_w, screen_h, x, y)` stays a pure function and every
-existing headless test keeps working unchanged. That is the whole reason
-for building this instead of adopting Clay.
+MMO_PLAN requires `sim_apply()` to return 0 and do nothing on invalid
+commands (replays must fail identically) — which means every rejection is
+currently a silently eaten click, and players who get no feedback re-click
+and flood the log.
 
-Encode ids as e.g. `res * 8 + button`, decoded on the way out — the same
-trick `ui.c` already uses with `return (MenuHit)(i + 1)`.
+- `RejectReason` enum in `src/command.h` (`<stdint.h>`-only, sim-legal):
+  `REJ_OK`, `REJ_OUT_OF_BOUNDS`, `REJ_NOT_BUILDABLE`, `REJ_CANT_AFFORD`,
+  `REJ_NOT_OWNER`, `REJ_COUNTERPARTY_NO_GOLD`, `REJ_NO_STOCK`,
+  `REJ_PRICE_MOVED`, `REJ_ESCROW_REFUSED`, … The reason→string table lives
+  UI-side.
+- `sim_apply()` returns the enum. Its validation front-half is split out as
+  **`sim_validate(gs, cmd)` — a shared pure function** called both
+  per-frame by the UI (hover prediction, greyed-button tooltips, red ghost
+  tint on a failing tile) and authoritatively inside `sim_apply`. One
+  validator serving prediction and authority is structurally immune to the
+  drift that a separate client-side pre-check would guarantee. It must stay
+  side-effect-free — it may not step the RNG — or hover itself becomes a
+  desync source.
+- **Correlation across the tick boundary:** `command_submit()` stamps each
+  locally emitted command with a client-local sequence number; the UI keeps
+  `{seq, anchor}` (a screen rect or a tile) in a small pending ring — UiState,
+  never hashed. When the tick applies commands, `(seq, reason)` results are
+  drained by the UI and rendered as a ~0.5s decaying flash + reason text
+  *at the emitting widget or tile* (localized, not a global toast), via a
+  tiny cosmetic `fx_reject.c` (per-frame, `delta_time`, outside the sim).
+  Replayed and remote commands have no pending entry, so recurring
+  rejections during F9/load/resync are recomputed deterministically but
+  silently — feedback is inherently local-only with no special-casing.
+- This unifies the dead `building_can_place()` reason string, faction
+  out-of-gold refusals, escrow rejections, ownership rejections
+  (`REJ_NOT_OWNER` is how co-op privacy teaches its boundaries), and stale
+  price rejections into **one vocabulary shared by the UI and the sim** —
+  the message shown is definitionally the reason the sim refused.
 
-Float-throughout internally; `int` only at the `font_draw_text` boundary,
-to keep `-Wconversion` quiet.
+### 4. One exchange surface, parameterised by counterparty
+
+MMO_PLAN's thesis — "a bot is indistinguishable from a slow player" —
+carried into the UI: the trade screen (fixed prices today, elastic faction
+at MMO Phase 3) and the harbor-escrow accept/reject panel (MMO Phase 5)
+are **the same ui_kit overlay** parameterised by an `ExchangeView` value
+struct:
+
+```c
+typedef struct {
+    const char  *title;
+    ExchangeKind kind;                 /* EXCHANGE_QUOTES | EXCHANGE_OFFER */
+    int32_t      their_gold;           /* INT32_MAX = infinite counterparty */
+    int32_t      their_stock[RES_COUNT];
+    int32_t      bid[RES_COUNT], ask[RES_COUNT];
+    uint8_t      refuse[RES_COUNT];    /* RejectReason per row, or REJ_OK */
+} ExchangeView;
+```
+
+A pure value snapshot — never pointers into live sim state — so
+`trade_ui_hit_test(screen_w, screen_h, view, x, y)` stays headless-pure.
+Builders arrive one per era, against the same struct:
+- `exchange_view_fixed()` — Phase 1, copies `SELL_PRICE`/`BUY_PRICE`,
+  infinite sentinels. **Behaviour-identical to today**, so the rewrite
+  lands before `faction.c` exists.
+- `exchange_view_faction()` — MMO Phase 3, real gold/inventory/quotes,
+  `refuse[]` set when the faction is out of gold or stock.
+- `exchange_view_offer()` — MMO Phase 5, rows are escrowed cargo lines.
+
+Row layout (one 34px row per good, from v1) gains fixed columns from day
+one: swatch | name | yours | theirs | bid | ask | action cluster. Phase 1
+renders "theirs" empty via the sentinel, so **no geometry changes at Phase
+3**. The only per-kind divergence allowed: the action cluster
+(`[-10][-1][+1][+10][Max]` for QUOTES, none for OFFER) and the footer
+(Close vs Accept/Reject) — two designated `kind` switch points. If
+`ExchangeKind` branches start appearing per-column, the unification has
+failed and should be split (see risks).
+
+**Limit-order semantics:** every emitted trade hit carries the price the
+row displayed; the UI wrapper stamps it into the Command's spare payload
+ints as a worst-acceptable limit. `sim_apply` recomputes the live quote and
+rejects with `REJ_PRICE_MOVED` if it moved adversely — the stale-screen
+race across the tick boundary becomes a logged, replayable, *visible*
+non-event instead of a mis-fill or an exploit.
+
+### 5. Pending vs confirmed is the visual grammar
+
+Commands apply at tick boundaries now and N ticks late under lockstep.
+Rather than hiding that: everything submitted-but-unapplied renders in a
+distinct queued style — translucent ghost building, greyed in-flight trade
+row — that hardens when `sim_apply` lands. A stuck co-op session shows a
+growing pile of unconfirmed ghosts instead of silently eaten clicks, so
+"is it lag or is it broken" is answerable from the screen. Cancelling a
+not-yet-applied command is free undo, which shrinks what the confirm
+popups need to do (Phase 6).
 
 ---
 
 ## Phases
 
-Each is independently shippable and verifiable.
+v1 phases re-cut, plus **M-phases pinned to MMO_PLAN phases** (an M-phase
+lands with, or immediately after, its MMO counterpart — never before).
+Each remains independently shippable and verifiable.
 
-### Phase 0 — `ui_kit`
-Layout cursor, widget list, canonical `ui_point_in`. No caller changes;
-add to `CMakeLists.txt`.
-**Verify:** headless program asserting `ui_row()` stacking and
-`ui_split_h()` gap arithmetic. Not user-visible.
+### Phase 0 — `ui_kit` + `UiSnapshot`
+As v1 (layout cursor, `UiList`, canonical `ui_point_in`, measured-then-
+clamped geometry) with the signature decided up front:
+`*_build(UiList *, const UiSnapshot *, const UiState *)`. Define
+`UiSnapshot` in SDL-free `src/ui_snapshot.h`.
+**Verify:** headless `ui_row()`/`ui_split_h()` asserts; harness links UI
+`.o` files without SDL/SDL_ttf.
 
-### Phase 1 — Trade screen rewrite (retires the cliff)
-Today: a 92px block per good with two 3-button rows — 150 buttons and
-2300px at 25 goods.
+### Phase 0.5 — RejectReason conversion (shippable today, pre-funnel)
+Convert `building_can_place()`'s dead `(char *reason, size_t)` channel to a
+returned `RejectReason`; delete `set_reason()`; add the enum→string table
+in ui.c; wire it into the HUD hover tooltip. Kills v1's bug #2, fixes the
+enum's home before `sim_apply` exists to adopt it.
+**Verify:** headless assert per placement-failure case returns the right
+enum; tooltip shows it in-window.
 
-- **One 34px row per good**: swatch | name | stock | prices | `[-10][-1]`
-  | `[+1][+10]` | `[All/Max]`. Five buttons instead of six, 34px instead
-  of 92 — a 2.7x density win before pagination.
-- Widen `TRADE_W` 480 → ~760; there is room on a 1920 canvas.
-- **Height computed then clamped** to `SCREEN_H - 2*MARGIN`; overflow
-  paginates with `[Prev] Page 1/2 [Next]` beside Close. ~26 rows fit, so
-  pagination will not engage until ~26 goods — but the clamp means it
-  *cannot* silently fail at 27.
-- **Pagination, not scrolling** — scrolling would require fixing the
-  mouse-wheel bug first (Phase 4).
-- Group rows by resource category; put the island name in the title.
-
-**Verify headless:** for N in {6, 10, 25, 40}, assert every emitted rect
-lies fully inside 1920x1080, and that `trade_ui_hit_test` at each button's
-centre round-trips to the right `(resource, qty)`.
+### Phase 1 — Exchange screen rewrite (retires the cliff)
+The v1 trade rewrite (34px rows, `TRADE_W` → ~760, height computed then
+clamped, pagination `[Prev] 1/2 [Next]`, category grouping) built as the
+generic exchange surface: `ExchangeView` + `exchange_view_fixed()`;
+trade_ui.c stops including the price tables directly. Ids are resource
+identities, never row/page indices.
+**Verify headless:** for N in {6,10,25,40}: rect containment in 1920x1080,
+hit round-trip to `(resource, qty)`, **and** the fixed builder reproduces
+today's prices with `refuse[]` all REJ_OK. Plus the miniature harness: a
+synthetic snapshot driven through build+hit_test with a scripted click
+sequence, asserting the emitted command sequence.
 
 ### Phase 2 — Data model
-`BuildingCategory` on `BuildingDef` (CAT_INFRA / RESIDENTIAL / RAW /
-PRODUCTION / PUBLIC) and a resource-category table in `resource.c`. Both
-with designated initialisers. No UI change.
-**Verify:** headless assert that *every* enum value has a non-default
-category — catching "added a row, forgot the table" directly.
+Unchanged from v1: `BuildingCategory` on `BuildingDef`, resource-category
+table, designated initialisers everywhere (the `RES_COL` lesson).
+**Verify:** headless assert every enum value has a non-default category.
 
 ### Phase 3 — HUD category tabs
-Depends on Phase 2. Raise `HUD_HEIGHT` 80 → ~112, add a 28px tab strip,
-add `gs->hud_category`. `hud_slot_count()` / `hud_slot_type()` gain a
-category argument — the existing "filter to a contiguous list" logic
-generalises directly. Capacity becomes 22 x 5 = 110.
+Unchanged from v1 (HUD_HEIGHT 80 → ~112, 28px tab strip, sticky tab,
+greyed-not-hidden unavailable buildings) with one upgrade: the hover
+tooltip's "why can't I build this" now calls `sim_validate()` once the
+funnel exists (Phase 0.5's enum until then).
+**Verify:** as v1 (synthetic 40-entry def table, per-tab slot fit and
+hit-test).
 
-- Sticky selected tab. Slot click = select/deselect toggle, unchanged.
-- Right-click still only deselects the building; it must **not** also
-  reset the tab, or right-click starts meaning two different things.
-- **Unavailable buildings render greyed but present, never hidden**, and
-  **wire `building_can_place()`'s dead `reason` string into the existing
-  hover tooltip.** Hiding what the player is working toward is the
-  commonest city-builder UX mistake, and the explanation already exists
-  unused.
-
-**Verify headless:** with a synthetic 40-entry def table, assert every
-tab's slots fit left of `world_rect()`'s x, and `ui_hit_test` returns the
-right type per tab. Check nothing else assumes `HUD_HEIGHT == 80`.
-
-### Phase 4 — Resource vitals + inventory overlay
-Depends on Phase 2. Replaces `render_resources`.
-
-**Vitals strip** (always-on, top-left), contents derived **by rule, not by
-value** — "show only non-zero" is wrong, because it reflows every time a
-chain stalls and hides the very resource you are waiting for:
-- Gold, always, first.
-- Every good consumed by a population tier present on this island, derived
-  from `population.c`'s needs table so it self-maintains as tiers are added.
-- Anything in an **alert state**: zero-while-consumed, or at capacity and
-  therefore wasting production.
-- Capped at 8 rows; overflow shows `+k more`, which is the click target.
-
-**Inventory overlay**: full `RES_COUNT`, 2-3 columns by category, reusing
-the existing segmented amount/capacity bar. Add `gs->inventory_open`.
-
-Also in this phase, since it touches the same machinery:
-- **Fix the mouse-wheel bug** — gate camera zoom on no-overlay-open.
-- **Add `OverlayKind game_topmost_overlay(const GameState *gs)`** in
-  `game.c`. Overlay priority is currently encoded in *three* separate
-  places in `SDL_AppIterate` — the click chain, the right-click chain and
-  the render order — and adding `inventory_open` to two of the three fails
-  silently. State the priority once.
+### Phase 4 — Vitals, inventory, overlay arbiter
+As v1 (rule-driven vitals strip capped at 8 rows with `+k more`; inventory
+overlay; `game_topmost_overlay()`; **fix the mouse-wheel bug**), plus: the
+vitals rule engine reserves **sim-health rows** rendered by the same
+alert machinery — last F9 result, tick-accumulator backlog, and (from M4)
+feed age. The player is the monitoring system; a stall is visible seconds
+after it starts.
+**Verify:** as v1, plus a synthetic snapshot with a stalled accumulator
+asserts the health row appears.
 
 ### Phase 5 — Island context
-Per-island stockpiles are the highest-consequence hidden state in the
-game, and nothing outside the archipelago map says which island you are
-on. The failure mode is trading away the wrong island's goods.
+Unchanged from v1 (`‹ Island Name ›` header, chevrons over settled islands,
+per-island hue, island name in overlay titles).
 
-- `‹ Island Name ›` header top-centre — the gap between the vitals strip
-  at x=16 and the pop counter at `screen_w-110` is already free. Chevrons
-  cycle **settled** islands via `game_set_current_island()`. Re-fetch
-  `isl` after any switch — the constraint `main.c` already documents.
-- Island name in the trade and inventory titles.
-- Per-island hue stored in `Island`, tinting the header and overlay titles.
+### Phase 6 — Confirm consolidation → command preview
+v1's collapse of demolish/tier-upgrade/ship-build/build-confirm into one
+`confirm_ui.c`, with a new job: the popup renders the *literal Command it
+will submit* (kind, decoded payload, apply tick). The confirm layer and
+the wire format become the same rendering code — screenshots become
+forensics, and the UI cannot drift from what `sim_apply` receives.
+**Verify:** hit-test results identical before/after; rendered preview
+matches the submitted Command byte-for-byte in the headless harness.
 
-### Phase 6 — Consolidation
-`demolish_confirm_ui.c` and `tier_upgrade_ui.c` are already near-identical
-(same width, same height formula, same two-button footer), and `main.c`
-*already* reuses `tier_upgrade_ui_draw()` for the ship-build popup with a
-comment noting a second near-identical file would be duplication — three
-popups sharing two implementations. Collapse into one `confirm_ui.c`
-(~239 lines → ~130). Port `build_confirm_ui.c` (it has a genuine extra
-concept: the payment-mode radio).
-**Verify:** assert hit-test results are identical before and after.
+### Phase M1 — with MMO Phase 1 (command funnel)
+- UI wrappers emit Commands via `command_submit()`; pending ring
+  (`{seq, anchor}`), rejection drain, `fx_reject.c` flash-at-anchor.
+- Pending-vs-confirmed queued rendering (decision 5) for placements and
+  trades.
+- **INTENT lines in the `.smlog`**: mouse x/y, clicks/wheel/keys, and the
+  exact `sim_tick_no` the frame's snapshot was taken at, interleaved with
+  CMD lines.
+- **CI UI replay**: the replay harness re-simulates to each intent's tick,
+  takes the snapshot, drives the real `*_build` + `*_hit_test` with the
+  evolving UiState, and asserts (a) the emitted Command is byte-identical
+  to the next CMD line, (b) every rect lies inside 1920x1080. This is a
+  full click-through UI regression suite on three OSes, in an environment
+  with no xdotool. v1 built the purity; MMO_PLAN built the log; together
+  they are this.
+- Golden UiList diffs: serialise each frame's `UiList` (id, rect, label)
+  to canonical text, diff against committed goldens — pixel-free visual
+  regression for the "Prev button moved off-page at 27 goods" class.
+
+### Phase M3 — with MMO Phase 3 (elastic market)
+- `exchange_view_faction()`; refusal rendering (greyed cells + reason,
+  reusing the existing unaffordable-buy greying path); "faction out of
+  gold" message lands here.
+- Limit-order price stamping + `REJ_PRICE_MOVED` flash.
+- **Price-history sparkline column** (~48px per row): the faction keeps a
+  small per-resource ring buffer of mid-price sampled every K ticks — sim
+  state, in `sim_hash`, so replay covers it; `ExchangeView` carries a
+  copy. Sell-Max leaves a visible scar that mean-reversion visibly heals —
+  this is the mitigation for MMO_PLAN's "rigged slot machine" risk, and
+  the Phase 3 debug/tuning overlay renders from the same buffer (the
+  tuning UI and the player UI cannot disagree about the quote).
+
+### Phase M4 — with MMO Phase 4 (shared feed)
+The feed is out-of-process, wall-clock, and **untrusted input**:
+- Every feed-derived element carries an age stamp and decay visual; a feed
+  heartbeat chip (island header area) goes stale-coloured when feedsync
+  stops appending. Staleness is a rendered property, or the ocean quietly
+  becomes a museum of hours-old ships.
+- Hygiene at the UI boundary: clamp owner-name strings before fonts.c
+  sees them; cap the ghost draw list with the `+k more` overflow pattern;
+  count malformed VoyageRecords into a visible debug counter instead of
+  dropping silently.
+- Ghosts render in a distinct muted style (v1's "non-self" is now a real
+  category); tooltip info only.
+- **TTF_Text migration in fonts.c happens here at the latest** — see
+  risks; untrusted text makes worst-case text throughput
+  adversary-controlled, which converts v1's "act reactively" into a
+  scheduled prerequisite.
+
+### Phase M5 — with MMO Phase 5 (lockstep co-op)
+- `exchange_view_offer()` + Accept/Reject footer for harbor escrow; the
+  docking-permission toggle on the island panel.
+- Escrow offers are nonce-stamped; the accept Command references the
+  nonce; the confirm layer gains a generic "offer changed — re-review"
+  invalidation that greys Accept when the referenced state mutates under
+  an open popup (also fixes single-player's version: gold draining under
+  an open build-confirm).
+- Pending-order grammar at N-tick delay becomes the primary feedback;
+  `REJ_NOT_OWNER` renders as an owner-coloured border pulse at the
+  clicked tile — privacy-by-validation taught through the rejection
+  channel, visible only to the prober.
 
 ---
 
 ## Explicitly out of scope
 
-- **`world_ui.c` stays as-is.** Island nodes are projected map geometry via
-  `render_draw_diamond`, not a layout; forcing it through a row/column kit
-  gains nothing. Only lift its `point_in` to the shared one.
-- **Font caching — deferred until measured.** See risks.
+- `world_ui.c` stays projected map geometry (v1 decision stands); it gains
+  ghost rendering at M4 but not the row/column kit.
+- **Time-travel scrubber UI** — the snapshot signature makes "open the
+  trade screen at tick 40,000, hit-testing live, submission disabled" a
+  one-flag change later; MMO_PLAN lists the scrubber as a later phase, so
+  only the *signature* is in scope here, not the feature.
+- Speculative what-if previews (fork the state, run N ticks, show the
+  diff) — cheap to imagine over a deterministic sim, real scope. Revisit
+  after M3 ships; `sim_validate()` hover feedback covers the load-bearing
+  case (why is this action invalid) without it.
+- Client-side adaptive/learned layouts of any kind: moving click targets
+  breaks muscle memory *and* invalidates recorded intent replays.
 
 ## Throwaway work to avoid
 
-- A standalone "clamp `TRADE_H`" hotfix — Phase 1 deletes it. Only do it if
-  something must ship before Phase 0+1 can land.
-- Porting any confirm popup to `ui_kit` before Phase 1 validates the kit's
-  shape. Let the hardest consumer define the API.
-- Hand-tuning trade row pixel constants before pagination exists.
+- v1's list stands (no standalone TRADE_H hotfix; no porting confirm
+  popups before Phase 1 validates the kit; no pixel-tuning before
+  pagination).
+- Don't build `exchange_view_faction()` speculation into Phase 1 beyond
+  the struct — the struct is the contract; the builder waits for the
+  faction.
+- Don't record INTENT lines before the snapshot seam exists (M1) — intents
+  without the observed `sim_tick_no` are unreplayable and worse than
+  nothing.
 
 ---
 
 ## Risks
 
-### Text throughput — the headline risk
-`font_draw_text` (`fonts.c`) does `TTF_RenderText_Blended` →
-`SDL_CreateTextureFromSurface` → `SDL_RenderTexture` → `SDL_DestroyTexture`
-**every call, every frame**; its own docstring flags this. Today's HUD is
-~30-40 strings/frame. A 25-row trade table (~100), a 25-row inventory
-(~50), plus tabs and headers reaches 150-250 strings/frame — 9-15k
-rasterise+upload cycles per second. It will present as "the trade screen is
-laggy", not as a font problem.
+### Dual-validation drift (new headline correctness risk)
+Lockstep stretches click-to-verdict to hundreds of ms, and the tempting
+fix — a separate client-side pre-check for instant feedback — will diverge
+from `sim_apply`'s authoritative check. The design only holds if
+prediction and authority are **literally the same function**
+(`sim_validate()`), and that function stays side-effect-free (no RNG
+stepping), or hover-validation itself becomes the desync. Enforce: the
+harness's intent fuzzer sprays random clicks over replayed snapshots and
+asserts every emitted Command either applies cleanly or is rejected with
+no state change.
 
-Mitigation, in ascending cost:
-1. Free: the heavy screens are modal and mutually exclusive. Keeping
-   always-on text small is already the Phase 4 design.
-2. **`TTF_Text` objects** — `TTF_CreateRendererTextEngine` +
-   `TTF_CreateText` / `TTF_DrawRendererText`. SDL_ttf caches the rendered
-   result and re-rasterises only when the string changes (a few times a
-   second for stockpile numbers, not 60). **Verified available: SDL3_ttf
-   3.2.2 is installed and exposes this API.** Confined to `fonts.c` behind
-   the existing `font_draw_text` signature.
-3. A full glyph atlas — don't; option 2 gets most of it for far less code.
+### The frame/tick seam in intent recording
+Intents happen at frame times; commands apply at tick boundaries. Each
+INTENT line must record the exact `sim_tick_no` its frame's snapshot was
+taken at, or CI rebuilds a different snapshot than the player saw and
+hit-tests against stale prices/pagination. This is a format decision made
+once at M1; get it right there.
 
-**Act reactively:** add a frame-time readout before Phase 1 to establish a
-baseline, then act only if Phase 1 or 4 measurably regresses it.
+### ExchangeView if-ladder collapse
+The unification pays off only while the shared part (rows, pagination,
+clamp, purity, refusal rendering) dominates the divergent part (action
+cluster, footer). If `kind` branches leak into per-column code, split the
+widget — two small files beat one conditional swamp. Checkpoint at M5
+before building the offer view.
 
-### Save-file fragility
-`game_save` writes `Stockpile` and `Building` byte-for-byte, and every
-added resource changes `sizeof(Stockpile)` via `RES_COUNT` (and
-`BuildingDef.cost[RES_COUNT]`). `SAVE_VERSION` exists, so the mechanism is
-there — but going 7 → 25 goods will invalidate saves repeatedly. Decide
-bump-and-reject vs. writing a resource count into the header and
-migrating. Outside this UI work, but on the same roadmap and it will bite
-during it.
+### Text throughput — inherited from v1, now adversary-adjacent
+v1's analysis stands (`font_draw_text` rasterises every call; heavy
+screens are modal; `TTF_Text` objects in SDL3_ttf 3.2.2 are the fix,
+confined behind the `font_draw_text` signature). Changed: feed-supplied
+strings make worst case externally controlled, so the migration is
+**scheduled at M4** rather than "act reactively" — with the frame-time
+readout baseline still landing before Phase 1.
+
+### Save fragility — dissolved, replaced
+v1 worried about `sizeof(Stockpile)` invalidating byte-for-byte saves.
+MMO_PLAN's save v2 (seeds + command log) dissolves that — and replaces it
+with **log-vs-def-table versioning**: an old `.smlog` replayed against a
+reordered enum or changed def table. Stable-identity command payloads
+(decision 2) are the UI's contribution; the sim side (a def-table
+version/hash in the log header) belongs to MMO Phase 1d.
 
 ### Visual verification
-No `xdotool` in this environment. Headless tests can assert geometry and
-hit-testing only; colour, overlap, legibility and "does the tab strip look
-right" need manual confirmation. Phase boundaries are drawn so each is one
-coherent thing to eyeball.
+v1's constraint stands (no xdotool; colour/legibility need human eyes) but
+shrinks: golden UiList diffs + CI intent replay move geometry, ordering,
+pagination and command-emission regressions into CI, leaving only actual
+appearance for manual eyeballing.
 
 ---
 
-## Verification convention (unchanged)
+## Verification convention
 
-Clean rebuild under `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (zero
-warnings is the bar), run the binary, and write throwaway headless C
-programs linking the built `.o` files that assert **real behaviour**. For
-UI that means computing a widget's real on-screen rect from the public
-layout constants and asserting the hit test returns the right enum — the
-technique already used for the trade screen and the world map.
+As v1 (clean rebuild under `-Wall -Wextra -Wpedantic -Wshadow
+-Wconversion`, run the binary, headless C programs linking built `.o`
+files asserting real behaviour), plus two new instruments once M1 lands:
+recorded-session CI replay driving the real UI functions, and golden
+UiList diffs. The UI `.o` files must stay linkable without SDL/SDL_ttf —
+that link failure *is* the purity test.
 
 ## Critical files
 
 | file | phase | what |
 |---|---|---|
 | `src/ui_kit.c` / `.h` | 0 | new — layout cursor, widget list, `ui_point_in` |
-| `src/trade_ui.c` / `.h` | 1 | `TRADE_H`, the cliff |
-| `src/building.h` | 2 | `BuildingCategory` on `BuildingDef` |
-| `src/resource.c` / `.h` | 2 | resource category table |
-| `src/ui.c` / `.h` | 3 | `HUD_HEIGHT`, `hud_slot_count`/`hud_slot_type` |
-| `src/render.c` | 4 | `render_resources`, `render_population` |
-| `src/game.c` / `.h` | 4 | mouse-wheel guard, `game_topmost_overlay()` |
-| `src/main.c` | 3-5 | click cascade, right-click chain, render order |
-| `src/confirm_ui.c` / `.h` | 6 | new — replaces demolish_confirm + tier_upgrade |
-| `src/fonts.c` | 7? | `TTF_Text` migration, only if measured |
+| `src/ui_snapshot.h` | 0 | new — SDL-free snapshot + UiState structs |
+| `src/building.c` / `.h` | 0.5 | `RejectReason` return replaces dead string |
+| `src/trade_ui.c` / `.h` | 1 | ExchangeView rewrite, the cliff |
+| `src/building.h`, `src/resource.c` | 2 | categories |
+| `src/ui.c` / `.h` | 3 | tabs, `sim_validate` tooltips |
+| `src/render.c`, `src/game.c` | 4 | vitals+health rows, wheel guard, `game_topmost_overlay()` |
+| `src/confirm_ui.c` / `.h` | 6 | new — unified command-preview confirm |
+| `src/command.c` / `.h` | M1 | (MMO-owned) `RejectReason` home, seq stamping |
+| `src/fx_reject.c` / `.h` | M1 | new — cosmetic rejection flashes |
+| `src/exchange_view.c` / `.h` | M3/M5 | faction + offer builders |
+| `src/fonts.c` | M4 | `TTF_Text` migration (scheduled) |
