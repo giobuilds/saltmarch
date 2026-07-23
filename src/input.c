@@ -32,6 +32,10 @@ SDL_AppResult input_handle_event(InputState *input,
             input->pan_down  = down; break;
         case SDL_SCANCODE_ESCAPE:
             return SDL_APP_SUCCESS;
+        case SDL_SCANCODE_F9:
+            /* Edge on press only, so holding the key fires one check. */
+            if (down) input->replay_check = 1;
+            break;
         default: break;
         }
         break;
@@ -76,7 +80,8 @@ SDL_AppResult input_handle_event(InputState *input,
 
 void input_clear_clicks(InputState *input)
 {
-    input->left_click  = 0;
-    input->right_click = 0;
-    input->scroll_y    = 0.0f;   /* CHANGED: reset scroll each frame */
+    input->left_click   = 0;
+    input->right_click  = 0;
+    input->replay_check = 0;
+    input->scroll_y     = 0.0f;   /* CHANGED: reset scroll each frame */
 }

@@ -86,6 +86,8 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 {
     int i;
 
+    gs->world_seed = seed;
+
     for (i = 0; i < MAX_ISLANDS; i++) {
         /* Derive each island's seed from the world seed so one number
          * still reproduces the entire archipelago. */
@@ -123,6 +125,12 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     gs->sim_tick_no = 0;
     gs->sim_acc_ns  = 0;
 
+    /* This world IS the replay of (world_seed, empty log) from tick 0,
+     * so the F9 self-check is meaningful from here on. */
+    gs->replay_valid         = 1;
+    gs->replay_state         = 0;
+    gs->replay_show_until_ns = 0;
+
     /* No starter houses: the player places their own first House and
      * grows population from there. */
     game_set_current_island(gs, 0);
@@ -147,6 +155,10 @@ GameState *game_init(void)
     gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
     gs->sim_acc_ns  = 0;
+
+    gs->replay_live_hash   = 0;
+    gs->replay_replay_hash = 0;
+    gs->replay_tick        = 0;
 
     game_reset_world(gs, (uint32_t)SDL_GetTicksNS());
 
@@ -377,6 +389,18 @@ int game_load(GameState *gs, const char *path)
         memcpy(gs->ships, buf + off, sizeof(Ship) * (size_t)hdr.ship_count);
     gs->world_selected_ship = -1;
 
+    /* A v4 save restores full state, not a seed+log, so the world here
+     * is NOT the replay of any command log: discard the funnel and mark
+     * the F9 self-check unavailable until Phase 1d makes loading itself
+     * a replay. New commands from here still log and apply normally. */
+    gs->cmd_count            = 0;
+    gs->cmd_applied          = 0;
+    gs->sim_tick_no          = 0;
+    gs->sim_acc_ns           = 0;
+    gs->replay_valid         = 0;
+    gs->replay_state         = 0;
+    gs->replay_show_until_ns = 0;
+
     free(buf);
 
     game_set_current_island(gs, hdr.current_island);
@@ -530,6 +554,128 @@ void sim_run_one_tick(GameState *gs)
 
     /* 4. Advance the world clock. */
     gs->sim_tick_no++;
+}
+
+/* ---- sim_hash -------------------------------------------
+ * FNV-1a over exactly the state that defines the world (see game.h).
+ * Byte-hashing struct fields individually — rather than memcmp-ing
+ * whole structs — is what lets it skip padding and the derived/cosmetic
+ * fields that would otherwise make the hash flap without a real desync. */
+static void fnv_bytes(uint64_t *h, const void *data, size_t n)
+{
+    const unsigned char *p = (const unsigned char *)data;
+    size_t i;
+    for (i = 0; i < n; i++) {
+        *h ^= p[i];
+        *h *= 1099511628211ULL;   /* FNV-1a 64-bit prime */
+    }
+}
+
+uint64_t sim_hash(const GameState *gs)
+{
+    uint64_t h = 14695981039346656037ULL;   /* FNV-1a 64-bit offset */
+    int      i, b, s;
+
+    fnv_bytes(&h, &gs->sim_tick_no, sizeof(gs->sim_tick_no));
+
+    for (i = 0; i < MAX_ISLANDS; i++) {
+        const Island *isl = &gs->islands[i];
+
+        fnv_bytes(&h, &isl->settled, sizeof(isl->settled));
+        fnv_bytes(&h, isl->stockpile.amount, sizeof(isl->stockpile.amount));
+        fnv_bytes(&h, &isl->stockpile.capacity, sizeof(isl->stockpile.capacity));
+
+        for (b = 0; b < isl->building_count; b++) {
+            const Building *bd = &isl->buildings[b];
+            const PopData  *p  = &isl->pop_data[b];
+            if (!bd->active) continue;
+
+            fnv_bytes(&h, &bd->type, sizeof(bd->type));
+            fnv_bytes(&h, &bd->row, sizeof(bd->row));
+            fnv_bytes(&h, &bd->col, sizeof(bd->col));
+            fnv_bytes(&h, &bd->timer, sizeof(bd->timer));
+            fnv_bytes(&h, &bd->connected, sizeof(bd->connected));
+            fnv_bytes(&h, &bd->worker_count, sizeof(bd->worker_count));
+
+            if (p->active) {
+                fnv_bytes(&h, &p->residents, sizeof(p->residents));
+                fnv_bytes(&h, &p->happy, sizeof(p->happy));
+                fnv_bytes(&h, &p->timer, sizeof(p->timer));
+            }
+        }
+    }
+
+    for (s = 0; s < gs->ship_count; s++) {
+        const Ship *sh = &gs->ships[s];
+        fnv_bytes(&h, &sh->active, sizeof(sh->active));
+        if (!sh->active) continue;
+        fnv_bytes(&h, &sh->at_island, sizeof(sh->at_island));
+        fnv_bytes(&h, &sh->from_island, sizeof(sh->from_island));
+        fnv_bytes(&h, &sh->to_island, sizeof(sh->to_island));
+        fnv_bytes(&h, &sh->progress, sizeof(sh->progress));
+        fnv_bytes(&h, sh->cargo, sizeof(sh->cargo));
+        fnv_bytes(&h, &sh->route_active, sizeof(sh->route_active));
+        fnv_bytes(&h, &sh->route_a, sizeof(sh->route_a));
+        fnv_bytes(&h, &sh->route_b, sizeof(sh->route_b));
+        fnv_bytes(&h, &sh->route_res_ab, sizeof(sh->route_res_ab));
+        fnv_bytes(&h, &sh->route_res_ba, sizeof(sh->route_res_ba));
+        fnv_bytes(&h, &sh->route_qty, sizeof(sh->route_qty));
+        fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
+    }
+
+    return h;
+}
+
+/* ---- game_verify_determinism ----------------------------
+ * The F9 self-check. Rebuilds the tick-0 world from world_seed in a
+ * scratch GameState, borrows the live command log (read-only during
+ * replay — sim_apply never appends), replays it tick-for-tick up to the
+ * live tick, and compares hashes. See game.h. */
+int game_verify_determinism(GameState *gs)
+{
+    GameState *scratch;
+    uint64_t   h_live, h_replay;
+
+    gs->replay_tick = gs->sim_tick_no;
+
+    if (!gs->replay_valid) {
+        gs->replay_state = 3;   /* n/a — world not derived from the log */
+        return 0;
+    }
+
+    scratch = (GameState *)malloc(sizeof(GameState));
+    if (!scratch) {
+        SDL_Log("game_verify_determinism: out of memory for scratch world");
+        gs->replay_state = 2;
+        return 0;
+    }
+
+    /* Rebuild tick 0 from the same seed, then point the scratch world at
+     * the live log and replay it. cmd_cap = 0 marks the log as borrowed
+     * so nothing here grows or frees it; it is detached before free. */
+    memset(scratch, 0, sizeof(*scratch));
+    game_reset_world(scratch, gs->world_seed);
+    scratch->cmd_log     = gs->cmd_log;
+    scratch->cmd_count   = gs->cmd_count;
+    scratch->cmd_cap     = 0;
+    scratch->cmd_applied = 0;
+    scratch->sim_tick_no = 0;
+    scratch->sim_acc_ns  = 0;
+
+    while (scratch->sim_tick_no < gs->sim_tick_no)
+        sim_run_one_tick(scratch);
+
+    h_live   = sim_hash(gs);
+    h_replay = sim_hash(scratch);
+
+    scratch->cmd_log = NULL;   /* detach the borrowed log before free */
+    free(scratch);
+
+    gs->replay_live_hash   = h_live;
+    gs->replay_replay_hash = h_replay;
+    gs->replay_state       = (h_live == h_replay) ? 1 : 2;
+
+    return h_live == h_replay;
 }
 
 /* ---- commit_placement -----------------------------------

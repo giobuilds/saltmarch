@@ -154,6 +154,26 @@ typedef struct {
     uint64_t  sim_tick_no;  /* completed ticks; the tick about to run    */
     uint64_t  sim_acc_ns;   /* real-time accumulator feeding the tick
                              * loop — the ONLY wall clock the sim sees    */
+
+    /* World seed the whole archipelago is generated from. Stored so the
+     * F9 self-check (and, in Phase 1d, load) can rebuild the tick-0
+     * world and replay the log against it. */
+    uint32_t  world_seed;
+
+    /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
+     * replay_valid is 1 while the live world is exactly what replaying
+     * (world_seed, cmd_log) from tick 0 produces — true after
+     * game_new/init and normal play, false after a full-state load
+     * (whose world is not derived from the log; Phase 1d makes load a
+     * replay and restores this). The rest hold the last check's result
+     * for the HUD; replay_show_until_ns is a wall-clock draw deadline,
+     * the one cosmetic field here. */
+    int       replay_valid;
+    int       replay_state;   /* 0 none, 1 pass, 2 desync, 3 n/a         */
+    uint64_t  replay_live_hash;
+    uint64_t  replay_replay_hash;
+    uint64_t  replay_tick;
+    uint64_t  replay_show_until_ns;
 } GameState;
 
 /* ---- The command funnel ---------------------------------
@@ -179,6 +199,25 @@ int  sim_apply(GameState *gs, const Command *c);
  * accumulator calls it zero or more times per frame, and replay/F9
  * (Phase 1c) call it to reconstruct the world from the log. */
 void sim_run_one_tick(GameState *gs);
+
+/* Canonical hash of the simulated world state (MMO_PLAN Phase 1c):
+ * FNV-1a over sim_tick_no, then per island its stockpile and every
+ * active building/PopData, then every active ship. Deliberately
+ * EXCLUDES derived and cosmetic state — agents, cameras, UI flags — so
+ * two runs that agree on the world proper hash equal even if their
+ * agent floats or view differ. Two GameStates with the same hash have
+ * the same world. */
+uint64_t sim_hash(const GameState *gs);
+
+/* The F9 self-check: rebuild a scratch world from world_seed, replay
+ * the command log through sim_run_one_tick up to gs->sim_tick_no, and
+ * compare sim_hash() against the live world. Returns 1 if they match
+ * (deterministic), 0 if they diverge (a real bug — a mutation escaped
+ * the funnel, a float leaked into the sim, or RNG was stepped outside
+ * it). Fills gs->replay_* with the result for the HUD. When
+ * replay_valid is 0 (e.g. just after loading a full-state save) it does
+ * no work and reports state 3 = n/a. */
+int game_verify_determinism(GameState *gs);
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);

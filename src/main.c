@@ -95,6 +95,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * Load) can change which island is current. */
     isl = game_cur_island(gs);
 
+    /* F9: determinism self-check (Phase 1c). Rebuilds the world from the
+     * seed + command log and compares; the result is shown briefly by
+     * the render block below. */
+    if (gs->input.replay_check) {
+        game_verify_determinism(gs);
+        gs->replay_show_until_ns = SDL_GetTicksNS() + 5000000000ULL;
+    }
+
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
@@ -501,6 +509,35 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       gs->input.logical_x, gs->input.logical_y);
+
+    /* F9 determinism result, shown top-centre for a few seconds. */
+    if (gs->replay_state != 0 &&
+        SDL_GetTicksNS() < gs->replay_show_until_ns) {
+        char      msg[160];
+        SDL_Color col;
+        switch (gs->replay_state) {
+        case 1:
+            SDL_snprintf(msg, sizeof(msg),
+                "REPLAY OK  tick %llu  hash %016llx",
+                (unsigned long long)gs->replay_tick,
+                (unsigned long long)gs->replay_live_hash);
+            col = (SDL_Color){ 90, 200, 90, 255 };
+            break;
+        case 2:
+            SDL_snprintf(msg, sizeof(msg),
+                "REPLAY DESYNC @ tick %llu  live %016llx  replay %016llx",
+                (unsigned long long)gs->replay_tick,
+                (unsigned long long)gs->replay_live_hash,
+                (unsigned long long)gs->replay_replay_hash);
+            col = (SDL_Color){ 230, 70, 70, 255 };
+            break;
+        default:
+            SDL_snprintf(msg, sizeof(msg), "REPLAY N/A (loaded save)");
+            col = (SDL_Color){ 170, 170, 170, 255 };
+            break;
+        }
+        font_draw_text(app->r, FONT_NORMAL, msg, SCREEN_W / 2 - 300, 8, col);
+    }
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;
