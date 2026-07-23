@@ -27,6 +27,7 @@
 #include <SDL3/SDL.h>
 #include "island.h"
 #include "ship.h"
+#include "feed.h"   /* Phase 4: ghost voyages from the shared feed */
 
 #define WORLD_NODE_ZOOM   2.2f   /* island diamond size vs a map tile */
 #define WORLD_TITLE_Y      40
@@ -48,10 +49,15 @@ typedef enum {
 } WorldHit;
 
 /* Draw the overview. `islands` is the whole archipelago and
- * `current` the one being viewed (highlighted). */
+ * `current` the one being viewed (highlighted). `ghosts` are other
+ * players' voyages from the shared feed, drawn muted and lerped by
+ * wall time (`unix_ms`) — non-interactive: hovering one shows an info
+ * tooltip, clicking does nothing (they never enter the hit-test). */
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Island islands[], int island_count, int current,
                    const Ship ships[], int ship_count, int selected_ship,
+                   const GhostVoyage ghosts[], int ghost_count,
+                   uint64_t unix_ms,
                    int mouse_x, int mouse_y);
 
 /* Hit-test a click. On WORLD_HIT_ISLAND, *out_island is the index. */

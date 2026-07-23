@@ -16,8 +16,20 @@
 #include "world_ui.h"        /* archipelago overview */
 #include "ship.h"
 #include "fonts.h"    /* Phase 5 */
+#include "feed.h"     /* MMO Phase 4: shared voyage feed */
 
-typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
+/* Feed lives here, beside the window — NOT in GameState. It is client
+ * chrome: ghosts never enter sim_hash, and the CLI record/replay path
+ * never constructs one (see feed.h's cosmetic-boundary note). */
+typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; Feed feed; } App;
+
+/* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
+static uint64_t wall_unix_ms(void)
+{
+    SDL_Time t = 0;
+    if (!SDL_GetCurrentTime(&t)) return 0;
+    return (uint64_t)t / 1000000ULL;
+}
 
 /* ---- Headless CLI: record / replay (MMO_PLAN Phase 1d) ----
  * A deterministic scripted session used by --record to produce a .smlog
@@ -168,6 +180,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app->w = window;
     app->r = renderer;
     app->g = gs;
+
+    /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
+     * Cosmetic identity only — sim player_id stays 0 until Phase 5. */
+    feed_init(&app->feed, SDL_getenv("SALTMARCH_PLAYER"));
+
     *appstate = app;
 
     /* A missing font is not cosmetic: every resource count, price and
@@ -199,6 +216,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     Island    *isl;
 
     game_update(gs, app->r);
+
+    /* Shared feed (Phase 4): publish any departures the ticks above
+     * just caused, and re-read the inbound feed on its poll interval.
+     * Wall-clock, cosmetic, outside the sim — see feed.h. */
+    feed_track_departures(&app->feed, gs->ships, gs->ship_count,
+                          wall_unix_ms());
+    feed_poll(&app->feed, SDL_GetTicksNS());
 
     /* Everything below acts on the island currently being viewed;
      * game_update() has already simulated every settled one. Fetched
@@ -623,6 +647,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         world_ui_draw(app->r, SCREEN_W, SCREEN_H,
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
+                      app->feed.ghosts, app->feed.ghost_count, wall_unix_ms(),
                       gs->input.logical_x, gs->input.logical_y);
 
     /* F10 market debug overlay: the economy test harness. Shows the

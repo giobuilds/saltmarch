@@ -7,3 +7,7 @@ saltmarch_save.dat
 # Recorded command-log / replay files and test scratch
 *.smlog
 test_*.tmp
+
+# Shared-feed runtime files (Phase 4) — per-machine, never committed
+feed_out.jsonl
+feed_in.jsonl

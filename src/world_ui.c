@@ -162,6 +162,8 @@ static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Island islands[], int island_count, int current,
                    const Ship ships[], int ship_count, int selected_ship,
+                   const GhostVoyage ghosts[], int ghost_count,
+                   uint64_t unix_ms,
                    int mouse_x, int mouse_y)
 {
     SDL_FRect sea = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
@@ -246,6 +248,70 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                 node_origin(screen_w, screen_h, ships[si].to_island,   &bx, &by);
             }
             SDL_RenderLine(renderer, ax + hw, ay + hh, bx + hw, by + hh);
+        }
+    }
+
+    /* Ghost voyages (Phase 4): other players' ships from the shared
+     * feed, drawn under our own markers in a deliberately muted style.
+     * Position is wall-clock lerp along the lane; a ghost whose voyage
+     * has elapsed returns progress < 0 and simply isn't drawn, which is
+     * how a stale feed fades out. Non-interactive: hover shows an info
+     * tooltip, and they never appear in the hit-test. */
+    {
+        int gi;
+        float hw = (float)TILE_W * WORLD_NODE_ZOOM / 2.0f;
+        float hh = (float)TILE_H * WORLD_NODE_ZOOM / 2.0f;
+
+        for (gi = 0; gi < ghost_count; gi++) {
+            const GhostVoyage *g = &ghosts[gi];
+            float t = ghost_progress(g, unix_ms);
+            float ax, ay, bx, by, gx, gy;
+            SDL_FRect mr;
+
+            if (t < 0.0f) continue;
+
+            node_origin(screen_w, screen_h, g->from, &ax, &ay);
+            node_origin(screen_w, screen_h, g->to,   &bx, &by);
+            gx = (ax + hw) + ((bx + hw) - (ax + hw)) * t;
+            gy = (ay + hh) + ((by + hh) - (ay + hh)) * t;
+
+            mr.w = 10.0f; mr.h = 10.0f;
+            mr.x = gx - mr.w / 2.0f;
+            mr.y = gy - mr.h / 2.0f;
+
+            /* Semi-transparent hull + no bright outline = "not yours". */
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(renderer, 150, 170, 190, 130);
+            SDL_RenderFillRect(renderer, &mr);
+            SDL_SetRenderDrawColor(renderer, 90, 110, 130, 160);
+            SDL_RenderRect(renderer, &mr);
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+            {
+                SDL_Color name_col = { 150, 170, 190, 255 };
+                font_draw_text(renderer, FONT_SMALL, g->name,
+                               (int)(mr.x - 4.0f), (int)(mr.y + 14.0f),
+                               name_col);
+            }
+
+            /* Info tooltip on hover — the whole extent of ghost
+             * interactivity. */
+            if (mouse_x >= (int)mr.x - 4 && mouse_x <= (int)(mr.x + mr.w) + 4 &&
+                mouse_y >= (int)mr.y - 4 && mouse_y <= (int)(mr.y + mr.h) + 4) {
+                char      tip[96];
+                SDL_Color tip_col = { 210, 225, 240, 255 };
+                SDL_FRect bg = { (float)mouse_x + 14.0f, (float)mouse_y - 6.0f,
+                                 250.0f, 22.0f };
+                SDL_snprintf(tip, sizeof(tip), "%s: %s -> %s (%d%%)",
+                             g->name, islands[g->from].name,
+                             islands[g->to].name, (int)(t * 100.0f));
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(renderer, 10, 25, 40, 220);
+                SDL_RenderFillRect(renderer, &bg);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+                font_draw_text(renderer, FONT_SMALL, tip,
+                               (int)bg.x + 6, (int)bg.y + 4, tip_col);
+            }
         }
     }
 
