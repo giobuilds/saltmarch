@@ -33,20 +33,20 @@ typedef enum {
 /* Human-readable name for each resource (for debug / future UI). */
 extern const char *RESOURCE_NAMES[RES_COUNT];
 
-/* Gold paid per unit sold at the Marketplace's trade screen
- * (Phase 4). Fixed for v1 — no supply/demand pricing. RES_GOLD's
- * slot is unused (you can't sell currency for itself). */
+/* Baseline sell price per unit. As of Phase 3 these are no longer the
+ * live prices: they are the faction's quotes at baseline inventory
+ * (faction.h), from which faction_bid() moves elastically with supply.
+ * RES_GOLD's slot is unused (you can't sell currency for itself). */
 extern const int SELL_PRICE[RES_COUNT];
 
-/* Gold cost to substitute 1 unit of this resource when paying a
- * building's resource cost entirely in Gold (see
- * building_gold_equivalent_cost, building.h). Deliberately pricier
- * than SELL_PRICE — a convenience markup, so gathering resources
- * normally stays cheaper than buying around them. This is the escape
- * hatch for an island generated with no forest at all: with no
- * Lumberjack possible, Wood income may never exist, so anything
- * costing Wood (Warehouse, House, Marketplace) needs a Gold-only
- * path. RES_GOLD's slot is unused. */
+/* Baseline buy price per unit — the faction's ask at baseline inventory
+ * (faction_ask() moves it elastically from here). Deliberately pricier
+ * than SELL_PRICE: a convenience markup (the market spread), so
+ * gathering resources normally stays cheaper than buying around them.
+ * This is the escape hatch for an island generated with no forest at
+ * all: with no Lumberjack possible, Wood income may never exist, so
+ * anything costing Wood (Warehouse, House, Marketplace) needs a
+ * Gold-only path. RES_GOLD's slot is unused. */
 extern const int BUY_PRICE[RES_COUNT];
 
 /* Per-resource storage cap before any Warehouse is built.

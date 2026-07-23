@@ -50,11 +50,13 @@ typedef enum {
 } BuildConfirmHit;
 
 /* Draw the popup for placing `type`. `s` is the live stockpile (read-
- * only, used to grey out an unaffordable option); payment_selected is
- * which option (0 or 1) currently has the highlighted selection
+ * only, used to grey out an unaffordable option); `fac` supplies the
+ * live market ask used to price the Gold-payment option; payment_selected
+ * is which option (0 or 1) currently has the highlighted selection
  * border; mouse_x/y highlight the hovered button. */
 void build_confirm_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            BuildingType type, const Stockpile *s,
+                           const Faction *fac,
                            int payment_selected, int mouse_x, int mouse_y);
 
 /* Hit-test a click against the popup. */

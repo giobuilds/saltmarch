@@ -29,6 +29,7 @@
 #include "island.h"
 #include "ship.h"
 #include "command.h"
+#include "faction.h"
 
 /* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
@@ -137,6 +138,9 @@ typedef struct {
     int  ship_build_open;
     int  ship_build_idx;
 
+    /* Market debug overlay toggle (F10) — cosmetic, not sim state. */
+    int  faction_debug;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed
@@ -154,6 +158,11 @@ typedef struct {
     uint64_t  sim_tick_no;  /* completed ticks; the tick about to run    */
     uint64_t  sim_acc_ns;   /* real-time accumulator feeding the tick
                              * loop — the ONLY wall clock the sim sees    */
+
+    /* The NPC market counterparty (Phase 3). World sim state: hashed,
+     * mutated only in sim_apply (trades) and sim_run_one_tick
+     * (reversion). One faction serves every island's marketplace. */
+    Faction   faction;
 
     /* World seed the whole archipelago is generated from. Stored so the
      * F9 self-check (and, in Phase 1d, load) can rebuild the tick-0

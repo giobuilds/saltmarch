@@ -77,14 +77,17 @@ static int can_sell(const Stockpile *s, ResourceType res)
     return s->amount[res] > 0;
 }
 
-static int can_buy(const Stockpile *s, ResourceType res)
+static int can_buy(const Stockpile *s, const Faction *fac, ResourceType res)
 {
     int headroom = s->capacity - s->amount[res];
-    return headroom > 0 && s->amount[RES_GOLD] >= BUY_PRICE[res];
+    /* The faction must both hold the good and the player afford its ask. */
+    return headroom > 0 && fac->inventory[res] > 0 &&
+           s->amount[RES_GOLD] >= faction_ask(fac, res);
 }
 
 void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
-                   const Stockpile *s, int mouse_x, int mouse_y)
+                   const Stockpile *s, const Faction *fac,
+                   int mouse_x, int mouse_y)
 {
     int i, dir, btn;
     SDL_FRect panel = panel_rect(screen_w, screen_h);
@@ -129,7 +132,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
 
         SDL_snprintf(buf, sizeof(buf), "%s: %d  (sell %dg / buy %dg)",
                     RESOURCE_NAMES[res], s->amount[res],
-                    SELL_PRICE[res], BUY_PRICE[res]);
+                    faction_bid(fac, res), faction_ask(fac, res));
         font_draw_text(renderer, FONT_NORMAL, buf,
                        (int)(block.x + 10.0f), (int)(block.y + 4.0f), text_col);
 
@@ -145,7 +148,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         }
 
         for (dir = 0; dir < 2; dir++) {
-            int afford = dir ? can_buy(s, res) : can_sell(s, res);
+            int afford = dir ? can_buy(s, fac, res) : can_sell(s, res);
 
             for (btn = 0; btn < 3; btn++) {
                 SDL_FRect br      = action_btn_rect(screen_w, screen_h, i, dir, btn);

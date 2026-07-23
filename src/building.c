@@ -352,14 +352,14 @@ int building_can_afford(const Stockpile *s, BuildingType type)
 /* =========================================================
  * building_gold_equivalent_cost
  * ========================================================= */
-int building_gold_equivalent_cost(BuildingType type)
+int building_gold_equivalent_cost(BuildingType type, const Faction *f)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
     int i, total = def->cost[RES_GOLD];
 
     for (i = 0; i < RES_COUNT; i++)
         if (i != RES_GOLD)
-            total += def->cost[i] * BUY_PRICE[i];
+            total += def->cost[i] * faction_ask(f, (ResourceType)i);
 
     return total;
 }

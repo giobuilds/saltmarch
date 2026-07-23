@@ -71,10 +71,11 @@ static void format_resource_cost(const int cost[RES_COUNT],
 
 void build_confirm_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            BuildingType type, const Stockpile *s,
+                           const Faction *fac,
                            int payment_selected, int mouse_x, int mouse_y)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
-    int   gold_cost = building_gold_equivalent_cost(type);
+    int   gold_cost = building_gold_equivalent_cost(type, fac);
     int   afford_resources = building_can_afford(s, type);
     int   afford_gold      = s->amount[RES_GOLD] >= gold_cost;
     char  cost_buf[128];

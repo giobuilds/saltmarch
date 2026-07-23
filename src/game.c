@@ -115,6 +115,10 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 
     stockpile_add(&cur(gs)->stockpile, RES_GOLD, STARTING_GOLD);
 
+    /* The market starts at baseline, so day-one quotes equal the old
+     * fixed SELL_PRICE/BUY_PRICE until the player trades. */
+    faction_init(&gs->faction);
+
     /* A fresh world is a fresh history: discard any previous command
      * log and reset the world clock. The starting state above is a
      * deterministic function of the seed, so replay reconstructs it by
@@ -473,7 +477,10 @@ void sim_run_one_tick(GameState *gs)
     ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
                  gs->sim_tick_no);
 
-    /* 4. Advance the world clock. */
+    /* 4. The market drifts back toward baseline (price recovery). */
+    faction_tick(&gs->faction);
+
+    /* 5. Advance the world clock. */
     gs->sim_tick_no++;
 }
 
@@ -545,6 +552,11 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->route_qty, sizeof(sh->route_qty));
         fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
     }
+
+    /* The market is world state too (Phase 3). */
+    fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
+    fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
+    fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
 
     return h;
 }
@@ -690,7 +702,7 @@ static int sim_place_building(GameState *gs, int island, int row, int col,
     def = &BUILDING_DEFS[type];
 
     if (pay_with_gold) {
-        int gold_cost = building_gold_equivalent_cost(type);
+        int gold_cost = building_gold_equivalent_cost(type, &gs->faction);
         if (isl->stockpile.amount[RES_GOLD] < gold_cost) return 0;
 
         if (commit_placement(gs, island, type, row, col) < 0)
@@ -751,21 +763,31 @@ int game_find_building_at(const GameState *gs, int row, int col)
     return -1;
 }
 
-/* ---- game_sell_resource ------------------------------------
- * Trades against the CURRENT island's stockpile. Each island is
- * independently connected to the world market at the same fixed
- * prices, which is also what guarantees a new colony can buy in goods
- * its own terrain can't produce. */
+/* ---- sim_sell / game_sell_resource -------------------------
+ * Sells the island's goods to the NPC faction at its current bid. The
+ * faction pays out of its own finite gold and takes the goods into its
+ * inventory (raising it, which lowers the next bid). Player gold rises
+ * by exactly what the faction's falls — the conservation invariant. The
+ * faction cannot pay for more than its gold covers, so qty is clamped to
+ * that; a broke faction buys nothing (returns 0). */
 static int sim_sell(GameState *gs, int island, ResourceType res, int qty)
 {
-    Island *isl = &gs->islands[island];
+    Island  *isl = &gs->islands[island];
+    Faction *fac = &gs->faction;
+    int      price, revenue;
 
     if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return 0;
+
+    price = faction_bid(fac, res);
     if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
+    if (price > 0 && qty > fac->gold / price) qty = fac->gold / price;
     if (qty <= 0) return 0;
 
+    revenue = qty * price;
     stockpile_add(&isl->stockpile, res, -qty);
-    stockpile_add(&isl->stockpile, RES_GOLD, qty * SELL_PRICE[res]);
+    stockpile_add(&isl->stockpile, RES_GOLD, revenue);
+    fac->gold          -= revenue;
+    fac->inventory[res] += qty;
     return 1;
 }
 
@@ -780,31 +802,42 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty)
 }
 
 /* ---- sim_buy / game_buy_resource ----------------------------
- * qty < 0 means "buy as much as storage headroom and Gold allow"; that
- * is resolved here against the live stockpile, so it stays correct when
- * replayed. */
+ * Buys goods from the faction at its current ask. The faction can only
+ * sell what it actually holds, so qty is clamped by its inventory as
+ * well as by the player's storage headroom and Gold. qty < 0 means "buy
+ * as much as all three allow", resolved here against live state so it
+ * replays correctly. Player gold falls by exactly what the faction's
+ * rises (conservation); the faction's inventory drops, lifting the ask. */
 static int sim_buy(GameState *gs, int island, ResourceType res, int qty)
 {
-    Island *isl = &gs->islands[island];
-    int     headroom, max_affordable;
+    Island  *isl = &gs->islands[island];
+    Faction *fac = &gs->faction;
+    int      price, headroom, max_affordable, max_stock, cost;
 
     if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return 0;
 
+    price    = faction_ask(fac, res);
     headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
     if (headroom < 0) headroom = 0;
 
-    max_affordable = (BUY_PRICE[res] > 0)
-                    ? isl->stockpile.amount[RES_GOLD] / BUY_PRICE[res]
-                    : 0;
+    max_affordable = (price > 0) ? isl->stockpile.amount[RES_GOLD] / price : 0;
+    max_stock      = fac->inventory[res];   /* can't sell what it lacks */
 
-    if (qty < 0)
-        qty = (headroom < max_affordable) ? headroom : max_affordable;
-    if (qty > headroom)        qty = headroom;
-    if (qty > max_affordable)  qty = max_affordable;
+    if (qty < 0) {
+        qty = headroom;
+        if (max_affordable < qty) qty = max_affordable;
+        if (max_stock      < qty) qty = max_stock;
+    }
+    if (qty > headroom)       qty = headroom;
+    if (qty > max_affordable) qty = max_affordable;
+    if (qty > max_stock)      qty = max_stock;
     if (qty <= 0) return 0;
 
-    stockpile_add(&isl->stockpile, RES_GOLD, -(qty * BUY_PRICE[res]));
+    cost = qty * price;
+    stockpile_add(&isl->stockpile, RES_GOLD, -cost);
     stockpile_add(&isl->stockpile, res, qty);
+    fac->gold          += cost;
+    fac->inventory[res] -= qty;
     return 1;
 }
 

@@ -60,6 +60,7 @@ set(SOURCES
     src/world_ui.c
     src/ship.c
     src/command.c
+    src/faction.c
 )
 
 add_executable(saltmarch ${SOURCES})
