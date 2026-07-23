@@ -35,6 +35,8 @@
  *   CMD_SHIP_TRANSFER   a=ship   b=resource c=qty (sign=load/unload) d=island
  *   CMD_SHIP_DEPART     a=ship   b=destination island
  *   CMD_COLONISE        a=ship   b=island index
+ *   CMD_SET_ROUTE_RES   a=ship   b=leg (0=outbound A->B, 1=back B->A)
+ *   CMD_TOGGLE_ROUTE    a=ship
  *
  * The PLACE_BUILDING pack (d = type*2 + pay_with_gold) is the one bit of
  * cleverness: five conceptual fields do not fit four slots, and both
@@ -55,6 +57,8 @@ typedef enum {
     CMD_SHIP_TRANSFER,
     CMD_SHIP_DEPART,
     CMD_COLONISE,
+    CMD_SET_ROUTE_RES,   /* cycle a route leg's carried resource         */
+    CMD_TOGGLE_ROUTE,    /* activate/deactivate a ship's trade route     */
     CMD_COUNT
 } CommandKind;
 

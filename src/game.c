@@ -925,6 +925,71 @@ int game_colonise(GameState *gs, int ship_idx, int island_idx)
     return command_submit(gs, &c);
 }
 
+/* ---- sim_set_route_res / game_ship_set_route_res ------------
+ * Cycle the resource carried on one leg of a ship's trade route through
+ * every good and back to RES_COUNT ("carry nothing"), which is what
+ * makes one-way runs expressible. `leg` 0 is the outbound A->B slot,
+ * 1 the return B->A slot. */
+static int sim_set_route_res(GameState *gs, int ship_idx, int leg)
+{
+    Ship         *sh;
+    ResourceType *slot;
+
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
+    sh = &gs->ships[ship_idx];
+    if (!sh->active) return 0;
+
+    slot  = (leg == 0) ? &sh->route_res_ab : &sh->route_res_ba;
+    *slot = (*slot >= RES_COUNT) ? (ResourceType)0
+                                 : (ResourceType)(*slot + 1);
+    return 1;
+}
+
+int game_ship_set_route_res(GameState *gs, int ship_idx, int leg)
+{
+    Command c = {0};
+    c.kind = CMD_SET_ROUTE_RES;
+    c.a    = ship_idx;
+    c.b    = leg;
+    return command_submit(gs, &c);
+}
+
+/* ---- sim_toggle_route / game_ship_toggle_route --------------
+ * Turn a ship's route off if on; otherwise arm it to repeat the voyage
+ * the ship last made (from_island -> to_island), so there is no
+ * separate pick-two-islands mode to build. No-op if the ship has no
+ * distinct last voyage to repeat. */
+static int sim_toggle_route(GameState *gs, int ship_idx)
+{
+    Ship *sh;
+
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
+    sh = &gs->ships[ship_idx];
+    if (!sh->active) return 0;
+
+    if (sh->route_active) {
+        sh->route_active = 0;
+        return 1;
+    }
+    if (sh->from_island != sh->to_island) {
+        sh->route_a      = sh->from_island;
+        sh->route_b      = sh->to_island;
+        sh->route_qty    = SHIP_CARGO_CAPACITY;
+        sh->route_leg    = (sh->at_island == sh->route_b) ? 0 : 1;
+        sh->route_active = 1;
+        return 1;
+    }
+    return 0;
+}
+
+int game_ship_toggle_route(GameState *gs, int ship_idx)
+{
+    Command c = {0};
+    c.kind = CMD_TOGGLE_ROUTE;
+    c.a    = ship_idx;
+    return command_submit(gs, &c);
+}
+
 /* ---- sim_apply ----------------------------------------------
  * The single dispatch from a Command to the mutation that carries it
  * out. The ONLY caller of the sim_* bodies above, and the only place
@@ -966,6 +1031,10 @@ int sim_apply(GameState *gs, const Command *c)
         return sim_ship_depart(gs, c->a, c->b);
     case CMD_COLONISE:
         return sim_colonise(gs, c->a, c->b);
+    case CMD_SET_ROUTE_RES:
+        return sim_set_route_res(gs, c->a, c->b);
+    case CMD_TOGGLE_ROUTE:
+        return sim_toggle_route(gs, c->a);
     default:
         return 0;
     }

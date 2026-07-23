@@ -314,4 +314,13 @@ int game_colonise(GameState *gs, int ship_idx, int island_idx);
  * like every other mutation (MMO_PLAN Phase 1a). */
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island);
 
+/* Cycle the resource carried on one leg of ship `ship_idx`'s trade
+ * route: `leg` 0 is the outbound (A->B) slot, 1 the return (B->A) slot.
+ * The cycle runs through every good and RES_COUNT ("carry nothing"). */
+int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
+
+/* Toggle ship `ship_idx`'s trade route on or off. When arming, the
+ * route repeats the ship's last voyage (from_island -> to_island). */
+int game_ship_toggle_route(GameState *gs, int ship_idx);
+
 #endif /* GAME_H */

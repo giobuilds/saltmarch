@@ -19,7 +19,7 @@
 static const char *const KIND_NAMES[CMD_COUNT] = {
     "PLACE_BUILDING", "PLACE_ROAD", "DEMOLISH", "SELL_RESOURCE",
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
-    "SHIP_DEPART", "COLONISE"
+    "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE"
 };
 
 const char *command_kind_name(CommandKind kind)
