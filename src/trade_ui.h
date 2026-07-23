@@ -22,6 +22,7 @@
 
 #include <SDL3/SDL.h>
 #include "resource.h"
+#include "faction.h"   /* Phase 3: live bid/ask quotes */
 
 #define TRADE_W          480
 #define TRADE_TITLE_H     34
@@ -54,12 +55,13 @@ typedef enum {
     TRADE_HIT_BUY   = 3    /* a buy button  — out_res/out_qty are set */
 } TradeHit;
 
-/* Draw the trade overlay. `s` is the live stockpile (read-only
- * display of current amounts/prices, and used to grey out an
- * unaffordable/full buy button); mouse_x/y highlight the hovered
- * button. */
+/* Draw the trade overlay. `s` is the live stockpile (read-only display
+ * of current amounts, and used to grey out an unaffordable/full buy
+ * button); `fac` supplies the live bid/ask quotes shown per resource;
+ * mouse_x/y highlight the hovered button. */
 void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
-                   const Stockpile *s, int mouse_x, int mouse_y);
+                   const Stockpile *s, const Faction *fac,
+                   int mouse_x, int mouse_y);
 
 /* Hit-test a click against the trade overlay. On TRADE_HIT_SELL or
  * TRADE_HIT_BUY, *out_res is the resource and *out_qty is how many

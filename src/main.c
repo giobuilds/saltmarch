@@ -214,6 +214,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         gs->replay_show_until_ns = SDL_GetTicksNS() + 5000000000ULL;
     }
 
+    /* F10: toggle the market debug overlay. */
+    if (gs->input.faction_debug_toggle)
+        gs->faction_debug = !gs->faction_debug;
+
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
@@ -576,13 +580,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Phase 4: draw the trade screen on top when open */
     if (gs->trade_open)
-        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &isl->stockpile,
+        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &isl->stockpile, &gs->faction,
                      gs->input.logical_x, gs->input.logical_y);
 
     /* Fix pass: draw the build-confirmation popup on top when open */
     if (gs->build_confirm_open)
         build_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                              gs->selected_building, &isl->stockpile,
+                              gs->selected_building, &isl->stockpile, &gs->faction,
                               gs->build_confirm_payment,
                               gs->input.logical_x, gs->input.logical_y);
 
@@ -620,6 +624,36 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       gs->input.logical_x, gs->input.logical_y);
+
+    /* F10 market debug overlay: the economy test harness. Shows the
+     * faction's gold and, per tradeable good, its inventory and live
+     * bid/ask — watch these move as you trade or wait. */
+    if (gs->faction_debug) {
+        const Faction *fac = &gs->faction;
+        int       x = SCREEN_W - 300, y = 60, line = 18, r;
+        SDL_FRect bg = { (float)(x - 10), (float)(y - 8),
+                         290.0f, (float)(line * (RES_GOLD + 2) + 12) };
+        SDL_Color hdr = { 210, 190, 120, 255 };
+        SDL_Color txt = { 200, 200, 200, 255 };
+        char buf[96];
+
+        SDL_SetRenderDrawBlendMode(app->r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(app->r, 0, 0, 0, 190);
+        SDL_RenderFillRect(app->r, &bg);
+        SDL_SetRenderDrawBlendMode(app->r, SDL_BLENDMODE_NONE);
+
+        SDL_snprintf(buf, sizeof(buf), "MARKET (F10)   gold %d", fac->gold);
+        font_draw_text(app->r, FONT_SMALL, buf, x, y, hdr);
+        y += line;
+        for (r = 0; r < (int)RES_GOLD; r++) {
+            SDL_snprintf(buf, sizeof(buf), "%-6s inv %4d  bid %3d  ask %3d",
+                         RESOURCE_NAMES[r], fac->inventory[r],
+                         faction_bid(fac, (ResourceType)r),
+                         faction_ask(fac, (ResourceType)r));
+            font_draw_text(app->r, FONT_SMALL, buf, x, y, txt);
+            y += line;
+        }
+    }
 
     /* F9 determinism result, shown top-centre for a few seconds. */
     if (gs->replay_state != 0 &&

@@ -22,6 +22,10 @@ typedef struct {
      * (MMO_PLAN Phase 1c); acted on in SDL_AppIterate. */
     int replay_check;
 
+    /* Edge-triggered on F10: toggles the market debug overlay
+     * (MMO_PLAN Phase 3 — the economy test harness). */
+    int faction_debug_toggle;
+
     /* Level-triggered: 1 while the left button is physically held,
      * 0 otherwise. Unlike left_click (an edge fired once on release,
      * cleared every frame by input_clear_clicks()), this persists

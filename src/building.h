@@ -20,6 +20,7 @@
 
 #include "map.h"      /* Tile, TileType, Fertility, MAP_* */
 #include "resource.h"
+#include "faction.h"  /* Phase 3: elastic gold-equivalent pricing */
 #include <stddef.h>   /* size_t */
 
 /* ---- How many buildings can be placed at once ----------
@@ -185,10 +186,13 @@ int building_can_afford(const Stockpile *s, BuildingType type);
 
 /* Total Gold cost to place `type` paying entirely in Gold: the
  * building's own Gold cost plus every other resource's cost[] amount
- * converted at BUY_PRICE (resource.h). For a Gold-only building type
- * (nothing to convert) this equals its existing Gold cost exactly.
- * Used by the build-confirmation popup's "pay Gold" option. */
-int building_gold_equivalent_cost(BuildingType type);
+ * converted at the faction's current ask (Phase 3 — the elastic market
+ * price, so the gold-pay option tracks what those goods actually cost
+ * right now). For a Gold-only building type (nothing to convert) this
+ * equals its existing Gold cost exactly. Used by the build-confirmation
+ * popup's "pay Gold" option. Pricing only — it does not move faction
+ * state; paying Gold for a building is a sink, like paying in resources. */
+int building_gold_equivalent_cost(BuildingType type, const Faction *f);
 
 /* Place a building into the buildings array.
  * Returns the index of the new building, or -1 if the array
