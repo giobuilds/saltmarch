@@ -2,6 +2,7 @@
 
 #include "island.h"
 #include "connectivity.h"
+#include "simclock.h"
 #include <SDL3/SDL.h>
 #include <string.h>
 
@@ -34,21 +35,29 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  *
  * Reads and writes only THIS island's stockpile — a Malthouse can
  * only consume Grain and Hops stored on its own island. */
-static void island_tick_buildings(Island *isl, float dt)
+static void island_tick_buildings(Island *isl)
 {
     int i, j;
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
         int                can_run = 1;
+        uint32_t           period;
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
         if (!b->connected) continue;      /* needs a road to a Warehouse   */
         if (b->worker_count < 1) continue; /* needs a worker present       */
 
-        b->timer += dt;
-        if (b->timer < def->tick_seconds) continue;
-        b->timer = 0.0f;
+        /* Production fires every `period` sim ticks. The float
+         * tick_seconds stays the authoring unit; the sim counts in whole
+         * integer ticks so the F9 hash never sees an accumulating float.
+         * +0.5 rounds to the nearest tick. */
+        period = (uint32_t)(def->tick_seconds * SIM_TICKS_PER_SEC + 0.5f);
+        if (period == 0) period = 1;
+
+        b->timer++;
+        if (b->timer < period) continue;
+        b->timer = 0;
 
         for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
             if (def->consumes[j] == RES_COUNT) continue;
@@ -76,41 +85,45 @@ static void island_tick_buildings(Island *isl, float dt)
     }
 }
 
-/* ---- island_update -------------------------------------- */
-void island_update(Island *isl, float dt)
+/* ---- island_update --------------------------------------
+ * Advances this island by exactly one sim tick (see the ordering
+ * constraint in island.h). Takes no dt: the timestep is fixed. Discrete
+ * timers count integer ticks; agent movement still advances by the
+ * constant SIM_TICK_SECONDS, which is deterministic on one machine and
+ * outside the F9 hash anyway. */
+void island_update(Island *isl)
 {
     if (!isl->settled) return;
 
-    /* Recompute road-network reachability before anything this frame
+    /* Recompute road-network reachability before anything this tick
      * reads Building.connected. */
     connectivity_update(isl->buildings, isl->building_count);
 
     /* island_tick_buildings() reads worker_count as of the END of last
-     * frame's agents_update() call below — a harmless one-frame lag,
-     * the same pattern already established for `connected` relative to
-     * a newly-placed building. */
-    island_tick_buildings(isl, dt);
+     * tick's agents_update() call below — a harmless one-tick lag, the
+     * same pattern already established for `connected` relative to a
+     * newly-placed building. */
+    island_tick_buildings(isl);
 
-    /* Population needs (uses this frame's `connected`). */
+    /* Population needs (uses this tick's `connected`). */
     pop_update(isl->pop_data, isl->buildings, isl->building_count,
-               &isl->stockpile, dt);
+               &isl->stockpile);
 
     /* Reconcile agents[] against the residents counts pop_update() may
      * have just changed, periodically assign jobs, then advance every
      * agent's state machine/position and retally worker_count for next
-     * frame's island_tick_buildings(). */
+     * tick's island_tick_buildings(). */
     agents_sync(isl->agents, &isl->agent_count, isl->buildings,
                 isl->pop_data, isl->building_count);
 
-    isl->agent_assign_timer += dt;
-    if (isl->agent_assign_timer >= AGENT_ASSIGN_INTERVAL) {
-        isl->agent_assign_timer = 0.0f;
+    if (++isl->agent_assign_timer >= AGENT_ASSIGN_INTERVAL_TICKS) {
+        isl->agent_assign_timer = 0;
         agents_assign_jobs(isl->agents, isl->agent_count,
                            isl->buildings, isl->building_count);
     }
 
     agents_update(isl->agents, isl->agent_count, isl->buildings,
-                  isl->building_count, dt);
+                  isl->building_count, SIM_TICK_SECONDS);
 }
 
 /* ---- island_recompute_storage_capacity ------------------ */

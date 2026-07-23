@@ -19,14 +19,125 @@
 
 typedef struct { SDL_Window *w; SDL_Renderer *r; GameState *g; } App;
 
+/* ---- Headless CLI: record / replay (MMO_PLAN Phase 1d) ----
+ * A deterministic scripted session used by --record to produce a .smlog
+ * fixture. It touches the float-sensitive paths on purpose (a house, so
+ * population and agents run; a voyage, so ship progress accumulates), so
+ * that replaying it is a meaningful determinism check rather than a
+ * trivial one. */
+static void record_demo_session(GameState *gs, Uint32 seed)
+{
+    Island *isl;
+    int     r, c, t, placed = 0;
+
+    game_new_seeded(gs, seed);
+    isl = game_cur_island(gs);
+
+    for (r = 0; r < MAP_ROWS && !placed; r++)
+        for (c = 0; c < MAP_COLS && !placed; c++)
+            if (building_can_place(&isl->map, BUILDING_HOUSE, r, c, NULL, 0)) {
+                gs->selected_building = BUILDING_HOUSE;
+                gs->build_confirm_row = r;
+                gs->build_confirm_col = c;
+                game_place_building_confirmed(gs, 0);
+                placed = 1;
+            }
+    gs->selected_building = BUILDING_NONE;
+
+    game_buy_resource(gs, (ResourceType)0, 8);
+    game_build_ship(gs);
+    game_ship_transfer(gs, 0, (ResourceType)0, 5);
+    game_ship_depart(gs, 0, 1);
+
+    for (t = 0; t < 500; t++)
+        sim_run_one_tick(gs);
+}
+
+/* Handle --record / --replay. Returns 1 if a CLI mode ran (with the
+ * process result in *out), 0 to fall through to the normal game. */
+static int run_cli_mode(int argc, char *argv[], SDL_AppResult *out)
+{
+    const char *replay_file = NULL, *record_file = NULL, *expect = NULL;
+    Uint32      seed = 1u;
+    GameState  *gs;
+    SDL_AppResult res = SDL_APP_SUCCESS;
+    int         i;
+
+    for (i = 1; i < argc; i++) {
+        if (SDL_strcmp(argv[i], "--replay") == 0 && i + 1 < argc)
+            replay_file = argv[++i];
+        else if (SDL_strcmp(argv[i], "--record") == 0 && i + 1 < argc)
+            record_file = argv[++i];
+        else if (SDL_strcmp(argv[i], "--expect-hash") == 0 && i + 1 < argc)
+            expect = argv[++i];
+        else if (SDL_strcmp(argv[i], "--seed") == 0 && i + 1 < argc)
+            seed = (Uint32)SDL_strtoul(argv[++i], NULL, 10);
+    }
+    if (!replay_file && !record_file) return 0;
+
+    SDL_Init(0);   /* base only — no video/window for headless CLI */
+
+    gs = game_init();
+    if (!gs) { SDL_Log("cli: game_init failed"); *out = SDL_APP_FAILURE;
+               SDL_Quit(); return 1; }
+
+    if (record_file) {
+        record_demo_session(gs, seed);
+        if (!game_save(gs, record_file)) res = SDL_APP_FAILURE;
+        else SDL_Log("record: %s seed=%u tick=%llu hash=%016llx",
+                     record_file, seed, (unsigned long long)gs->sim_tick_no,
+                     (unsigned long long)sim_hash(gs));
+    } else {
+        if (!game_load(gs, replay_file)) {
+            res = SDL_APP_FAILURE;
+        } else {
+            uint64_t h = sim_hash(gs);
+            SDL_Log("replay: %s tick=%llu hash=%016llx", replay_file,
+                    (unsigned long long)gs->sim_tick_no, (unsigned long long)h);
+
+            /* Self-check: rebuild the world a SECOND time from seed+log
+             * and confirm it lands on the same hash. This makes plain
+             * `--replay <file>` a determinism gate needing no expected
+             * hash — the form CI runs on every platform. */
+            if (!game_verify_determinism(gs)) {
+                SDL_Log("replay SELF-CHECK FAILED: world is nondeterministic");
+                res = SDL_APP_FAILURE;
+            }
+
+            /* Optional pin to a known hash (e.g. a committed fixture's
+             * cross-platform value). */
+            if (res == SDL_APP_SUCCESS && expect) {
+                uint64_t want = (uint64_t)SDL_strtoull(expect, NULL, 16);
+                if (want != h) {
+                    SDL_Log("replay MISMATCH: expected %016llx got %016llx",
+                            (unsigned long long)want, (unsigned long long)h);
+                    res = SDL_APP_FAILURE;
+                } else {
+                    SDL_Log("replay OK: hash matches");
+                }
+            }
+        }
+    }
+
+    game_free(gs);
+    SDL_Quit();
+    *out = res;
+    return 1;
+}
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
     SDL_Window   *window   = NULL;
     SDL_Renderer *renderer = NULL;
     GameState    *gs       = NULL;
     App          *app      = NULL;
+    SDL_AppResult cli_result;
 
-    (void)argc; (void)argv;
+    *appstate = NULL;   /* defined for the CLI and failure paths */
+
+    /* Headless record/replay short-circuits before any window exists. */
+    if (run_cli_mode(argc, argv, &cli_result))
+        return cli_result;
 
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING,    "Saltmarch");
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.3.0");
@@ -95,6 +206,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * Load) can change which island is current. */
     isl = game_cur_island(gs);
 
+    /* F9: determinism self-check (Phase 1c). Rebuilds the world from the
+     * seed + command log and compares; the result is shown briefly by
+     * the render block below. */
+    if (gs->input.replay_check) {
+        game_verify_determinism(gs);
+        gs->replay_show_until_ns = SDL_GetTicksNS() + 5000000000ULL;
+    }
+
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
 
@@ -123,15 +242,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     /* A ship is selected, so an island click is an
                      * order to sail there rather than a view change —
                      * the same select-then-click grammar the HUD uses
-                     * for placing buildings. */
-                    Ship *sh = &gs->ships[gs->world_selected_ship];
-                    if (sh->active && sh->at_island >= 0 &&
-                        sh->at_island != target) {
-                        sh->from_island = sh->at_island;
-                        sh->to_island   = target;
-                        sh->at_island   = -1;     /* now at sea */
-                        sh->progress    = 0.0f;
-                    }
+                     * for placing buildings. Routed through the command
+                     * funnel like every other mutation (Phase 1a); the
+                     * depart's own validation handles "not docked" and
+                     * "already there". */
+                    game_ship_depart(gs, gs->world_selected_ship, target);
                 } else if (target >= 0) {
                     game_set_current_island(gs, target);
                     isl = game_cur_island(gs);   /* the view just moved */
@@ -149,7 +264,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             case WORLD_HIT_COLONISE:
                 if (gs->world_selected_ship >= 0) {
                     int at = gs->ships[gs->world_selected_ship].at_island;
-                    if (game_colonise(gs, gs->world_selected_ship, at)) {
+                    game_colonise(gs, gs->world_selected_ship, at);
+                    /* Colonisation applies at the next tick boundary, so
+                     * its result is not known here. Optimistically show
+                     * the target island: the world map only offers this
+                     * action for a ship docked at an unsettled island
+                     * with the founding gold aboard, and nothing can
+                     * change that before the next tick. */
+                    if (at >= 0) {
                         game_set_current_island(gs, at);
                         isl = game_cur_island(gs);
                     }
@@ -158,36 +280,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
             case WORLD_HIT_ROUTE_OUT:
             case WORLD_HIT_ROUTE_BACK:
-                if (gs->world_selected_ship >= 0) {
-                    Ship *sh = &gs->ships[gs->world_selected_ship];
-                    ResourceType *slot = (hit == WORLD_HIT_ROUTE_OUT)
-                                       ? &sh->route_res_ab : &sh->route_res_ba;
-                    /* Cycle through every good and back to "nothing",
-                     * so one button covers the whole choice without a
-                     * dropdown widget this codebase has no idiom for.
-                     * RES_COUNT is the "carry nothing" state, which is
-                     * what makes one-way runs expressible. */
-                    *slot = (*slot >= RES_COUNT) ? (ResourceType)0
-                                                 : (ResourceType)(*slot + 1);
-                }
+                /* Cycle the carried good for one route leg. One button
+                 * covers the whole choice (through every good and back
+                 * to "nothing"); the cycle itself lives in the sim so
+                 * it is recorded like every other mutation (Phase 1b). */
+                if (gs->world_selected_ship >= 0)
+                    game_ship_set_route_res(gs, gs->world_selected_ship,
+                                            hit == WORLD_HIT_ROUTE_OUT ? 0 : 1);
                 break;
 
             case WORLD_HIT_ROUTE_TOGGLE:
-                if (gs->world_selected_ship >= 0) {
-                    Ship *sh = &gs->ships[gs->world_selected_ship];
-                    if (sh->route_active) {
-                        sh->route_active = 0;
-                    } else if (sh->from_island != sh->to_island) {
-                        /* A route simply repeats the voyage the ship
-                         * last made, so there is no separate
-                         * pick-two-islands mode to build or explain. */
-                        sh->route_a      = sh->from_island;
-                        sh->route_b      = sh->to_island;
-                        sh->route_qty    = SHIP_CARGO_CAPACITY;
-                        sh->route_leg    = (sh->at_island == sh->route_b) ? 0 : 1;
-                        sh->route_active = 1;
-                    }
-                }
+                if (gs->world_selected_ship >= 0)
+                    game_ship_toggle_route(gs, gs->world_selected_ship);
                 break;
 
             case WORLD_HIT_CLOSE:
@@ -516,6 +620,35 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       gs->input.logical_x, gs->input.logical_y);
+
+    /* F9 determinism result, shown top-centre for a few seconds. */
+    if (gs->replay_state != 0 &&
+        SDL_GetTicksNS() < gs->replay_show_until_ns) {
+        char      msg[160];
+        SDL_Color col;
+        switch (gs->replay_state) {
+        case 1:
+            SDL_snprintf(msg, sizeof(msg),
+                "REPLAY OK  tick %llu  hash %016llx",
+                (unsigned long long)gs->replay_tick,
+                (unsigned long long)gs->replay_live_hash);
+            col = (SDL_Color){ 90, 200, 90, 255 };
+            break;
+        case 2:
+            SDL_snprintf(msg, sizeof(msg),
+                "REPLAY DESYNC @ tick %llu  live %016llx  replay %016llx",
+                (unsigned long long)gs->replay_tick,
+                (unsigned long long)gs->replay_live_hash,
+                (unsigned long long)gs->replay_replay_hash);
+            col = (SDL_Color){ 230, 70, 70, 255 };
+            break;
+        default:
+            SDL_snprintf(msg, sizeof(msg), "REPLAY N/A (loaded save)");
+            col = (SDL_Color){ 170, 170, 170, 255 };
+            break;
+        }
+        font_draw_text(app->r, FONT_NORMAL, msg, SCREEN_W / 2 - 300, 8, col);
+    }
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;

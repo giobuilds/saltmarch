@@ -28,9 +28,13 @@
 #include "agent.h"
 #include "island.h"
 #include "ship.h"
+#include "command.h"
 
 /* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
+
+/* Fixed-timestep clock constants (SIM_TICK_MS, SIM_TICK_NS, ...). */
+#include "simclock.h"
 
 typedef struct {
     /* ---- The archipelago ----------------------------------
@@ -132,7 +136,98 @@ typedef struct {
      * popups; the idx is current-island-relative like the rest. */
     int  ship_build_open;
     int  ship_build_idx;
+
+    /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
+     * Every world mutation is recorded here as a Command, in the order
+     * it was applied, and re-running the log from the world seed
+     * reproduces the world exactly. cmd_log is a grow-by-doubling heap
+     * array owned by GameState (freed in game_free via
+     * command_log_free). sim_tick_no is the world clock; today it is a
+     * plain frame counter, but Phase 1b makes it the authoritative
+     * fixed-timestep tick number. See command.h. */
+    Command  *cmd_log;
+    int       cmd_count;
+    int       cmd_cap;      /* allocated capacity of cmd_log            */
+    int       cmd_applied;  /* commands already applied by the sim;
+                             * cmd_log[cmd_applied..cmd_count) are still
+                             * pending, waiting for their tick boundary  */
+    uint64_t  sim_tick_no;  /* completed ticks; the tick about to run    */
+    uint64_t  sim_acc_ns;   /* real-time accumulator feeding the tick
+                             * loop — the ONLY wall clock the sim sees    */
+
+    /* World seed the whole archipelago is generated from. Stored so the
+     * F9 self-check (and, in Phase 1d, load) can rebuild the tick-0
+     * world and replay the log against it. */
+    uint32_t  world_seed;
+
+    /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
+     * replay_valid is 1 while the live world is exactly what replaying
+     * (world_seed, cmd_log) from tick 0 produces — true after
+     * game_new/init and normal play, false after a full-state load
+     * (whose world is not derived from the log; Phase 1d makes load a
+     * replay and restores this). The rest hold the last check's result
+     * for the HUD; replay_show_until_ns is a wall-clock draw deadline,
+     * the one cosmetic field here. */
+    int       replay_valid;
+    int       replay_state;   /* 0 none, 1 pass, 2 desync, 3 n/a         */
+    uint64_t  replay_live_hash;
+    uint64_t  replay_replay_hash;
+    uint64_t  replay_tick;
+    uint64_t  replay_show_until_ns;
 } GameState;
+
+/* ---- The command funnel ---------------------------------
+ * command_submit() is the ONE entry point for changing world state: it
+ * stamps the command with the current tick, appends it to the log, and
+ * applies it via sim_apply(). Returns 1 if the command mutated state,
+ * 0 if it was rejected as invalid (a replayed log must reject the same
+ * commands identically each time, so rejection is not an error — it is
+ * part of the deterministic result).
+ *
+ * sim_apply() is the sole dispatcher from a Command to the actual
+ * mutation. It lives in game.c beside the per-kind mutators it calls,
+ * and is the only place those mutators are invoked from. It never
+ * appends to the log itself (so replay can call it directly without
+ * doubling the log). */
+int  command_submit(GameState *gs, const Command *c);
+int  sim_apply(GameState *gs, const Command *c);
+
+/* Advance the world by exactly one fixed tick: apply every command
+ * stamped for this tick (in log order), run each settled island's full
+ * pipeline and every voyage for one tick, then increment sim_tick_no.
+ * This is the sole path by which simulated time moves — game_update's
+ * accumulator calls it zero or more times per frame, and replay/F9
+ * (Phase 1c) call it to reconstruct the world from the log. */
+void sim_run_one_tick(GameState *gs);
+
+/* Canonical hash of the simulated world state (MMO_PLAN Phase 1c):
+ * FNV-1a over sim_tick_no, then per island its stockpile and every
+ * active building/PopData, then every active ship. Deliberately
+ * EXCLUDES derived and cosmetic state — agents, cameras, UI flags — so
+ * two runs that agree on the world proper hash equal even if their
+ * agent floats or view differ. Two GameStates with the same hash have
+ * the same world. */
+uint64_t sim_hash(const GameState *gs);
+
+/* The F9 self-check: rebuild a scratch world from world_seed, replay
+ * the command log through sim_run_one_tick up to gs->sim_tick_no, and
+ * compare sim_hash() against the live world. Returns 1 if they match
+ * (deterministic), 0 if they diverge (a real bug — a mutation escaped
+ * the funnel, a float leaked into the sim, or RNG was stepped outside
+ * it). Fills gs->replay_* with the result for the HUD. When
+ * replay_valid is 0 (e.g. just after loading a full-state save) it does
+ * no work and reports state 3 = n/a. */
+int game_verify_determinism(GameState *gs);
+
+/* Replace the command log with a copy of `n` commands from `cmds`,
+ * growing the allocation as needed, and reset cmd_applied to 0 so the
+ * whole log is pending re-application. Used by game_load()/replay to
+ * install a log read from disk. Returns 1 on success, 0 on OOM (the log
+ * is left unchanged on failure). */
+int  command_log_set(GameState *gs, const Command *cmds, int n);
+
+/* Free the command log. Called by game_free(); safe on an empty log. */
+void command_log_free(GameState *gs);
 
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:
@@ -159,6 +254,11 @@ void game_free(GameState *gs);
  * population and stockpile all cleared. Input/timing state is left
  * untouched. Used by the "New Game" menu button. */
 void game_new(GameState *gs);
+
+/* Like game_new(), but with an explicit world seed rather than a
+ * time-based one — a deterministic new game. Used by tests and the
+ * --record CLI so a session can be reproduced exactly. */
+void game_new_seeded(GameState *gs, uint32_t seed);
 
 /* Serialize gs (map seed, buildings, population, stockpile, camera)
  * to `path`. Returns 1 on success, 0 on failure (see SDL_GetError()).
@@ -272,5 +372,22 @@ void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty);
  * the island becomes settled, and therefore simulated and buildable.
  * Returns 1 on success. */
 int game_colonise(GameState *gs, int ship_idx, int island_idx);
+
+/* Order ship `ship_idx` to sail from wherever it is docked to
+ * `dest_island`. The ship must be docked (at_island >= 0) at an island
+ * other than the destination. Returns 1 if the voyage was ordered.
+ * This replaces the inline ship-state mutation the world overlay used
+ * to do directly, routing the ship-depart order through the funnel
+ * like every other mutation (MMO_PLAN Phase 1a). */
+int game_ship_depart(GameState *gs, int ship_idx, int dest_island);
+
+/* Cycle the resource carried on one leg of ship `ship_idx`'s trade
+ * route: `leg` 0 is the outbound (A->B) slot, 1 the return (B->A) slot.
+ * The cycle runs through every good and RES_COUNT ("carry nothing"). */
+int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
+
+/* Toggle ship `ship_idx`'s trade route on or off. When arming, the
+ * route repeats the ship's last voyage (from_island -> to_island). */
+int game_ship_toggle_route(GameState *gs, int ship_idx);
 
 #endif /* GAME_H */

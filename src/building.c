@@ -327,7 +327,7 @@ int building_place(Building buildings[], int *count,
     buildings[slot].row          = row;
     buildings[slot].col          = col;
     buildings[slot].active       = 1;
-    buildings[slot].timer        = 0.0f;   /* CHANGED Phase 4: initialise timer */
+    buildings[slot].timer        = 0;   /* integer tick accumulator (1b) */
     buildings[slot].connected    = 0;
     buildings[slot].worker_count = 0;
 

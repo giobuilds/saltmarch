@@ -17,6 +17,11 @@ typedef struct {
     int left_click;
     int right_click;
 
+    /* Edge-triggered like the clicks: 1 on the frame F9 was pressed,
+     * cleared by input_clear_clicks(). Requests a determinism self-check
+     * (MMO_PLAN Phase 1c); acted on in SDL_AppIterate. */
+    int replay_check;
+
     /* Level-triggered: 1 while the left button is physically held,
      * 0 otherwise. Unlike left_click (an edge fired once on release,
      * cleared every frame by input_clear_clicks()), this persists

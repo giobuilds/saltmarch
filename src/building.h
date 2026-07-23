@@ -138,11 +138,12 @@ typedef struct {
     int          col;
     int          active; /* 1 = placed, 0 = empty slot     */
 
-    /* CHANGED Phase 4: time accumulator.
-     * Counts seconds since this building last produced.
-     * When timer >= def->tick_seconds a tick fires and
-     * timer resets to 0. */
-    float        timer;
+    /* Phase 1b: integer tick accumulator. Counts whole sim ticks since
+     * this building last produced; when timer reaches the building's
+     * period (tick_seconds * SIM_TICKS_PER_SEC) a tick fires and it
+     * resets to 0. Integer, not float, so the F9 desync hash never reads
+     * an accumulating float. */
+    uint32_t     timer;
 
     /* Phase 3: derived, not meaningfully persisted — recomputed
      * every frame by connectivity_update() from the current road
