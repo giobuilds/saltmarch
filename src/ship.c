@@ -1,6 +1,7 @@
 /*  ship.c  --  Vessels moving goods between islands  */
 
 #include "ship.h"
+#include <stdio.h>   /* snprintf for the voyage-record serialiser */
 
 int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty)
 {
@@ -48,7 +49,8 @@ int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty)
  * cargo at all — would deadlock the route the first time the supplying
  * island ran dry, and the route would never recover even once
  * production resumed. An empty run costs only time. */
-static void route_turnaround(Ship *s, Island islands[], int island_count)
+static void route_turnaround(Ship *s, Island islands[], int island_count,
+                             uint64_t sim_tick_no)
 {
     ResourceType inbound, outbound;
     int          next;
@@ -78,39 +80,81 @@ static void route_turnaround(Ship *s, Island islands[], int island_count)
         ship_transfer_at(s, &islands[s->at_island], outbound, s->route_qty);
 
     if (next != s->at_island) {
-        s->from_island = s->at_island;
-        s->to_island   = next;
-        s->at_island   = -1;
-        s->progress    = 0.0f;
+        s->from_island    = s->at_island;
+        s->to_island      = next;
+        s->at_island      = -1;
+        s->departure_tick = sim_tick_no;   /* the voyage starts now */
+        s->progress       = 0.0f;
     }
 }
 
 void ships_update(Ship ships[], int ship_count,
-                  Island islands[], int island_count)
+                  Island islands[], int island_count, uint64_t sim_tick_no)
 {
     int i;
 
     for (i = 0; i < ship_count; i++) {
-        Ship *s = &ships[i];
+        Ship    *s = &ships[i];
+        uint64_t elapsed;
 
         if (!s->active) continue;
 
         if (s->at_island >= 0) {
             /* Docked. Only a route makes a ship leave on its own. */
-            if (s->route_active) route_turnaround(s, islands, island_count);
+            if (s->route_active)
+                route_turnaround(s, islands, island_count, sim_tick_no);
             continue;
         }
 
-        /* One fixed tick of the crossing. progress stays a 0..1 float
-         * (world_ui draws it); advancing it by a constant fraction is
-         * deterministic on one machine. */
-        s->progress += 1.0f / (float)SHIP_VOYAGE_TICKS;
-
-        if (s->progress >= 1.0f) {
-            s->progress  = 0.0f;
+        /* At sea. Arrival is an exact integer test on the tick; progress
+         * is only a cached 0..1 derivation for the renderer. */
+        elapsed = sim_tick_no - s->departure_tick;
+        if (elapsed >= (uint64_t)SHIP_VOYAGE_TICKS) {
             s->at_island = s->to_island;   /* arrived */
+            s->progress  = 0.0f;
+        } else {
+            s->progress = (float)elapsed / (float)SHIP_VOYAGE_TICKS;
         }
     }
+}
+
+/* ---- Voyage record (the wire format) --------------------- */
+VoyageRecord voyage_record_make(const Ship *sh, int ship_id, uint32_t player_id)
+{
+    VoyageRecord v;
+    int          i;
+
+    v.player_id      = player_id;
+    v.ship_id        = ship_id;
+    v.from           = sh->from_island;
+    v.to             = sh->to_island;
+    v.departure_tick = sh->departure_tick;
+    for (i = 0; i < RES_COUNT; i++)
+        v.cargo[i] = sh->cargo[i];
+    return v;
+}
+
+int voyage_record_to_json(const VoyageRecord *v, char *buf, size_t n)
+{
+    int off, i, w;
+
+    off = snprintf(buf, n,
+        "{\"player\":%u,\"ship\":%d,\"from\":%d,\"to\":%d,"
+        "\"departure_tick\":%llu,\"cargo\":[",
+        (unsigned)v->player_id, v->ship_id, v->from, v->to,
+        (unsigned long long)v->departure_tick);
+    if (off < 0 || (size_t)off >= n) return -1;
+
+    for (i = 0; i < RES_COUNT; i++) {
+        w = snprintf(buf + off, n - (size_t)off, "%s%d",
+                     i ? "," : "", v->cargo[i]);
+        if (w < 0 || (size_t)off + (size_t)w >= n) return -1;
+        off += w;
+    }
+
+    w = snprintf(buf + off, n - (size_t)off, "]}");
+    if (w < 0 || (size_t)off + (size_t)w >= n) return -1;
+    return off + w;
 }
 
 int ships_cargo_total(const Ship ships[], int ship_count, ResourceType res)

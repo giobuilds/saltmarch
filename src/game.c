@@ -470,7 +470,8 @@ void sim_run_one_tick(GameState *gs)
         island_update(&gs->islands[i]);
 
     /* 3. Voyages advance independently of any island. */
-    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS);
+    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
+                 gs->sim_tick_no);
 
     /* 4. Advance the world clock. */
     gs->sim_tick_no++;
@@ -532,7 +533,9 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->at_island, sizeof(sh->at_island));
         fnv_bytes(&h, &sh->from_island, sizeof(sh->from_island));
         fnv_bytes(&h, &sh->to_island, sizeof(sh->to_island));
-        fnv_bytes(&h, &sh->progress, sizeof(sh->progress));
+        /* departure_tick is the canonical voyage state; progress is a
+         * derived float and deliberately excluded (Phase 2). */
+        fnv_bytes(&h, &sh->departure_tick, sizeof(sh->departure_tick));
         fnv_bytes(&h, sh->cargo, sizeof(sh->cargo));
         fnv_bytes(&h, &sh->route_active, sizeof(sh->route_active));
         fnv_bytes(&h, &sh->route_a, sizeof(sh->route_a));
@@ -983,10 +986,11 @@ static int sim_ship_depart(GameState *gs, int ship_idx, int dest)
     if (sh->at_island < 0) return 0;         /* already at sea       */
     if (sh->at_island == dest) return 0;     /* nowhere to go        */
 
-    sh->from_island = sh->at_island;
-    sh->to_island   = dest;
-    sh->at_island   = -1;                    /* now at sea           */
-    sh->progress    = 0.0f;
+    sh->from_island    = sh->at_island;
+    sh->to_island      = dest;
+    sh->at_island      = -1;                 /* now at sea           */
+    sh->departure_tick = gs->sim_tick_no;    /* fixes the whole voyage */
+    sh->progress       = 0.0f;
     return 1;
 }
 
