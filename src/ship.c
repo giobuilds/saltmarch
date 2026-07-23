@@ -42,6 +42,36 @@ int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty)
     return 0;
 }
 
+int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty)
+{
+    if (res < 0 || res >= RES_COUNT) return 0;
+
+    if (qty > 0) {                        /* escrow -> ship */
+        if (res != RES_GOLD) {
+            int space = SHIP_CARGO_CAPACITY - sh->cargo[res];
+            if (qty > space) qty = space;
+        }
+        if (qty > isl->escrow[res]) qty = isl->escrow[res];
+        if (qty <= 0) return 0;
+
+        isl->escrow[res] -= qty;
+        sh->cargo[res]   += qty;
+        return qty;
+    }
+
+    if (qty < 0) {                        /* ship -> escrow (uncapped) */
+        int want = -qty;
+        if (want > sh->cargo[res]) want = sh->cargo[res];
+        if (want <= 0) return 0;
+
+        sh->cargo[res]   -= want;
+        isl->escrow[res] += want;
+        return want;
+    }
+
+    return 0;
+}
+
 /* A ship that has just docked and is running a route: drop what it
  * brought, pick up what goes back, and set sail again.
  *

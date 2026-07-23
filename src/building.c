@@ -48,35 +48,43 @@
 /* =========================================================
  * Building definition table
  * ========================================================= */
+/* Every row is DESIGNATED by its enum value. This table was positional
+ * until the Shipyard / Worker's House rows were found swapped relative
+ * to the enum (BUILDING_DEFS[10] held the Shipyard def while type 10 is
+ * BUILDING_HOUSE_WORKER) — the same silent-misalignment failure the
+ * RES_COL table had. Designated rows make the compiler place each def
+ * at its enum index no matter the order rows appear in, and
+ * tests/test_defs.c asserts name<->enum agreement so a future row can't
+ * regress this. */
 const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     /*  name            w  h  flags                  R    G    B
      *  produces       amt  consumes[2]         amt[2]      tick   cost  hud_placeable */
-    {
+    [BUILDING_FISHERS_HUT] = {
         "Fisher's Hut", 1, 1, PLACE_NEEDS_COAST,   210, 180, 100,
         RES_FISH,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  6.0f,
         { [RES_GOLD] = 60 },   /* raw producer: Gold only, no bootstrap chicken-and-egg */
         1
     },
-    {
+    [BUILDING_WAREHOUSE] = {
         "Warehouse",    2, 2, PLACE_ANY_LAND,       160, 100,  60,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,   /* no production */
         { [RES_WOOD] = 20, [RES_GOLD] = 150 },
         1
     },
-    {
+    [BUILDING_FARM] = {
         "Farm",         2, 2, PLACE_NEEDS_FERTILE,   80, 160,  50,
         RES_GRAIN,      1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  8.0f,
         { [RES_GOLD] = 80 },
         1
     },
-    {
+    [BUILDING_LUMBERJACK] = {
         "Lumberjack",   1, 1, PLACE_NEEDS_FOREST,  120,  80,  40,
         RES_WOOD,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  5.0f,
         { [RES_GOLD] = 60 },
         1
     },
     /* Phase 5: House — residents live here, generate gold when fed */
-    {
+    [BUILDING_HOUSE] = {
         "House",        1, 1, PLACE_ANY_LAND,      210, 190, 160,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,   /* pop_update handles gold, not tick system */
         { [RES_WOOD] = 15, [RES_GOLD] = 80 },
@@ -87,7 +95,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * requires tile->buildable, which those tile types never have.
      * Free: a real road network needs many tiles, and charging per
      * tile made drag-placing one needlessly punishing. */
-    {
+    [BUILDING_ROAD] = {
         "Road",         1, 1, PLACE_ANY_LAND,      110, 105, 100,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
         { 0 },
@@ -96,7 +104,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     /* Phase 4: Marketplace — no passive production; it's a pure
      * gateway building. Clicking a placed, road-connected one opens
      * the manual trade screen (see trade_ui.c, game_sell_resource). */
-    {
+    [BUILDING_MARKETPLACE] = {
         "Marketplace",  2, 2, PLACE_ANY_LAND,      200, 140,  60,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
         { [RES_WOOD] = 30, [RES_GOLD] = 200 },
@@ -107,19 +115,19 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * a consumer. Malthouse is the multi-input building: both Grain
      * and Hops must be in stock for it to tick at all (all-or-nothing,
      * see game_tick_buildings, game.c). */
-    {
+    [BUILDING_HOP_FARM] = {
         "Hop Farm",     1, 1, PLACE_NEEDS_HOP_FERTILE, 90, 150, 60,
         RES_HOPS,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  8.0f,
         { [RES_GOLD] = 80 },
         1
     },
-    {
+    [BUILDING_MALTHOUSE] = {
         "Malthouse",    2, 2, PLACE_ANY_LAND,       170, 140,  90,
         RES_MALT,       1,   { RES_GRAIN, RES_HOPS },  { 1, 1 },  10.0f,
         { [RES_WOOD] = 20, [RES_GOLD] = 150 },
         1
     },
-    {
+    [BUILDING_BREWERY] = {
         "Brewery",      2, 2, PLACE_ANY_LAND,       190, 150,  70,
         RES_BEER,       1,   { RES_MALT, RES_COUNT },  { 1, 0 },  8.0f,
         { [RES_WOOD] = 20, [RES_GOLD] = 150 },
@@ -128,7 +136,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     /* Colonisation: a Shipyard has no production of its own — like the
      * Marketplace it is a gateway you click, here to lay down a ship.
      * PLACE_NEEDS_COAST for the obvious reason. */
-    {
+    [BUILDING_SHIPYARD] = {
         "Shipyard",     2, 2, PLACE_NEEDS_COAST,    130, 120, 160,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
         { [RES_WOOD] = 40, [RES_GOLD] = 250 },
@@ -140,11 +148,20 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * bar (see ui.c's filtered slot list). cost[] is irrelevant since
      * building_place() is never called for this type; the upgrade's
      * Gold cost lives in game_upgrade_house() instead. */
-    {
+    [BUILDING_HOUSE_WORKER] = {
         "Worker's House", 1, 1, PLACE_ANY_LAND,    230, 200, 140,
         RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
         { 0 },
         0
+    },
+    /* MMO Phase 5: the inter-player airlock (see building.h). No
+     * production — like Marketplace/Shipyard it is a gateway you click,
+     * here to open the escrow panel. */
+    [BUILDING_HARBOR] = {
+        "Harbor",       2, 2, PLACE_NEEDS_COAST,     90, 130, 170,
+        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
+        { [RES_WOOD] = 30, [RES_GOLD] = 200 },
+        1
     },
 };
 

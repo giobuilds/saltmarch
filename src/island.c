@@ -21,6 +21,13 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
     isl->settled = settled;
     SDL_strlcpy(isl->name, name ? name : "Island", ISLAND_NAME_LEN);
 
+    /* Ownership starts empty (game_reset_world assigns the starting
+     * island; colonisation/grants assign the rest) and docking open —
+     * closed harbors are an owner's explicit choice, not a default. */
+    isl->owner           = 0;
+    isl->docking_allowed = 1;
+    /* escrow[] was zeroed by the memset above. */
+
     SDL_Log("Island '%s' generated (seed=%u, profile=%d, settled=%d)",
             isl->name, seed, (int)profile, settled);
 }

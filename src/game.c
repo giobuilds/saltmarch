@@ -1,6 +1,7 @@
 /*  game.c  --  Game state management  (Phase 5)  */
 
 #include "game.h"
+#include "net.h"      /* Phase 5: the lockstep tick gate */
 #include "render.h"
 #include "building.h"
 #include "resource.h"
@@ -45,6 +46,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->tier_upgrade_idx      = -1;
     gs->ship_build_open       = 0;
     gs->ship_build_idx        = -1;
+    gs->escrow_open           = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
     gs->placement_valid       = 0;
@@ -115,6 +117,14 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 
     stockpile_add(&cur(gs)->stockpile, RES_GOLD, STARTING_GOLD);
 
+    /* The world's first player is ALWAYS player 1, regardless of who
+     * created it: this function is also how load and the F9 verifier
+     * rebuild tick 0, so island 0's owner must be a pure function of
+     * the seed — never of which client happens to be reconstructing.
+     * (game_new/game_new_seeded make the local player id 1 to match;
+     * a co-op guest acquires its island via a logged CMD_GRANT_START.) */
+    gs->islands[0].owner = 1u;
+
     /* The market starts at baseline, so day-one quotes equal the old
      * fixed SELL_PRICE/BUY_PRICE until the player trades. */
     faction_init(&gs->faction);
@@ -164,6 +174,9 @@ GameState *game_init(void)
     gs->replay_replay_hash = 0;
     gs->replay_tick        = 0;
 
+    gs->local_player_id = 1u;
+    gs->net             = NULL;   /* attached by main.c when hosting/joining */
+
     game_reset_world(gs, (uint32_t)SDL_GetTicksNS());
 
     return gs;
@@ -177,15 +190,22 @@ void game_free(GameState *gs)
     free(gs);
 }
 
-/* ---- game_new -------------------------------------------- */
+/* ---- game_new --------------------------------------------
+ * Starting a NEW world makes you its first player (game_reset_world
+ * gives island 0 to player 1 unconditionally — see the note there), so
+ * the local id snaps back to 1 even for an ex-guest. game_reset_world
+ * itself must NOT touch local_player_id: load and the F9 verifier call
+ * it to rebuild worlds this client doesn't own. */
 void game_new(GameState *gs)
 {
+    gs->local_player_id = 1u;
     game_reset_world(gs, (uint32_t)SDL_GetTicksNS());
 }
 
 /* ---- game_new_seeded ------------------------------------- */
 void game_new_seeded(GameState *gs, uint32_t seed)
 {
+    gs->local_player_id = 1u;
     game_reset_world(gs, seed);
 }
 
@@ -216,7 +236,11 @@ typedef struct {
 } SaveHeader;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
-#define SAVE_VERSION 5u           /* v5: seed + command log (Phase 1d) */
+/* v6 (Phase 5): commands carry a meaningful player_id and sim_apply
+ * enforces ownership, so a v5 log (player_id 0 throughout) would replay
+ * to a world of rejected commands. Same bytes, different meaning — the
+ * version bump is the rejection. */
+#define SAVE_VERSION 6u
 
 int game_save(const GameState *gs, const char *path)
 {
@@ -316,10 +340,9 @@ int game_load(GameState *gs, const char *path)
 
     /* Rebuild tick 0 from the seed (this sets replay_valid = 1), install
      * the logged commands, then replay them up to the saved tick. */
-    game_reset_world(gs, hdr.world_seed);
-
     cmds = (const Command *)(buf + sizeof(hdr));
-    if (!command_log_set(gs, cmds, hdr.cmd_count)) {
+    if (!game_install_world(gs, hdr.world_seed, hdr.sim_tick_no,
+                            cmds, hdr.cmd_count)) {
         SDL_Log("game_load: out of memory installing %d commands",
                 hdr.cmd_count);
         free(buf);
@@ -327,14 +350,28 @@ int game_load(GameState *gs, const char *path)
     }
     free(buf);
 
-    while (gs->sim_tick_no < hdr.sim_tick_no)
-        sim_run_one_tick(gs);
-
     game_set_current_island(gs, hdr.current_island);
 
     SDL_Log("Game loaded from %s (seed %u, replayed to tick %llu, %d commands)",
             path, hdr.world_seed,
             (unsigned long long)gs->sim_tick_no, gs->cmd_count);
+    return 1;
+}
+
+/* ---- game_install_world -----------------------------------
+ * The (seed, log, tick) -> world constructor shared by game_load and
+ * the net layer's join/resync path. See game.h. */
+int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
+                       const Command *cmds, int n)
+{
+    game_reset_world(gs, seed);
+
+    if (!command_log_set(gs, cmds, n))
+        return 0;
+
+    while (gs->sim_tick_no < tick)
+        sim_run_one_tick(gs);
+
     return 1;
 }
 
@@ -445,6 +482,15 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
     if (gs->sim_acc_ns > SIM_TICK_NS * 8)
         gs->sim_acc_ns = SIM_TICK_NS * 8;
     while (gs->sim_acc_ns >= SIM_TICK_NS) {
+        /* Lockstep gate (Phase 5): a co-op guest may only simulate
+         * ticks the host has authorised — an authorised tick is a
+         * complete tick (every command for it has arrived). When the
+         * gate closes, real time keeps accumulating (clamped above) and
+         * the sim catches up in a burst when authorisation arrives,
+         * staying in step rather than drifting. Hosts and offline play
+         * are never gated. */
+        if (gs->net && !net_tick_allowed(gs->net, gs->sim_tick_no))
+            break;
         sim_run_one_tick(gs);
         gs->sim_acc_ns -= SIM_TICK_NS;
     }
@@ -512,6 +558,10 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &isl->settled, sizeof(isl->settled));
         fnv_bytes(&h, isl->stockpile.amount, sizeof(isl->stockpile.amount));
         fnv_bytes(&h, &isl->stockpile.capacity, sizeof(isl->stockpile.capacity));
+        /* Phase 5: ownership and the harbor airlock are world state. */
+        fnv_bytes(&h, &isl->owner, sizeof(isl->owner));
+        fnv_bytes(&h, &isl->docking_allowed, sizeof(isl->docking_allowed));
+        fnv_bytes(&h, isl->escrow, sizeof(isl->escrow));
 
         for (b = 0; b < isl->building_count; b++) {
             const Building *bd = &isl->buildings[b];
@@ -537,6 +587,7 @@ uint64_t sim_hash(const GameState *gs)
         const Ship *sh = &gs->ships[s];
         fnv_bytes(&h, &sh->active, sizeof(sh->active));
         if (!sh->active) continue;
+        fnv_bytes(&h, &sh->owner, sizeof(sh->owner));   /* Phase 5 */
         fnv_bytes(&h, &sh->at_island, sizeof(sh->at_island));
         fnv_bytes(&h, &sh->from_island, sizeof(sh->from_island));
         fnv_bytes(&h, &sh->to_island, sizeof(sh->to_island));
@@ -938,7 +989,7 @@ void game_upgrade_house(GameState *gs, int idx)
  * Returns the new ship's slot index, or -1 on failure. Slot choice
  * (reuse-first-inactive, else append) is a deterministic function of
  * the ship array, so a replayed log lands the ship in the same slot. */
-static int sim_build_ship(GameState *gs, int island)
+static int sim_build_ship(GameState *gs, int island, uint32_t player)
 {
     Island *isl = &gs->islands[island];
     int     i, slot = -1;
@@ -955,6 +1006,7 @@ static int sim_build_ship(GameState *gs, int island)
 
     memset(&gs->ships[slot], 0, sizeof(Ship));
     gs->ships[slot].active      = 1;
+    gs->ships[slot].owner       = player;   /* commanded by its builder */
     gs->ships[slot].at_island   = island;
     gs->ships[slot].from_island = island;
     gs->ships[slot].to_island   = island;
@@ -976,21 +1028,43 @@ int game_build_ship(GameState *gs)
 
 /* ---- sim_ship_transfer / game_ship_transfer -----------------
  * Moves goods across a dock only, never across open water: the ship
- * must be docked at `island`. Clamping is deferred to ship_transfer_at
- * so the manual path cannot disagree with what trade routes do. */
-static int sim_ship_transfer(GameState *gs, int ship_idx, ResourceType res,
-                             int qty, int island)
+ * must be docked at `island`. At the player's OWN island this is the
+ * ordinary stockpile transfer. At a FOREIGN island (Phase 5) the only
+ * permitted exchange is ship <-> harbor escrow, and only if the owner
+ * allows docking and an active Harbor stands there — a ship that can't
+ * dock can't deliver, which is where blockade comes from. Clamping is
+ * deferred to ship_transfer_at / ship_transfer_escrow so the manual
+ * path cannot disagree with what trade routes do. */
+static int island_has_active_harbor(const Island *isl)
 {
-    Ship *sh;
+    int i;
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == BUILDING_HARBOR)
+            return 1;
+    return 0;
+}
+
+static int sim_ship_transfer(GameState *gs, int ship_idx, ResourceType res,
+                             int qty, int island, uint32_t player)
+{
+    Ship   *sh;
+    Island *isl;
 
     if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
     if (res < 0 || res >= RES_COUNT) return 0;
     sh = &gs->ships[ship_idx];
     if (!sh->active) return 0;
     if (sh->at_island != island) return 0;
+    isl = &gs->islands[island];
 
-    ship_transfer_at(sh, &gs->islands[island], res, qty);
-    return 1;
+    if (isl->owner == player)
+        return ship_transfer_at(sh, isl, res, qty) != 0;
+
+    /* Foreign dock: escrow only, and only with permission + a harbor. */
+    if (!isl->docking_allowed) return 0;
+    if (!island_has_active_harbor(isl)) return 0;
+    return ship_transfer_escrow(sh, isl, res, qty) != 0;
 }
 
 void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
@@ -1036,8 +1110,11 @@ int game_ship_depart(GameState *gs, int ship_idx, int dest_island)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_colonise / game_colonise ---------------------------- */
-static int sim_colonise(GameState *gs, int ship_idx, int island_idx)
+/* ---- sim_colonise / game_colonise ----------------------------
+ * Ownership is recorded at colonisation (Phase 5): the island belongs
+ * to whoever's ship founded it. */
+static int sim_colonise(GameState *gs, int ship_idx, int island_idx,
+                        uint32_t player)
 {
     Ship   *sh;
     Island *isl;
@@ -1050,7 +1127,7 @@ static int sim_colonise(GameState *gs, int ship_idx, int island_idx)
 
     if (!sh->active) return 0;
     if (sh->at_island != island_idx) return 0;     /* must be there   */
-    if (isl->settled) return 0;                    /* already ours    */
+    if (isl->settled) return 0;                    /* already claimed */
     if (sh->cargo[RES_GOLD] < COLONY_FOUNDING_GOLD) return 0;
 
     /* The grant physically leaves the hold and becomes the colony's
@@ -1061,9 +1138,11 @@ static int sim_colonise(GameState *gs, int ship_idx, int island_idx)
     stockpile_init(&isl->stockpile);
     stockpile_add(&isl->stockpile, RES_GOLD, COLONY_FOUNDING_GOLD);
     isl->settled = 1;
+    isl->owner   = player;
     camera_init(&isl->camera, SCREEN_W, SCREEN_H, MAP_COLS, MAP_ROWS);
 
-    SDL_Log("Colony founded on %s with %d Gold", isl->name, COLONY_FOUNDING_GOLD);
+    SDL_Log("Colony founded on %s with %d Gold (player %u)",
+            isl->name, COLONY_FOUNDING_GOLD, player);
     return 1;
 }
 
@@ -1141,6 +1220,134 @@ int game_ship_toggle_route(GameState *gs, int ship_idx)
     return command_submit(gs, &c);
 }
 
+/* ---- sim_grant_start / game_grant_start ---------------------
+ * The co-op join bootstrap: settle an untouched island as `player`'s
+ * start, with the standard treasury. Validated so it can't be abused
+ * as free expansion: the island must be virgin AND the player must own
+ * nothing anywhere. Mirrors sim_colonise's settle block, minus a ship. */
+static int sim_grant_start(GameState *gs, int island_idx, uint32_t player)
+{
+    Island *isl;
+    int     i;
+
+    if (island_idx < 0 || island_idx >= MAX_ISLANDS) return 0;
+    if (player == PLAYER_NONE) return 0;
+
+    isl = &gs->islands[island_idx];
+    if (isl->settled || isl->owner != PLAYER_NONE) return 0;
+
+    for (i = 0; i < MAX_ISLANDS; i++)
+        if (gs->islands[i].owner == player) return 0;   /* has a home */
+
+    stockpile_init(&isl->stockpile);
+    stockpile_add(&isl->stockpile, RES_GOLD, STARTING_GOLD);
+    isl->settled = 1;
+    isl->owner   = player;
+    camera_init(&isl->camera, SCREEN_W, SCREEN_H, MAP_COLS, MAP_ROWS);
+
+    SDL_Log("Starting island %s granted to player %u", isl->name, player);
+    return 1;
+}
+
+int game_grant_start(GameState *gs, int island_idx)
+{
+    Command c = {0};
+    c.kind = CMD_GRANT_START;
+    c.a    = island_idx;
+    return command_submit(gs, &c);
+}
+
+/* ---- sim_escrow_put / take / sim_set_docking ----------------
+ * The owner's side of the harbor airlock. PUT moves stockpile->escrow
+ * (clamped to stock); TAKE moves escrow->stockpile (clamped to escrow
+ * and, for goods, to storage headroom — the escrow holds overflow
+ * rather than destroying it, same rule as unloading a ship). Ownership
+ * is enforced centrally in sim_apply. */
+static int sim_escrow_put(GameState *gs, int island, ResourceType res, int qty)
+{
+    Island *isl = &gs->islands[island];
+
+    if (res < 0 || res >= RES_COUNT) return 0;
+    if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
+    if (qty <= 0) return 0;
+
+    stockpile_add(&isl->stockpile, res, -qty);
+    isl->escrow[res] += qty;
+    return 1;
+}
+
+static int sim_escrow_take(GameState *gs, int island, ResourceType res, int qty)
+{
+    Island *isl = &gs->islands[island];
+
+    if (res < 0 || res >= RES_COUNT) return 0;
+    if (qty > isl->escrow[res]) qty = isl->escrow[res];
+    if (res != RES_GOLD) {
+        int headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
+        if (headroom < 0) headroom = 0;
+        if (qty > headroom) qty = headroom;
+    }
+    if (qty <= 0) return 0;
+
+    isl->escrow[res] -= qty;
+    stockpile_add(&isl->stockpile, res, qty);
+    return 1;
+}
+
+static int sim_set_docking(GameState *gs, int island, int allow)
+{
+    gs->islands[island].docking_allowed = allow ? 1 : 0;
+    return 1;
+}
+
+int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty)
+{
+    Command c = {0};
+    c.kind = CMD_ESCROW_PUT;
+    c.a    = island_idx;
+    c.b    = (int32_t)res;
+    c.c    = qty;
+    return command_submit(gs, &c);
+}
+
+int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty)
+{
+    Command c = {0};
+    c.kind = CMD_ESCROW_TAKE;
+    c.a    = island_idx;
+    c.b    = (int32_t)res;
+    c.c    = qty;
+    return command_submit(gs, &c);
+}
+
+int game_set_docking(GameState *gs, int island_idx, int allow)
+{
+    Command c = {0};
+    c.kind = CMD_SET_DOCKING;
+    c.a    = island_idx;
+    c.b    = allow;
+    return command_submit(gs, &c);
+}
+
+/* ---- Ownership gates (Phase 5) ------------------------------
+ * Checked centrally in sim_apply so no dispatch path can forget them:
+ * you may only act on an island you own and command a ship you own.
+ * This is the whole privacy model — two players cannot edit each
+ * other's islands because the validation refuses, not because anything
+ * is hidden. Bounds are checked here too, so the gates subsume the old
+ * per-case range checks. */
+static int owns_island(const GameState *gs, int idx, uint32_t player)
+{
+    return idx >= 0 && idx < MAX_ISLANDS &&
+           player != PLAYER_NONE && gs->islands[idx].owner == player;
+}
+
+static int owns_ship(const GameState *gs, int idx, uint32_t player)
+{
+    return idx >= 0 && idx < gs->ship_count && gs->ships[idx].active &&
+           player != PLAYER_NONE && gs->ships[idx].owner == player;
+}
+
 /* ---- sim_apply ----------------------------------------------
  * The single dispatch from a Command to the mutation that carries it
  * out. The ONLY caller of the sim_* bodies above, and the only place
@@ -1154,38 +1361,59 @@ int sim_apply(GameState *gs, const Command *c)
     case CMD_PLACE_BUILDING: {
         BuildingType type = (BuildingType)(c->d / 2);
         int          pay  = c->d & 1;
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_place_building(gs, c->a, c->b, c->c, type, pay);
     }
     case CMD_PLACE_ROAD:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_place_road(gs, c->a, c->b, c->c);
     case CMD_DEMOLISH:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_demolish(gs, c->a, c->b);
     case CMD_SELL_RESOURCE:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_sell(gs, c->a, (ResourceType)c->b, c->c);
     case CMD_BUY_RESOURCE:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_buy(gs, c->a, (ResourceType)c->b, c->c);
     case CMD_UPGRADE_HOUSE:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
         return sim_upgrade_house(gs, c->a, c->b);
     case CMD_BUILD_SHIP:
-        if (c->a < 0 || c->a >= MAX_ISLANDS) return 0;
-        return sim_build_ship(gs, c->a) >= 0;
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        return sim_build_ship(gs, c->a, c->player_id) >= 0;
     case CMD_SHIP_TRANSFER:
+        /* Your ship, any island — WHOSE island decides stockpile vs
+         * escrow inside the body. */
+        if (!owns_ship(gs, c->a, c->player_id)) return 0;
         if (c->d < 0 || c->d >= MAX_ISLANDS) return 0;
-        return sim_ship_transfer(gs, c->a, (ResourceType)c->b, c->c, c->d);
+        return sim_ship_transfer(gs, c->a, (ResourceType)c->b, c->c, c->d,
+                                 c->player_id);
     case CMD_SHIP_DEPART:
+        if (!owns_ship(gs, c->a, c->player_id)) return 0;
         return sim_ship_depart(gs, c->a, c->b);
     case CMD_COLONISE:
-        return sim_colonise(gs, c->a, c->b);
+        if (!owns_ship(gs, c->a, c->player_id)) return 0;
+        return sim_colonise(gs, c->a, c->b, c->player_id);
     case CMD_SET_ROUTE_RES:
+        if (!owns_ship(gs, c->a, c->player_id)) return 0;
         return sim_set_route_res(gs, c->a, c->b);
     case CMD_TOGGLE_ROUTE:
+        if (!owns_ship(gs, c->a, c->player_id)) return 0;
         return sim_toggle_route(gs, c->a);
+    case CMD_GRANT_START:
+        /* Deliberately ungated: its precondition is owning NOTHING —
+         * sim_grant_start validates that itself. */
+        return sim_grant_start(gs, c->a, c->player_id);
+    case CMD_ESCROW_PUT:
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        return sim_escrow_put(gs, c->a, (ResourceType)c->b, c->c);
+    case CMD_ESCROW_TAKE:
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c);
+    case CMD_SET_DOCKING:
+        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        return sim_set_docking(gs, c->a, c->b);
     default:
         return 0;
     }

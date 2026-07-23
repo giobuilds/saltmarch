@@ -62,6 +62,8 @@ set(SOURCES
     src/command.c
     src/faction.c
     src/feed.c
+    src/net.c
+    src/escrow_ui.c
 )
 
 add_executable(saltmarch ${SOURCES})
@@ -114,4 +116,10 @@ target_link_libraries(saltmarch PRIVATE
 find_library(MATH_LIBRARY m)
 if(MATH_LIBRARY)
     target_link_libraries(saltmarch PRIVATE ${MATH_LIBRARY})
+endif()
+
+# Winsock for the co-op TCP layer (net.c). BSD sockets need no extra
+# library on Linux/macOS.
+if(WIN32)
+    target_link_libraries(saltmarch PRIVATE ws2_32)
 endif()

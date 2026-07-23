@@ -29,16 +29,20 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                \
     } while (0)
 
+/* player_id 1: island 0 is owned by player 1, and sim_apply's Phase 5
+ * ownership gate rejects identity-less commands. */
 static void apply_sell(GameState *gs, ResourceType res, int qty)
 {
     Command c = {0};
-    c.kind = CMD_SELL_RESOURCE; c.a = 0; c.b = (int32_t)res; c.c = qty;
+    c.kind = CMD_SELL_RESOURCE; c.player_id = 1;
+    c.a = 0; c.b = (int32_t)res; c.c = qty;
     sim_apply(gs, &c);
 }
 static void apply_buy(GameState *gs, ResourceType res, int qty)
 {
     Command c = {0};
-    c.kind = CMD_BUY_RESOURCE; c.a = 0; c.b = (int32_t)res; c.c = qty;
+    c.kind = CMD_BUY_RESOURCE; c.player_id = 1;
+    c.a = 0; c.b = (int32_t)res; c.c = qty;
     sim_apply(gs, &c);
 }
 

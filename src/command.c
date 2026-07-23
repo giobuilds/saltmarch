@@ -17,6 +17,7 @@
  */
 
 #include "game.h"
+#include "net.h"     /* Phase 5: route submissions through a session */
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,8 @@
 static const char *const KIND_NAMES[CMD_COUNT] = {
     "PLACE_BUILDING", "PLACE_ROAD", "DEMOLISH", "SELL_RESOURCE",
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
-    "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE"
+    "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
+    "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -59,13 +61,27 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
-    /* Stamp for the next tick to run (sim_tick_no) and, for now, the
-     * single local player. sim_run_one_tick applies it when the world
-     * clock reaches that tick. */
+    /* In a co-op session the submission is routed through the host's
+     * ordering authority instead of the local log (host: stamp + log +
+     * broadcast; guest: send upstream and wait for it to come back
+     * stamped). Offline, or if the session declines, fall through to
+     * local stamping. */
+    if (gs->net && net_submit_local(gs->net, gs, c))
+        return 1;
+
+    /* Stamp for the next tick to run (sim_tick_no) and with the local
+     * player's identity (Phase 5: ownership validation reads this).
+     * sim_run_one_tick applies it when the world clock reaches that
+     * tick. */
     stamped.tick      = gs->sim_tick_no;
-    stamped.player_id = 0;
+    stamped.player_id = gs->local_player_id;
 
     return cmd_log_push(gs, &stamped);
+}
+
+int command_log_append(GameState *gs, const Command *c)
+{
+    return cmd_log_push(gs, c);
 }
 
 int command_log_set(GameState *gs, const Command *cmds, int n)

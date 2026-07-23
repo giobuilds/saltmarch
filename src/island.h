@@ -55,6 +55,20 @@ typedef struct {
     int        settled;         /* 0 = generated but not colonised     */
     MapProfile profile;
     char       name[ISLAND_NAME_LEN];
+
+    /* ---- Ownership & the harbor airlock (MMO_PLAN Phase 5) ----
+     * owner is a player id (PLAYER_NONE = unowned); recorded at
+     * colonisation/grant and enforced by sim_apply — privacy by
+     * validation, not by hiding state. docking_allowed gates whether a
+     * FOREIGN player's ship may transfer here at all (a ship that can't
+     * dock can't deliver: blockade for free). escrow[] is the harbor's
+     * neutral airlock: foreign ships may move goods only ship<->escrow,
+     * and only the owner moves goods escrow<->stockpile. Uncapped (it
+     * is a quay, not a warehouse). All three are sim state: hashed,
+     * replayed, mutated only through commands. */
+    uint32_t   owner;
+    int        docking_allowed;
+    int32_t    escrow[RES_COUNT];
 } Island;
 
 /* Generate/reset `isl` to a freshly created island: new map from

@@ -62,6 +62,13 @@ typedef enum {
      * way to reach another island. Coastal by necessity. */
     BUILDING_SHIPYARD     = 11,
 
+    /* MMO Phase 5: the harbor is the inter-player airlock. A FOREIGN
+     * player's ship may transfer goods at this island only if an active
+     * Harbor stands here (and docking is allowed) — and only into/out of
+     * the island's escrow, never its stockpile. Coastal like the
+     * Shipyard. Clicking a placed one opens the escrow panel. */
+    BUILDING_HARBOR       = 12,
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

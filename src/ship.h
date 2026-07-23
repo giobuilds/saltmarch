@@ -46,6 +46,12 @@
 
 typedef struct {
     int   active;
+
+    /* Phase 5: who commands this ship. Set at build time from the
+     * commanding player; sim_apply rejects ship commands from anyone
+     * else. Sim state (hashed). */
+    uint32_t owner;
+
     int   at_island;      /* island index while docked, -1 at sea    */
     int   from_island;
     int   to_island;
@@ -84,6 +90,14 @@ typedef struct {
  * rule) and by automated routes, so the two cannot drift apart on
  * something as easy to get wrong as capacity clamping. */
 int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty);
+
+/* The FOREIGN version of ship_transfer_at (Phase 5): moves goods
+ * between a ship's hold and an island's harbor ESCROW instead of its
+ * stockpile — the only exchange a non-owner is ever allowed. Same sign
+ * convention and hold clamping; the escrow side is uncapped (a quay,
+ * not a warehouse). Ownership/docking/harbor validation is sim_apply's
+ * job, not this function's. Returns units actually moved. */
+int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
 
 /* Advance every voyage, and run any active trade route: on arrival,
  * unload the inbound good, load the outbound one, and depart again.

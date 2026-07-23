@@ -34,6 +34,11 @@
 /* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
 
+/* Player identity (MMO_PLAN Phase 5). PLAYER_NONE marks an unowned
+ * island; real players count from 1. Single player is always player 1;
+ * a co-op guest gets its id from the host at join. */
+#define PLAYER_NONE 0u
+
 /* Fixed-timestep clock constants (SIM_TICK_MS, SIM_TICK_NS, ...). */
 #include "simclock.h"
 
@@ -141,6 +146,11 @@ typedef struct {
     /* Market debug overlay toggle (F10) — cosmetic, not sim state. */
     int  faction_debug;
 
+    /* Harbor escrow panel (Phase 5): open for the CURRENT island's
+     * harbor. Owner-gated at open time; current-island-relative like
+     * every other overlay, so island switches close it. */
+    int  escrow_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed
@@ -163,6 +173,20 @@ typedef struct {
      * mutated only in sim_apply (trades) and sim_run_one_tick
      * (reversion). One faction serves every island's marketplace. */
     Faction   faction;
+
+    /* Who this client is (Phase 5). CLIENT state, not world state: it
+     * is never hashed and never saved — it says which player's commands
+     * this process emits (command_submit stamps it), not anything about
+     * the world. 1 in single player; a co-op guest is assigned its id
+     * by the host at join and keeps it after a disconnect. */
+    uint32_t  local_player_id;
+
+    /* The lockstep co-op session, or NULL offline (Phase 5). Client
+     * infrastructure like local_player_id: owned by App (main.c),
+     * referenced here only so command_submit can route submissions and
+     * the tick loop can respect the guest's authorisation horizon.
+     * Never hashed, never saved. */
+    struct NetSession *net;
 
     /* World seed the whole archipelago is generated from. Stored so the
      * F9 self-check (and, in Phase 1d, load) can rebuild the tick-0
@@ -234,6 +258,19 @@ int game_verify_determinism(GameState *gs);
  * install a log read from disk. Returns 1 on success, 0 on OOM (the log
  * is left unchanged on failure). */
 int  command_log_set(GameState *gs, const Command *cmds, int n);
+
+/* Append one ALREADY-STAMPED command to the log without applying it —
+ * the guest's half of lockstep: authoritative commands arrive from the
+ * host stamped for a future tick, and sim_run_one_tick applies them
+ * when the clock gets there. Returns 1 on success, 0 on OOM. */
+int  command_log_append(GameState *gs, const Command *c);
+
+/* Rebuild the world as (seed, log, tick) — regenerate from the seed,
+ * install the log, replay to `tick`. Exactly what game_load does after
+ * parsing its file; public so the net layer can install a world
+ * received over the wire (join and resync). Marks replay_valid. */
+int  game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
+                        const Command *cmds, int n);
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
@@ -398,5 +435,24 @@ int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
 /* Toggle ship `ship_idx`'s trade route on or off. When arming, the
  * route repeats the ship's last voyage (from_island -> to_island). */
 int game_ship_toggle_route(GameState *gs, int ship_idx);
+
+/* ---- Phase 5: ownership-era commands ----------------------- */
+
+/* Claim `island_idx` as the local player's starting island. Validated
+ * by the sim: the island must be unsettled and unowned, and the player
+ * must own no island yet. The co-op join bootstrap (the host emits it
+ * for a fresh guest), but equally valid locally. */
+int game_grant_start(GameState *gs, int island_idx);
+
+/* Owner only: move `qty` of `res` between `island_idx`'s stockpile and
+ * its harbor escrow. Direction by function; clamped to what is there
+ * (and, for TAKE, to storage headroom — the escrow never destroys
+ * overflow, it keeps it). */
+int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty);
+int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty);
+
+/* Owner only: allow (1) or forbid (0) foreign ships transferring at
+ * `island_idx`. A ship that can't dock can't deliver — blockade. */
+int game_set_docking(GameState *gs, int island_idx, int allow);
 
 #endif /* GAME_H */
