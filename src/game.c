@@ -97,10 +97,10 @@ static void game_reset_world(GameState *gs, uint32_t seed)
         /* Stagger the job-assignment phase across islands.
          * agents_assign_jobs() runs a full BFS per unemployed agent,
          * so leaving every island in phase would bunch all of that
-         * onto the same frame every AGENT_ASSIGN_INTERVAL and read as
-         * a periodic hitch. */
+         * onto the same tick every AGENT_ASSIGN_INTERVAL and read as
+         * a periodic hitch. Integer ticks now (Phase 1b). */
         gs->islands[i].agent_assign_timer =
-            (float)i * AGENT_ASSIGN_INTERVAL / (float)MAX_ISLANDS;
+            i * AGENT_ASSIGN_INTERVAL_TICKS / MAX_ISLANDS;
     }
 
     gs->current_island = 0;
@@ -119,7 +119,9 @@ static void game_reset_world(GameState *gs, uint32_t seed)
      * re-running this function, then replaying the (now empty) log.
      * The allocation itself is kept for reuse. */
     gs->cmd_count   = 0;
+    gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
+    gs->sim_acc_ns  = 0;
 
     /* No starter houses: the player places their own first House and
      * grows population from there. */
@@ -142,7 +144,9 @@ GameState *game_init(void)
     gs->cmd_log     = NULL;
     gs->cmd_count   = 0;
     gs->cmd_cap     = 0;
+    gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
+    gs->sim_acc_ns  = 0;
 
     game_reset_world(gs, (uint32_t)SDL_GetTicksNS());
 
@@ -196,7 +200,10 @@ typedef struct {
 } IslandRecord;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
-#define SAVE_VERSION 3u
+/* v4 (Phase 1b): Building.timer and PopData.timer are integer sim ticks,
+ * not float seconds. Same byte width, different meaning, so the version
+ * bump is what stops a v3 save loading its float timers as garbage. */
+#define SAVE_VERSION 4u
 
 int game_save(const GameState *gs, const char *path)
 {
@@ -392,11 +399,11 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
 {
     Island *isl = cur(gs);
     float   lx, ly;
-    int     i;
 
-    Uint64 now = SDL_GetTicksNS();
-    float  dt  = (float)(now - gs->last_tick) / 1000000000.0f;
-    if (dt > 0.1f) dt = 0.1f;
+    Uint64 now      = SDL_GetTicksNS();
+    Uint64 frame_ns = now - gs->last_tick;
+    float  dt       = (float)frame_ns / 1000000000.0f;
+    if (dt > 0.1f) dt = 0.1f;   /* cosmetic clamp for camera/hover only */
     gs->last_tick  = now;
     gs->delta_time = dt;
 
@@ -474,14 +481,55 @@ void game_update(GameState *gs, SDL_Renderer *renderer)
             gs->selected_building, gs->hovered_row, gs->hovered_col,
             NULL, 0);
 
-    /* Simulate every settled island, not just the visible one. Each
-     * island's pipeline runs to completion before the next begins —
+    /* Fixed-timestep simulation. Everything above this point is
+     * cosmetic and per-frame (camera, hover, the drag-placement input);
+     * everything the sim owns advances only here, in whole ticks, so
+     * frame rate cannot change the world. Accumulate the real elapsed
+     * time and spend it one tick at a time.
+     *
+     * The accumulator is clamped so a long stall (a breakpoint, a
+     * dragged window) spends at most a bounded number of ticks catching
+     * up instead of freezing in a spiral; the world simply advances a
+     * little less during that stall, which is invisible in single
+     * player and is what the future server's continuous ticking exists
+     * to make authoritative anyway. */
+    gs->sim_acc_ns += frame_ns;
+    if (gs->sim_acc_ns > SIM_TICK_NS * 8)
+        gs->sim_acc_ns = SIM_TICK_NS * 8;
+    while (gs->sim_acc_ns >= SIM_TICK_NS) {
+        sim_run_one_tick(gs);
+        gs->sim_acc_ns -= SIM_TICK_NS;
+    }
+}
+
+/* ---- sim_run_one_tick -----------------------------------
+ * The heartbeat. See the header-comment contract in game.h. Command
+ * application happens first and before any island updates, so a command
+ * submitted for tick N is visible to tick N's simulation. */
+void sim_run_one_tick(GameState *gs)
+{
+    int i;
+
+    /* 1. Apply every command whose tick has now arrived, in log order.
+     * command_submit stamps with the then-current sim_tick_no, so the
+     * pending tail is exactly the commands for this tick (<= guards
+     * against any straggler rather than deadlocking the cursor). */
+    while (gs->cmd_applied < gs->cmd_count &&
+           gs->cmd_log[gs->cmd_applied].tick <= gs->sim_tick_no) {
+        sim_apply(gs, &gs->cmd_log[gs->cmd_applied]);
+        gs->cmd_applied++;
+    }
+
+    /* 2. Every settled island's full pipeline, one tick, in order —
      * see island_update()'s ordering constraint. */
     for (i = 0; i < MAX_ISLANDS; i++)
-        island_update(&gs->islands[i], dt);
+        island_update(&gs->islands[i]);
 
-    /* Voyages advance independently of any island. */
-    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS, dt);
+    /* 3. Voyages advance independently of any island. */
+    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS);
+
+    /* 4. Advance the world clock. */
+    gs->sim_tick_no++;
 }
 
 /* ---- commit_placement -----------------------------------

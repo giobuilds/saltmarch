@@ -145,7 +145,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             case WORLD_HIT_COLONISE:
                 if (gs->world_selected_ship >= 0) {
                     int at = gs->ships[gs->world_selected_ship].at_island;
-                    if (game_colonise(gs, gs->world_selected_ship, at)) {
+                    game_colonise(gs, gs->world_selected_ship, at);
+                    /* Colonisation applies at the next tick boundary, so
+                     * its result is not known here. Optimistically show
+                     * the target island: the world map only offers this
+                     * action for a ship docked at an unsettled island
+                     * with the founding gold aboard, and nothing can
+                     * change that before the next tick. */
+                    if (at >= 0) {
                         game_set_current_island(gs, at);
                         isl = game_cur_island(gs);
                     }

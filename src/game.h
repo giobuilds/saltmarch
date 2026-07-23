@@ -33,6 +33,9 @@
 /* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
 
+/* Fixed-timestep clock constants (SIM_TICK_MS, SIM_TICK_NS, ...). */
+#include "simclock.h"
+
 typedef struct {
     /* ---- The archipelago ----------------------------------
      * Every island exists from world-gen; `settled` (island.h)
@@ -144,8 +147,13 @@ typedef struct {
      * fixed-timestep tick number. See command.h. */
     Command  *cmd_log;
     int       cmd_count;
-    int       cmd_cap;
-    uint64_t  sim_tick_no;
+    int       cmd_cap;      /* allocated capacity of cmd_log            */
+    int       cmd_applied;  /* commands already applied by the sim;
+                             * cmd_log[cmd_applied..cmd_count) are still
+                             * pending, waiting for their tick boundary  */
+    uint64_t  sim_tick_no;  /* completed ticks; the tick about to run    */
+    uint64_t  sim_acc_ns;   /* real-time accumulator feeding the tick
+                             * loop — the ONLY wall clock the sim sees    */
 } GameState;
 
 /* ---- The command funnel ---------------------------------
@@ -163,6 +171,14 @@ typedef struct {
  * doubling the log). */
 int  command_submit(GameState *gs, const Command *c);
 int  sim_apply(GameState *gs, const Command *c);
+
+/* Advance the world by exactly one fixed tick: apply every command
+ * stamped for this tick (in log order), run each settled island's full
+ * pipeline and every voyage for one tick, then increment sim_tick_no.
+ * This is the sole path by which simulated time moves — game_update's
+ * accumulator calls it zero or more times per frame, and replay/F9
+ * (Phase 1c) call it to reconstruct the world from the log. */
+void sim_run_one_tick(GameState *gs);
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);

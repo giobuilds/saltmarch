@@ -24,6 +24,12 @@
 #include "building.h"
 #include "population.h"
 #include "agent.h"
+#include "simclock.h"
+
+/* Job assignment runs every AGENT_ASSIGN_INTERVAL seconds, expressed in
+ * whole sim ticks (see agent.h and simclock.h). */
+#define AGENT_ASSIGN_INTERVAL_TICKS \
+    ((int)(AGENT_ASSIGN_INTERVAL * SIM_TICKS_PER_SEC))
 
 /* Four is plenty for the intended archipelago and keeps GameState at
  * roughly its historical size — see MAX_AGENTS in agent.h, which was
@@ -44,7 +50,7 @@ typedef struct {
 
     Agent      agents[MAX_AGENTS];
     int        agent_count;
-    float      agent_assign_timer;
+    int        agent_assign_timer;   /* sim ticks since last assign pass */
 
     int        settled;         /* 0 = generated but not colonised     */
     MapProfile profile;
@@ -67,8 +73,10 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  * internally, relying on the road_grid built by connectivity_update()
  * for THIS island. Interleaving islands would silently path island B's
  * agents across island A's roads. Each island's pipeline must run to
- * completion before the next island's begins. */
-void island_update(Island *isl, float dt);
+ * completion before the next island's begins.
+ *
+ * Takes no dt: it advances the island by exactly one fixed sim tick. */
+void island_update(Island *isl);
 
 /* Recompute this island's per-resource storage cap from the number of
  * active Warehouses ON THIS ISLAND. Per-island by necessity: otherwise

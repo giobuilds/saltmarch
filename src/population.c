@@ -35,12 +35,12 @@ void pop_init(PopData *p)
 {
     p->active    = 1;
     p->residents = 5;        /* start half-full so growth is visible */
-    p->timer     = 0.0f;
+    p->timer     = 0;
     p->happy     = 0;
 }
 
 /* ---- pop_update ----------------------------------------
- * The needs loop.  Runs once per frame for every house.
+ * The needs loop.  Runs once per sim tick for every house.
  *
  * We use a single timer per house rather than a global
  * tick so houses placed at different times stagger their
@@ -48,7 +48,7 @@ void pop_init(PopData *p)
  * NEEDS_INTERVAL seconds.
  * -------------------------------------------------------- */
 void pop_update(PopData pop[], const Building buildings[], int count,
-               Stockpile *s, float dt)
+               Stockpile *s)
 {
     int i, j;
 
@@ -59,9 +59,9 @@ void pop_update(PopData pop[], const Building buildings[], int count,
 
         if (!p->active) continue;
 
-        p->timer += dt;
-        if (p->timer < NEEDS_INTERVAL) continue;
-        p->timer = 0.0f;
+        p->timer++;
+        if (p->timer < NEEDS_INTERVAL_TICKS) continue;
+        p->timer = 0;
 
         tier = tier_def_for(buildings[i].type);
 

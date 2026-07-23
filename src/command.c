@@ -1,15 +1,19 @@
 /*  command.c  --  The command funnel: log storage and submission
  *                 (MMO_PLAN Phase 1a)
  *
- * command_submit() appends a command to the world's command log and
- * applies it. The dispatch itself (sim_apply) lives in game.c beside
- * the mutators; this file owns only the log: its growth, its lifetime,
- * and the submit path that keeps "logged" and "applied" in lockstep.
+ * command_submit() stamps a command for the next tick and appends it to
+ * the world's command log. It does NOT apply it: sim_run_one_tick()
+ * (game.c) drains the pending tail of the log at each tick boundary, in
+ * order. The dispatch itself (sim_apply) also lives in game.c beside the
+ * mutators; this file owns only the log: its growth, its lifetime, and
+ * the submit path.
  *
- * Phase 1a applies each command immediately on submit, which preserves
- * today's same-frame behaviour exactly. Phase 1b will change this so
- * submit only appends (stamped for the next tick) and sim_run_one_tick()
- * drains and applies at tick boundaries, in log order.
+ * The tick-boundary deferral (Phase 1b) is what makes command latency a
+ * fixed, frame-rate-independent quantity — the property multiplayer
+ * lockstep later relies on. Submitting a command therefore no longer
+ * reports whether it succeeded (that is not known until its tick runs);
+ * command_submit returns 1 if the command was queued, 0 only if the log
+ * could not grow.
  */
 
 #include "game.h"
@@ -54,22 +58,20 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
-    /* Stamp with the world clock and (for now) the single local player.
-     * Log first, apply second, and only apply if the log actually
-     * recorded it — see cmd_log_push. */
+    /* Stamp for the next tick to run (sim_tick_no) and, for now, the
+     * single local player. sim_run_one_tick applies it when the world
+     * clock reaches that tick. */
     stamped.tick      = gs->sim_tick_no;
     stamped.player_id = 0;
 
-    if (!cmd_log_push(gs, &stamped))
-        return 0;
-
-    return sim_apply(gs, &stamped);
+    return cmd_log_push(gs, &stamped);
 }
 
 void command_log_free(GameState *gs)
 {
     free(gs->cmd_log);
-    gs->cmd_log   = NULL;
-    gs->cmd_count = 0;
-    gs->cmd_cap   = 0;
+    gs->cmd_log     = NULL;
+    gs->cmd_count   = 0;
+    gs->cmd_cap     = 0;
+    gs->cmd_applied = 0;
 }

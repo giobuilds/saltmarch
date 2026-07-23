@@ -86,7 +86,7 @@ static void route_turnaround(Ship *s, Island islands[], int island_count)
 }
 
 void ships_update(Ship ships[], int ship_count,
-                  Island islands[], int island_count, float dt)
+                  Island islands[], int island_count)
 {
     int i;
 
@@ -101,7 +101,10 @@ void ships_update(Ship ships[], int ship_count,
             continue;
         }
 
-        s->progress += dt / SHIP_VOYAGE_SECONDS;
+        /* One fixed tick of the crossing. progress stays a 0..1 float
+         * (world_ui draws it); advancing it by a constant fraction is
+         * deterministic on one machine. */
+        s->progress += 1.0f / (float)SHIP_VOYAGE_TICKS;
 
         if (s->progress >= 1.0f) {
             s->progress  = 0.0f;

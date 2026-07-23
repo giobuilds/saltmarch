@@ -31,6 +31,10 @@
  * any sane bulk-cargo limit. */
 #define SHIP_CARGO_CAPACITY  50
 #define SHIP_VOYAGE_SECONDS  20.0f /* one island-to-island crossing */
+/* The crossing in whole sim ticks; progress advances by 1/this each
+ * tick. (Phase 2 replaces the float progress with a departure-tick
+ * derivation; for now this keeps voyages frame-rate-independent.) */
+#define SHIP_VOYAGE_TICKS    ((int)(SHIP_VOYAGE_SECONDS * SIM_TICKS_PER_SEC))
 
 /* Gold a ship must be carrying to found a colony. The new island
  * starts with exactly this much, which is what lets it buy its first
@@ -75,7 +79,7 @@ int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty);
  * Needs the islands because a route moves goods into and out of their
  * stockpiles without the player being present. */
 void ships_update(Ship ships[], int ship_count,
-                  Island islands[], int island_count, float dt);
+                  Island islands[], int island_count);
 
 /* Total units of `res` currently in transit or sitting in holds —
  * the term that makes world conservation checkable: for any resource,

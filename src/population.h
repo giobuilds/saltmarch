@@ -38,9 +38,15 @@
 
 #include "resource.h"
 #include "building.h"   /* Phase 3: Building.connected */
+#include "simclock.h"   /* Phase 1b: fixed-tick clock  */
+#include <stdint.h>
 
 #define HOUSE_CAPACITY      10     /* max residents per house       */
 #define NEEDS_INTERVAL      30.0f  /* seconds between needs checks  */
+/* The needs check fires every NEEDS_INTERVAL seconds, counted in whole
+ * sim ticks so the F9 hash never reads an accumulating float. */
+#define NEEDS_INTERVAL_TICKS \
+    ((uint32_t)(NEEDS_INTERVAL * SIM_TICKS_PER_SEC))
 #define GOLD_PER_RESIDENT    2     /* gold generated per resident   */
 
 /* Most goods any single population tier needs at once (Farmers need
@@ -59,25 +65,26 @@ typedef struct {
 
 /* ---- Per-house population data ------------------------- */
 typedef struct {
-    int   active;       /* 1 if this slot holds a House             */
-    int   residents;    /* current population (0–HOUSE_CAPACITY)    */
-    float timer;        /* seconds since last needs tick            */
-    int   happy;        /* 1 = needs met last tick, 0 = unhappy     */
+    int      active;    /* 1 if this slot holds a House             */
+    int      residents; /* current population (0–HOUSE_CAPACITY)    */
+    uint32_t timer;     /* sim ticks since last needs tick          */
+    int      happy;     /* 1 = needs met last tick, 0 = unhappy     */
 } PopData;
 
 /* Initialise a PopData block for a newly placed house.
  * Starts with 5 residents — enough to feel alive immediately. */
 void pop_init(PopData *p);
 
-/* Called every frame for all active houses.
+/* Called once per sim tick for all active houses.
  * Advances timers, fires needs ticks, updates stockpile.
  * `pop`       – array of PopData, one per building slot
  * `buildings` – parallel array (same indexing) — buildings[i].connected
  *               gates whether pop[i]'s needs can be met at all this tick
  * `count`     – number of building slots to check
- * `s`         – global stockpile (read and written) */
+ * `s`         – island stockpile (read and written)
+ * Takes no dt: it advances one fixed tick. */
 void pop_update(PopData pop[], const Building buildings[], int count,
-               Stockpile *s, float dt);
+               Stockpile *s);
 
 /* Return the total population across all active houses. */
 int pop_total(const PopData pop[], int count);
