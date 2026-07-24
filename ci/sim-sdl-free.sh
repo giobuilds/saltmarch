@@ -27,12 +27,13 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 lib="${1:-$root/build/libsaltmarch_sim.a}"
 netlib="$(dirname "$lib")/libsaltmarch_net.a"
+uilib="$(dirname "$lib")/libsaltmarch_ui.a"
 failures=0
 
 fail() { printf '  FAIL: %s\n' "$1"; failures=$((failures + 1)); }
 pass() { printf '  ok:   %s\n' "$1"; }
 
-echo "== SDL-free check (sim, net, server) =="
+echo "== SDL-free check (sim, net, server, ui kit) =="
 
 # --- 1. the declared sim sources, straight out of CMakeLists.txt ---
 # The sim proper, plus net.c and the server: everything the dedicated
@@ -40,6 +41,10 @@ echo "== SDL-free check (sim, net, server) =="
 sources=$(sed -n '/^set(SALTMARCH_SIM_SOURCES/,/^)/p' "$root/CMakeLists.txt" \
           | grep -o 'src/[A-Za-z0-9_]*\.c')
 sources="$sources src/net.c server/saltmarch_host.c"
+# The UI kit too (UI_PLAN Phase 0): layout and hit-testing are pure
+# functions precisely so headless tests can drive them, and the day one
+# of them reaches for a font metric is the day that stops being true.
+sources="$sources src/ui_kit.c src/ui_snapshot.c"
 
 if [ -z "$sources" ]; then
     fail "could not read SALTMARCH_SIM_SOURCES out of CMakeLists.txt"
@@ -59,7 +64,7 @@ for src in $sources; do
         hits=$((hits + 1))
     fi
 done
-[ "$hits" -eq 0 ] && pass "no SDL in $(echo "$sources" | wc -w | tr -d ' ') sim/net/server sources"
+[ "$hits" -eq 0 ] && pass "no SDL in $(echo "$sources" | wc -w | tr -d ' ') sim/net/server/ui sources"
 
 # --- 2. the built archive's undefined symbols ---
 if ! command -v nm >/dev/null 2>&1; then
@@ -67,7 +72,7 @@ if ! command -v nm >/dev/null 2>&1; then
 elif [ ! -f "$lib" ]; then
     fail "sim library not found at $lib (build first)"
 else
-    for archive in "$lib" "$netlib"; do
+    for archive in "$lib" "$netlib" "$uilib"; do
         [ -f "$archive" ] || continue
         undef=$(nm --undefined-only "$archive" 2>/dev/null \
                 | grep -o 'SDL_[A-Za-z0-9_]*' | sort -u)
@@ -82,7 +87,7 @@ fi
 
 echo
 if [ "$failures" -eq 0 ]; then
-    echo "SIM, NET AND SERVER ARE SDL-FREE"
+    echo "SIM, NET, SERVER AND UI KIT ARE SDL-FREE"
     exit 0
 fi
 echo "SDL-FREE CHECK FAILED ($failures)"

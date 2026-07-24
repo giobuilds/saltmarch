@@ -12,6 +12,7 @@ builddir="$root/build"
 linkfile="$builddir/CMakeFiles/saltmarch.dir/link.txt"
 simlib="$builddir/libsaltmarch_sim.a"
 netlib="$builddir/libsaltmarch_net.a"
+uilib="$builddir/libsaltmarch_ui.a"
 
 if [ ! -f "$linkfile" ] || [ ! -f "$simlib" ]; then
     echo "build objects not found; run: cmake -B build && cmake --build build" >&2
@@ -35,17 +36,21 @@ for src in "$root"/tests/test_*.c; do
     name=$(basename "$src" .c)
     echo "=== $name ==="
 
-    # test_headless is the exception that proves the Phase 6 split: it
-    # links the sim archive ALONE, no client objects and no SDL. Give it
-    # those and the test would be meaningless -- it would still link if
-    # the sim grew a client dependency tomorrow.
-    if [ "$name" = "test_headless" ]; then
-        link_objs=""
-        link_sdl=""
-    else
-        link_objs="$objs $netlib"
-        link_sdl="$sdlflags"
-    fi
+    # Two tests are deliberately linked WITHOUT SDL, because the link
+    # itself is the assertion:
+    #   test_headless  -- the sim archive alone (MMO_PLAN Phase 6): the
+    #                     simulation is separable from the client.
+    #   test_ui_kit    -- sim + UI archives (UI_PLAN Phase 0): layout and
+    #                     hit-testing are pure functions that never reach
+    #                     for a font metric or a renderer.
+    # Handing either of them the client objects and SDL would make the
+    # test meaningless -- it would still link the day that stops being
+    # true.
+    case "$name" in
+        test_headless) link_objs="";        link_sdl="" ;;
+        test_ui_kit)   link_objs="$uilib";  link_sdl="" ;;
+        *)             link_objs="$objs $netlib"; link_sdl="$sdlflags" ;;
+    esac
 
     # shellcheck disable=SC2086
     cc -std=c99 -Wall -Wextra -I"$root/src" "$src" $link_objs "$simlib" \

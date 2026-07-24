@@ -1,7 +1,15 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **planned, not started.** Written for a future session to pick up
-> cold. Nothing in here has been implemented.
+> Status: **in progress.** Phase 0 (`ui_kit` + `UiSnapshot`) and Phase 0.5
+> (RejectReason) have landed; everything below them is still as planned.
+> Written for a future session to pick up cold.
+>
+> Note for later phases: MMO_PLAN Phases 1–6 are all shipped, so the
+> M-phases are unblocked and some of their content has already arrived
+> early. In particular the fixed price tables are already gone, so
+> Phase 1's `exchange_view_fixed()` is moot — the exchange view reads the
+> faction's live quotes from the snapshot (what the plan called
+> `exchange_view_faction()` at M3).
 >
 > Supersedes the v1 plan (in git history), which was written before
 > MMO_PLAN.md existed. The capacity measurements, the two verified bugs, and
@@ -191,7 +199,7 @@ v1 phases re-cut, plus **M-phases pinned to MMO_PLAN phases** (an M-phase
 lands with, or immediately after, its MMO counterpart — never before).
 Each remains independently shippable and verifiable.
 
-### Phase 0 — `ui_kit` + `UiSnapshot`
+### Phase 0 — `ui_kit` + `UiSnapshot` — **DONE**
 As v1 (layout cursor, `UiList`, canonical `ui_point_in`, measured-then-
 clamped geometry) with the signature decided up front:
 `*_build(UiList *, const UiSnapshot *, const UiState *)`. Define
@@ -199,13 +207,31 @@ clamped geometry) with the signature decided up front:
 **Verify:** headless `ui_row()`/`ui_split_h()` asserts; harness links UI
 `.o` files without SDL/SDL_ttf.
 
-### Phase 0.5 — RejectReason conversion (shippable today, pre-funnel)
+*As built:* the purity rule is enforced by the build system rather than
+by convention — `ui_kit.c` and `ui_snapshot.c` compile into
+`libsaltmarch_ui`, which links no SDL, and `tests/test_ui_kit.c` links
+that archive alone. `ci/sim-sdl-free.sh` covers it alongside the sim and
+the server. Widget labels are copied into the list rather than borrowed,
+since a `UiList` outlives its builder (golden diffs serialise it).
+
+### Phase 0.5 — RejectReason conversion — **DONE**
 Convert `building_can_place()`'s dead `(char *reason, size_t)` channel to a
 returned `RejectReason`; delete `set_reason()`; add the enum→string table
 in ui.c; wire it into the HUD hover tooltip. Kills v1's bug #2, fixes the
 enum's home before `sim_apply` exists to adopt it.
 **Verify:** headless assert per placement-failure case returns the right
 enum; tooltip shows it in-window.
+
+*As built, with two deviations:* the enum→string table lives in
+`ui_kit.c`, not `ui.c`, so the headless test can assert every reason has
+a distinct string without linking SDL. And the reason renders **at the
+cursor** rather than in the HUD bar — the answer belongs to the tile
+being pointed at (decision 3's "localized, not a global toast"), and a
+player hunting for a legal spot reads it without looking away.
+`building_can_place()` survives as a boolean wrapper over the new
+`building_place_check()`: `REJ_OK` is 0, so converting the existing
+`if (building_can_place(...))` call sites in place would have silently
+inverted every one of them.
 
 ### Phase 1 — Exchange screen rewrite (retires the cliff)
 The v1 trade rewrite (34px rows, `TRADE_W` → ~760, height computed then

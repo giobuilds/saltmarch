@@ -79,6 +79,46 @@ typedef struct {
     int32_t     a, b, c, d; /* payload, meaning per kind (see above)     */
 } Command;
 
+/* ---- Why the sim said no (UI_PLAN decision 3) --------------
+ * MMO_PLAN requires a rejected command to change nothing and to be
+ * rejected identically on every replay — which, with a bare 0/1 return,
+ * makes every rejection a silently eaten click. This enum is the shared
+ * vocabulary that fixes that: the sim produces a reason, the UI renders
+ * it (ui_reject_text in ui_kit.c holds the strings, since wording is a
+ * client concern), and the message a player sees is definitionally the
+ * reason the sim refused rather than a client-side guess that can drift.
+ *
+ * REJ_OK is 0 so `if (reason)` reads as "was rejected". Values are
+ * append-only: they will travel in logs and, later, over the wire.
+ *
+ * Adopted incrementally — UI_PLAN Phase 0.5 converts placement
+ * (building_place_check); trade, ownership and escrow rejections join
+ * as their phases land. */
+typedef enum {
+    REJ_OK = 0,               /* not a rejection                        */
+
+    /* placement (Phase 0.5) */
+    REJ_OUT_OF_BOUNDS,        /* footprint leaves the map               */
+    REJ_NOT_BUILDABLE,        /* water, rock, or otherwise unbuildable   */
+    REJ_NEEDS_FERTILE,        /* farm on infertile soil                 */
+    REJ_NEEDS_HOP_FERTILE,    /* hop farm off hop-fertile soil          */
+    REJ_NEEDS_COAST,          /* no adjacent water                      */
+    REJ_NEEDS_FOREST,         /* no adjacent forest                     */
+    REJ_OCCUPIED,             /* another building is already there      */
+
+    /* economy and authority (adopted by later phases) */
+    REJ_CANT_AFFORD,          /* the player cannot pay                  */
+    REJ_NO_STOCK,             /* nothing there to sell/move             */
+    REJ_NO_STORAGE,           /* no headroom to receive it              */
+    REJ_COUNTERPARTY_NO_GOLD, /* the faction is out of money            */
+    REJ_PRICE_MOVED,          /* quote moved past the limit sent        */
+    REJ_NOT_OWNER,            /* someone else's island or ship          */
+    REJ_ESCROW_REFUSED,       /* docking forbidden, or offer withdrawn  */
+    REJ_UNAVAILABLE,          /* generic: not possible right now        */
+
+    REJ_COUNT
+} RejectReason;
+
 /* Human-readable name for a CommandKind, for logging/debug. Never NULL;
  * returns "?" for an out-of-range kind. */
 const char *command_kind_name(CommandKind kind);

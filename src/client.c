@@ -102,12 +102,20 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
      * per-payment-method question the build-confirmation popup
      * resolves, so the player can always open it and see both options
      * even sitting at 0 Gold. */
-    gs->placement_valid = 0;
+    gs->placement_valid  = 0;
+    gs->placement_reason = REJ_OK;
     if (isl->settled &&
-        gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
-        gs->placement_valid = building_can_place(&isl->map,
-            gs->selected_building, gs->hovered_row, gs->hovered_col,
-            NULL, 0);
+        gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0) {
+        RejectReason why = building_place_check(&isl->map,
+            gs->selected_building, gs->hovered_row, gs->hovered_col);
+        gs->placement_valid  = (why == REJ_OK);
+        gs->placement_reason = (int)why;
+    } else if (!isl->settled && gs->selected_building != BUILDING_NONE) {
+        /* Looking at an island you have not colonised: the ghost is
+         * red either way, but "not your island" is a more useful thing
+         * to read than silence. */
+        gs->placement_reason = (int)REJ_NOT_OWNER;
+    }
 
     /* Fixed-timestep simulation. Everything above this point is
      * cosmetic and per-frame (camera, hover, the drag-placement input);

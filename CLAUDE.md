@@ -16,7 +16,7 @@ cmake --build build -j$(nproc)
 
 Requires `SDL3-devel` and `SDL3_ttf-devel` (Fedora package names; see BUILD.md for building SDL3 from source if not packaged).
 
-The build produces five targets: `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see SERVER.md). Verification, in the order it is cheapest to run:
+The build produces six targets: `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `libsaltmarch_ui.a` (layout/hit-test kit + the UI's read-only snapshot, no SDL), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see SERVER.md). Verification, in the order it is cheapest to run:
 
 ```bash
 cmake --build build -j$(nproc)          # zero warnings is the bar
@@ -79,6 +79,8 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `net.c/h` — the lockstep protocol (its own SDL-free library); `server/saltmarch_host.c` is the dedicated server over it
 - `replay.c/h` + `replay_main.c` — record/replay harness and the `saltmarch_replay` CLI
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
+- `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
+- `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
 
 ## History / conventions
 

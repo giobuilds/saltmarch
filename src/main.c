@@ -20,6 +20,7 @@
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
+#include "ui_kit.h"   /* UI_PLAN Phase 0: rejection vocabulary, widget kit */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -536,8 +537,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 } else if (gs->selected_building != BUILDING_NONE &&
                           gs->hovered_row >= 0 &&
                           building_can_place(&isl->map, gs->selected_building,
-                                            gs->hovered_row, gs->hovered_col,
-                                            NULL, 0)) {
+                                            gs->hovered_row, gs->hovered_col)) {
                     gs->build_confirm_open    = 1;
                     gs->build_confirm_row     = gs->hovered_row;
                     gs->build_confirm_col     = gs->hovered_col;
@@ -583,11 +583,26 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* Phase 5: walking population agents */
     render_agents(app->r, isl->agents, isl->agent_count, &isl->camera);
 
-    if (gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
+    if (gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0) {
         render_ghost(app->r, &isl->camera,
                      gs->selected_building,
                      gs->hovered_row, gs->hovered_col,
                      gs->placement_valid);
+
+        /* Why the ghost is red, said at the cursor (UI_PLAN Phase 0.5).
+         * Localized rather than a corner toast: the answer belongs to
+         * the tile being pointed at, and a player scanning for a legal
+         * spot reads it without moving their eyes. The string comes
+         * from the rejection vocabulary the sim itself uses, so it
+         * cannot drift from the actual verdict. */
+        if (!gs->placement_valid &&
+            gs->placement_reason != (int)REJ_OK) {
+            SDL_Color warn = { 235, 120, 110, 255 };
+            font_draw_text(app->r, FONT_SMALL,
+                ui_reject_text((RejectReason)gs->placement_reason),
+                gs->input.logical_x + 18, gs->input.logical_y + 18, warn);
+        }
+    }
 
     render_hovered_tile(app->r, &isl->camera,
                         gs->hovered_row, gs->hovered_col);

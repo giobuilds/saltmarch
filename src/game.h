@@ -81,8 +81,15 @@ typedef struct GameState {
     BuildingType selected_building;
 
     /* 1 if the current hover position is a valid placement spot
-     * for selected_building.  Used by render to colour the ghost. */
+     * for selected_building.  Used by render to colour the ghost.
+     * placement_reason is WHY not (a RejectReason; REJ_OK when valid) —
+     * the same vocabulary sim_apply rejects with, so the message under
+     * the cursor is definitionally the reason placement would fail
+     * rather than a client-side guess (UI_PLAN decision 3). Both are
+     * client-side view state: recomputed every frame from the hover,
+     * never hashed, never saved. */
     int placement_valid;
+    int placement_reason;
 
     int menu_open;  /* 1 when the cog menu overlay is open */
 

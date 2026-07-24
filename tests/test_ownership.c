@@ -46,7 +46,7 @@ static int place_first_fit(GameState *gs, int island, uint32_t player,
 
     for (r = 0; r < MAP_ROWS; r++)
         for (c = 0; c < MAP_COLS; c++)
-            if (building_can_place(&isl->map, type, r, c, NULL, 0)) {
+            if (building_can_place(&isl->map, type, r, c)) {
                 game_set_current_island(gs, island);
                 gs->selected_building = type;
                 gs->build_confirm_row = r;

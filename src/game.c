@@ -624,7 +624,7 @@ static int sim_place_road(GameState *gs, int island, int row, int col)
     const BuildingDef *def = &BUILDING_DEFS[BUILDING_ROAD];
 
     if (!isl->settled) return 0;
-    if (!building_can_place(&isl->map, BUILDING_ROAD, row, col, NULL, 0))
+    if (!building_can_place(&isl->map, BUILDING_ROAD, row, col))
         return 0;
     if (!building_can_afford(&isl->stockpile, BUILDING_ROAD))
         return 0;

@@ -210,32 +210,12 @@ static int footprint_has_adjacent(const Map *map,
     return 0;
 }
 
-/* Report why placement failed, if the caller asked for a reason.
- *
- * Uses snprintf rather than strncpy deliberately. strncpy does NOT
- * null-terminate when the source is at least as long as the buffer, so
- * "Needs hop-fertile soil" into a 16-byte buffer would leave an
- * unterminated string for the caller to read off the end of. snprintf
- * always terminates, and is not deprecated by MSVC the way strncpy is,
- * so this fixes a latent bug and a portability warning at once.
- *
- * The bug is currently dormant only because every caller passes
- * (NULL, 0) -- the reason text has never been displayed. It stops being
- * dormant the moment anything wires it into a tooltip. */
-static void set_reason(char *reason, size_t reason_len, const char *msg)
-{
-    if (reason && reason_len > 0) {
-        snprintf(reason, reason_len, "%s", msg);
-    }
-}
-
 /* =========================================================
  * building_can_place
  * ========================================================= */
-int building_can_place(const Map *map,
-                       BuildingType type,
-                       int row, int col,
-                       char *reason, size_t reason_len)
+RejectReason building_place_check(const Map *map,
+                                  BuildingType type,
+                                  int row, int col)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
     int r, c;
@@ -244,8 +224,7 @@ int building_can_place(const Map *map,
     if (row < 0 || col < 0 ||
         row + def->tile_h > map->rows ||
         col + def->tile_w > map->cols) {
-        set_reason(reason, reason_len, "Out of bounds");
-        return 0;
+        return REJ_OUT_OF_BOUNDS;
     }
 
     /* --- Pass 2: per-tile checks ------------------------ */
@@ -254,15 +233,13 @@ int building_can_place(const Map *map,
             const Tile *t = map_get_tile((Map *)map, r, c);
 
             if (!t || !t->buildable) {
-                set_reason(reason, reason_len, "Tile not buildable");
-                return 0;
+                return REJ_NOT_BUILDABLE;
             }
 
             /* Fertility check for farms */
             if (def->placement_flags & PLACE_NEEDS_FERTILE) {
                 if (t->fertility == FERTILE_NONE) {
-                    set_reason(reason, reason_len, "Soil not fertile");
-                    return 0;
+                    return REJ_NEEDS_FERTILE;
                 }
             }
 
@@ -271,8 +248,7 @@ int building_can_place(const Map *map,
              * so Farm's existing (loose) check is untouched. */
             if (def->placement_flags & PLACE_NEEDS_HOP_FERTILE) {
                 if (!(t->fertility & FERTILE_HOP)) {
-                    set_reason(reason, reason_len, "Needs hop-fertile soil");
-                    return 0;
+                    return REJ_NEEDS_HOP_FERTILE;
                 }
             }
 
@@ -287,8 +263,7 @@ int building_can_place(const Map *map,
         if (!footprint_has_adjacent(map, row, col,
                                     def->tile_w, def->tile_h,
                                     TILE_WATER)) {
-            set_reason(reason, reason_len, "Needs water nearby");
-            return 0;
+            return REJ_NEEDS_COAST;
         }
     }
 
@@ -296,12 +271,16 @@ int building_can_place(const Map *map,
         if (!footprint_has_adjacent(map, row, col,
                                     def->tile_w, def->tile_h,
                                     TILE_FOREST)) {
-            set_reason(reason, reason_len, "Needs forest nearby");
-            return 0;
+            return REJ_NEEDS_FOREST;
         }
     }
 
-    return 1;   /* all checks passed */
+    return REJ_OK;   /* all checks passed */
+}
+
+int building_can_place(const Map *map, BuildingType type, int row, int col)
+{
+    return building_place_check(map, type, row, col) == REJ_OK;
 }
 
 /* =========================================================
@@ -323,7 +302,7 @@ int building_place(Building buildings[], int *count,
                     return -1;
     }
 
-    if (!building_can_place(map, type, row, col, NULL, 0))
+    if (!building_can_place(map, type, row, col))
         return -1;
 
     /* Reuse a demolished building's slot before appending — without
