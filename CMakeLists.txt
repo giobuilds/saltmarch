@@ -67,6 +67,7 @@ set(SALTMARCH_SIM_SOURCES
     src/faction.c
     src/replay.c
     src/simlog.c
+    src/ghost_faction.c
 )
 
 add_library(saltmarch_sim STATIC ${SALTMARCH_SIM_SOURCES})

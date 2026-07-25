@@ -31,12 +31,14 @@ void replay_record_demo_session(GameState *gs, uint32_t seed)
     for (r = 0; r < MAP_ROWS && !placed; r++)
         for (c = 0; c < MAP_COLS && !placed; c++)
             if (building_can_place(&isl->map, BUILDING_HOUSE, r, c)) {
-                /* The explicit form: what to build, where, how paid.
-                 * The emitted Command is byte-identical to what the
-                 * confirm popup submits, which is what keeps recorded
-                 * fixtures comparable across the UI_PLAN Phase 6
-                 * rework. */
-                game_place_building(gs, r, c, BUILDING_HOUSE, 0);
+                /* Paid in GOLD, not goods. A fresh island holds 1000
+                 * Gold and no Wood at all, so the goods payment this
+                 * used to request was refused every single time — the
+                 * fixture has been claiming since Phase 1d that it
+                 * "touches the float-sensitive paths on purpose (a
+                 * house, so population and agents run)" while never
+                 * actually placing the house. Now it does. */
+                game_place_building(gs, r, c, BUILDING_HOUSE, 1);
                 placed = 1;
             }
     game_buy_resource(gs, (ResourceType)0, 8);

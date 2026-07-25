@@ -377,8 +377,21 @@ Carbon.
   Cargo is the whole stake: the winner takes the loser's hold up to its
   own capacity, and no ship is ever sunk. Losing a hold is a setback;
   losing a ship would be an evening's work gone.
-- **Ghost factions from replays:** seed NPC islands with recorded human
-  command logs replayed at offset ticks — believable neighbours, zero AI.
+- **Ghost factions from replays — DONE.** `ghost_faction_seed()` reads a
+  `.smlog`, re-addresses its island-scoped commands to another island
+  under an NPC player id, shifts their ticks, and appends them to the
+  ordinary command log — so a neighbour replays, hashes and
+  desync-checks exactly like a player. `saltmarch_host --ghost FILE:N`
+  populates a server's unclaimed islands with recorded neighbours.
+
+  Two honest limits. Commands naming a **ship, escrow or colonisation
+  are dropped**: ship indices are world-scoped, so honouring a recorded
+  "load ship 0" would reach into whatever ship 0 is in THIS world.
+  And **coordinates are advisory** — the recorder's tiles are mostly
+  water on somebody else's island, so each placement snaps to the
+  nearest legal free tile, scanning in a fixed order to stay
+  deterministic. What survives from a recording is the sequence and
+  pace of what was built, not the layout: a script, not a blueprint.
 - **Time-travel debug scrubber:** checkpoint + log = re-simulate to any past
   tick; UI slider. Solo-dev killer tool.
 

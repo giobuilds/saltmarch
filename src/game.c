@@ -438,6 +438,42 @@ int game_load(GameState *gs, const char *path)
     return 1;
 }
 
+int game_load_commands(const char *path, Command **out_cmds, int *out_count)
+{
+    FILE       *f = fopen(path, "rb");
+    SaveHeader  hdr;
+    Command    *cmds;
+    long        size_l;
+
+    *out_cmds  = NULL;
+    *out_count = 0;
+
+    if (!f) return 0;
+
+    if (fseek(f, 0, SEEK_END) != 0 || (size_l = ftell(f)) < 0 ||
+        fseek(f, 0, SEEK_SET) != 0) { fclose(f); return 0; }
+    if ((size_t)size_l < sizeof(hdr)) { fclose(f); return 0; }
+
+    if (fread(&hdr, sizeof(hdr), 1, f) != 1) { fclose(f); return 0; }
+    if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION ||
+        hdr.cmd_count < 0) { fclose(f); return 0; }
+
+    if (hdr.cmd_count == 0) { fclose(f); return 1; }
+
+    cmds = (Command *)malloc(sizeof(Command) * (size_t)hdr.cmd_count);
+    if (!cmds) { fclose(f); return 0; }
+    if (fread(cmds, sizeof(Command) * (size_t)hdr.cmd_count, 1, f) != 1) {
+        free(cmds);
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+
+    *out_cmds  = cmds;
+    *out_count = hdr.cmd_count;
+    return 1;
+}
+
 /* ---- game_install_world -----------------------------------
  * The (seed, log, tick) -> world constructor shared by game_load and
  * the net layer's join/resync path. See game.h. */

@@ -454,6 +454,15 @@ int  game_load(GameState *gs, const char *path);
 
 #define SAVE_FILE_PATH "saltmarch_save.dat"
 
+/* Read just the command log out of a .smlog, without touching the
+ * current world. The caller owns *out_cmds and must free() it. Returns
+ * 1 on success, 0 on a missing, corrupt or wrong-version file.
+ *
+ * Exists for ghost factions (MMO_PLAN later phases): seeding an NPC
+ * island means replaying somebody else's recorded commands, which means
+ * reading their log without becoming their world. */
+int game_load_commands(const char *path, Command **out_cmds, int *out_count);
+
 /* The per-frame client update (camera, hover, drag input, and the
  * accumulator that spends real time on fixed sim ticks) lives in
  * client.h/client.c — it needs SDL, so it cannot live here. */
