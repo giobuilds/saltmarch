@@ -1547,9 +1547,9 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         /* Your ship, any island — WHOSE island decides stockpile vs
          * escrow inside the body. */
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        if (c->d < 0 || c->d >= MAX_ISLANDS) return 0;
+        if (c->d < 0 || c->d >= MAX_ISLANDS) return REJ_UNAVAILABLE;
         return sim_ship_transfer(gs, c->a, (ResourceType)c->b, c->c, c->d,
-                                 c->player_id);
+                                 c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SHIP_DEPART:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_ship_depart(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
