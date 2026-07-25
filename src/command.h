@@ -136,7 +136,7 @@ typedef enum {
      * whichever crop it is, and the player already knows which
      * building they are holding. */
     REJ_NEEDS_CROP,           /* wrong crop for this soil               */
-    REJ_NEEDS_DEPOSIT,        /* no such mineral under this tile        */
+    REJ_NEEDS_DEPOSIT,        /* no such mineral under or beside it     */
     REJ_NEEDS_COAST,          /* no adjacent water                      */
     REJ_NEEDS_FOREST,         /* no adjacent forest                     */
     REJ_OCCUPIED,             /* another building is already there      */

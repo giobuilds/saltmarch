@@ -285,6 +285,34 @@ static int tile_is_occupied(const Building buildings[], int count,
 }
 
 /* =========================================================
+ * Helper: does the footprint have an adjacent tile carrying `dep`?
+ * Same cardinal-neighbour sweep as footprint_has_adjacent below, but
+ * asking about what is IN the tile rather than what it is — for a
+ * building that works a deposit it cannot stand on (pearl beds in
+ * shallow water). Kept separate rather than generalised into one
+ * predicate-taking sweep: two four-line loops read better than one
+ * loop plus a callback, at this size.
+ * ========================================================= */
+static int footprint_has_adjacent_deposit(const Map *map,
+                                          int row, int col,
+                                          int fw, int fh,
+                                          uint8_t dep)
+{
+    static const int dr[4] = { -1, 1,  0, 0 };
+    static const int dc[4] = {  0, 0,  1,-1 };
+
+    int r, c, d;
+    for (r = row; r < row + fh; r++)
+        for (c = col; c < col + fw; c++)
+            for (d = 0; d < 4; d++) {
+                const Tile *nb = map_get_tile(
+                    (Map *)map, r + dr[d], c + dc[d]);
+                if (nb && nb->deposit == dep) return 1;
+            }
+    return 0;
+}
+
+/* =========================================================
  * Helper: does the footprint have an adjacent tile of type t?
  * Checks all four cardinal neighbours of every footprint tile.
  * ========================================================= */
@@ -382,6 +410,19 @@ RejectReason building_place_check_def(const Map *map,
                                     def->tile_w, def->tile_h,
                                     TILE_FOREST)) {
             return REJ_NEEDS_FOREST;
+        }
+    }
+
+    /* The deposit you work from beside rather than stand on. Same
+     * refusal as the under-footprint case: "nothing to work here" is
+     * the same sentence either way, and the player knows which
+     * building they are holding — the argument that collapsed fourteen
+     * crops into one REJ_NEEDS_CROP. */
+    if (def->needs_adjacent_deposit != DEPOSIT_NONE) {
+        if (!footprint_has_adjacent_deposit(map, row, col,
+                                            def->tile_w, def->tile_h,
+                                            def->needs_adjacent_deposit)) {
+            return REJ_NEEDS_DEPOSIT;
         }
     }
 

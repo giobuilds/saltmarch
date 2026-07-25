@@ -301,17 +301,19 @@ static void test_deposit_terrain(void)
 
                     if (t->deposit == DEPOSIT_CLAY && beach) clay_on_beach++;
                     if (t->deposit == DEPOSIT_SAND && !beach) sand_off_beach++;
+                    /* Pearl beds lie in shallow water — water with
+                     * beach alongside — and NOT on the sand itself. */
                     if (t->deposit == DEPOSIT_PEARLS) {
-                        int d, wet = 0;
+                        int d, shallow = 0;
                         static const int dr[4] = { -1, 1, 0, 0 };
                         static const int dc[4] = { 0, 0, 1, -1 };
                         for (d = 0; d < 4; d++) {
                             int nr = r + dr[d], nc = c + dc[d];
                             if (nr < 0 || nr >= map.rows ||
                                 nc < 0 || nc >= map.cols) continue;
-                            if (map.tiles[nr][nc].type == TILE_WATER) wet = 1;
+                            if (map.tiles[nr][nc].type == TILE_SAND) shallow = 1;
                         }
-                        if (!beach || !wet) pearls_dry++;
+                        if (t->type != TILE_WATER || !shallow) pearls_dry++;
                     }
                     if (t->deposit == DEPOSIT_IRON &&
                         t->elevation < lowest_iron)
@@ -327,7 +329,8 @@ static void test_deposit_terrain(void)
     CHECK(sand_off_beach == 0, "sand is found on the beach and nowhere else");
     CHECK(clay_on_beach == 0,
           "clay stays inland, so it never competes for beach with sand");
-    CHECK(pearls_dry == 0, "pearl beds are beach with water alongside");
+    CHECK(pearls_dry == 0,
+          "pearl beds lie in shallow water, never on the sand");
     CHECK(overlaps == 0,
           "on every island, iron is hill country and clay the low ground");
 
@@ -345,7 +348,98 @@ static void test_deposit_terrain(void)
     }
 }
 
-/* ---- 5. generation is still a pure function of the seed ---- */
+/* ---- 5. working a deposit you cannot stand on -------------- */
+
+static void test_adjacent_deposit(void)
+{
+    Map         map;
+    BuildingDef beds;
+    int         r, c, on_shore = 0, adrift = 0, inland = 0;
+
+    printf("--- pearl beds: worked from the shore ---\n");
+
+    map_init(&map, 4242u, PROFILE_ATOLL);
+
+    memset(&beds, 0, sizeof(beds));
+    beds.name = "test pearl beds";
+    beds.tile_w = beds.tile_h = 1;
+    beds.placement_flags = PLACE_NEEDS_COAST;
+    beds.needs_adjacent_deposit = DEPOSIT_PEARLS;
+
+    for (r = 0; r < map.rows; r++)
+        for (c = 0; c < map.cols; c++) {
+            RejectReason why = building_place_check_def(&map, &beds, r, c);
+            const Tile  *t   = &map.tiles[r][c];
+            int d, beside = 0;
+            static const int dr[4] = { -1, 1, 0, 0 };
+            static const int dc[4] = { 0, 0, 1, -1 };
+
+            for (d = 0; d < 4; d++) {
+                int nr = r + dr[d], nc = c + dc[d];
+                if (nr < 0 || nr >= map.rows || nc < 0 || nc >= map.cols)
+                    continue;
+                if (map.tiles[nr][nc].deposit == DEPOSIT_PEARLS) beside = 1;
+            }
+
+            if (why == REJ_OK) {
+                on_shore++;
+                /* Whatever it accepts must be dry land beside a bed —
+                 * the whole point is that the station does not stand
+                 * in the water it works. */
+                if (!t->buildable || t->type == TILE_WATER) adrift++;
+                if (!beside) inland++;
+            }
+        }
+
+    CHECK(on_shore > 0, "an atoll has shore to work its beds from");
+    CHECK(adrift == 0, "the station never stands in the water");
+    CHECK(inland == 0, "and never away from a bed");
+
+    /* The refusal, from a beach with nothing offshore. */
+    {
+        int found = 0;
+        for (r = 0; r < map.rows && !found; r++)
+            for (c = 0; c < map.cols && !found; c++) {
+                int d, beside = 0;
+                static const int dr[4] = { -1, 1, 0, 0 };
+                static const int dc[4] = { 0, 0, 1, -1 };
+                if (map.tiles[r][c].type != TILE_SAND) continue;
+                for (d = 0; d < 4; d++) {
+                    int nr = r + dr[d], nc = c + dc[d];
+                    if (nr < 0 || nr >= map.rows || nc < 0 || nc >= map.cols)
+                        continue;
+                    if (map.tiles[nr][nc].deposit == DEPOSIT_PEARLS) beside = 1;
+                }
+                if (!beside &&
+                    building_place_check_def(&map, &beds, r, c) !=
+                    REJ_NEEDS_COAST) {
+                    CHECK(building_place_check_def(&map, &beds, r, c) ==
+                          REJ_NEEDS_DEPOSIT,
+                          "a bare stretch of coast is NEEDS_DEPOSIT");
+                    found = 1;
+                }
+            }
+        if (!found) printf("  skip: every coastal tile here has beds\n");
+    }
+
+    /* An under-footprint rule and an alongside rule are different
+     * questions: a mine standing ON the pearls is not a thing. */
+    {
+        BuildingDef under = beds;
+        int refused_everywhere = 1;
+        under.placement_flags = PLACE_ANY_LAND;
+        under.needs_adjacent_deposit = DEPOSIT_NONE;
+        under.needs_deposit = DEPOSIT_PEARLS;
+        for (r = 0; r < map.rows; r++)
+            for (c = 0; c < map.cols; c++)
+                if (building_place_check_def(&map, &under, r, c) == REJ_OK)
+                    refused_everywhere = 0;
+        CHECK(refused_everywhere,
+              "nothing can be built standing on a pearl bed");
+    }
+}
+
+/* ---- 6. generation is still a pure function of the seed ---- */
 
 static void test_determinism(void)
 {
@@ -371,6 +465,7 @@ int main(void)
     test_crop_patches();
     test_placement_rules();
     test_deposit_terrain();
+    test_adjacent_deposit();
     test_determinism();
 
     if (failures) {

@@ -291,10 +291,21 @@ is exactly the kind that wants checking by eye. Never seen rendered.
 **Each mineral has its own ground, and the beach belongs to sand.**
 Clay is inland low ground only; it was originally allowed on beach
 too, which had it competing for the one terrain sand has. Deposits
-also scatter most-constrained-first rather than in enum order — pearls
-want beach *with water alongside* and sand wants any beach, so sand
-going first could have eaten the only tiles pearls can use. Asserted
-over four profiles and five seeds.
+also scatter most-constrained-first rather than in enum order, so a
+loose rule cannot eat the tiles a strict one needs. Asserted over four
+profiles and five seeds.
+
+**Pearl beds lie in shallow water**, and are the one deposit nothing
+can be built on. They were briefly put on the beach, which made them
+the only marker on the map that did not describe a real place. Water
+is not buildable and roads cannot cross it, so rather than teach
+connectivity about offshore buildings, `BuildingDef` gained
+`needs_adjacent_deposit`: the Pearl Beds station stands on the shore
+and works the bed alongside it. Exactly the shape of
+`PLACE_NEEDS_COAST`, which is the Fisher's Hut standing on land next
+to the sea it fishes. `REJ_NEEDS_DEPOSIT` covers both the under-foot
+and the alongside case — one sentence, since the player knows which
+building they are holding.
 
 ## Phase 2 — the structural limits
 

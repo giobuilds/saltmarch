@@ -387,7 +387,7 @@ static void assign_crops(Map *map, MapProfile p)
     }
 }
 
-static int has_adjacent_water(const Map *map, int r, int c)
+static int has_adjacent_type(const Map *map, int r, int c, TileType want)
 {
     static const int dr[4] = { -1, 1,  0, 0 };
     static const int dc[4] = {  0, 0,  1,-1 };
@@ -396,7 +396,7 @@ static int has_adjacent_water(const Map *map, int r, int c)
     for (d = 0; d < 4; d++) {
         int nr = r + dr[d], nc = c + dc[d];
         if (nr < 0 || nr >= MAP_ROWS || nc < 0 || nc >= MAP_COLS) continue;
-        if (map->tiles[nr][nc].type == TILE_WATER) return 1;
+        if (map->tiles[nr][nc].type == want) return 1;
     }
     return 0;
 }
@@ -410,6 +410,16 @@ static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
 {
     const Tile *t = &map->tiles[r][c];
     int span = hi - lo;
+
+    /* Pearls are the one deposit that is not a site to build on. Oyster
+     * beds lie in shallow water, so they go where no building can
+     * stand, and the Pearl Beds station works them from the shore
+     * (BuildingDef.needs_adjacent_deposit, building.h). Every other
+     * mineral is dug out of the tile it sits under, and therefore has
+     * to be somewhere a mine can be placed. */
+    if (d == DEPOSIT_PEARLS)
+        return t->type == TILE_WATER &&
+               has_adjacent_type(map, r, c, TILE_SAND);
 
     if (!t->buildable) return 0;   /* a mine has to be placeable on it */
 
@@ -429,8 +439,6 @@ static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
         return t->type == TILE_GRASS && t->elevation <= lo + span / 3;
     case DEPOSIT_SAND:
         return t->type == TILE_SAND;
-    case DEPOSIT_PEARLS:
-        return t->type == TILE_SAND && has_adjacent_water(map, r, c);
     default:
         return 0;
     }

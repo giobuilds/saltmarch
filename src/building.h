@@ -131,14 +131,24 @@ typedef struct {
      *                   all of them. 0 means "no crop requirement".
      *                   Distinct from PLACE_NEEDS_FERTILE, which asks
      *                   only that the soil grow *something*.
-     * needs_deposit   – a Deposit the tile must hold. DEPOSIT_NONE
+     * needs_deposit   – a Deposit every tile must hold. DEPOSIT_NONE
      *                   means "no mineral requirement".
+     * needs_adjacent_deposit
+     *                 – a Deposit at least one tile ALONGSIDE the
+     *                   footprint must hold. For the deposit you work
+     *                   rather than stand on: pearl beds lie in
+     *                   shallow water, where nothing can be built, so
+     *                   the station stands on the shore beside them.
+     *                   Same shape as PLACE_NEEDS_COAST, which is the
+     *                   Fisher's Hut standing on land next to the sea
+     *                   it fishes.
      *
      * Fields rather than flags because the answer is which crop, not
      * whether: a Potato Field and a Hop Farm differ by one constant
      * here and by nothing in the validator. */
     uint32_t      needs_fertility;
     uint8_t       needs_deposit;
+    uint8_t       needs_adjacent_deposit;
 
     /* Colour for the placeholder rectangle (R, G, B) */
     unsigned char col_r, col_g, col_b;
