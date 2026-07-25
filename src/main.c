@@ -15,7 +15,6 @@
 #include "fonts.h"    /* Phase 5 */
 #include "feed.h"     /* MMO Phase 4: shared voyage feed */
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
-#include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
 #include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
 #include "fx_reject.h"     /* UI_PLAN M1: what happened to my click */
@@ -289,6 +288,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         exchange_view_market(&app->exchange, &app->snap, gs->current_island);
         exchange_build(&app->exchange_list, &app->exchange, &app->ui,
                        (float)SCREEN_W, (float)SCREEN_H);
+    } else if (gs->escrow_open) {
+        /* The harbour is the same surface with a different counterparty
+         * (UI_PLAN M5, decision 4): rows are the quay's contents and the
+         * action cluster is take/stage rather than buy/sell. */
+        exchange_view_escrow(&app->exchange, &app->snap, gs->current_island);
+        exchange_build(&app->exchange_list, &app->exchange, &app->ui,
+                       (float)SCREEN_W, (float)SCREEN_H);
     }
 
     /* Shared feed (Phase 4): publish any departures the ticks above
@@ -473,6 +479,43 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         /* Phase 4: if the trade screen is open, only its buttons
          * respond (mirrors the menu_open branch below). */
+        } else if (gs->escrow_open) {
+            /* Same hit-test as the marketplace, because it is the same
+             * screen: SELL means "take what is on the quay", BUY means
+             * "stage some for a visitor" (UI_PLAN M5). */
+            ExchangeHit eh = exchange_hit(&app->exchange_list, &app->exchange,
+                                          &app->ui,
+                                          (float)gs->input.logical_x,
+                                          (float)gs->input.logical_y);
+            switch (eh.kind) {
+            case EXCHANGE_HIT_SELL:
+                game_escrow_take_nonce(gs, gs->current_island,
+                                       (ResourceType)eh.res,
+                                       app->snap.islands[gs->current_island]
+                                           .escrow[eh.res],
+                                       app->exchange.nonce);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(eh.rect));
+                break;
+            case EXCHANGE_HIT_BUY:
+                game_escrow_put_nonce(gs, gs->current_island,
+                                      (ResourceType)eh.res, eh.qty,
+                                      app->exchange.nonce);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(eh.rect));
+                break;
+            case EXCHANGE_HIT_DOCKING:
+                game_set_docking(gs, gs->current_island, eh.qty);
+                break;
+            case EXCHANGE_HIT_NONE:
+                break;      /* the panel: absorb it */
+            case EXCHANGE_HIT_CLOSE:
+            case EXCHANGE_HIT_OUTSIDE:
+            default:
+                gs->escrow_open = 0;
+                break;
+            }
+
         } else if (gs->inventory_open) {
             InventoryHit ihit = inventory_hit(&app->inventory_list, &app->ui,
                                               (float)gs->input.logical_x,
@@ -774,10 +817,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       &app->exchange, gs->input.logical_x,
                       gs->input.logical_y);
 
-    /* Phase 5: harbor escrow panel on top when open */
+    /* The harbour, drawn by the exchange drawer it now shares. */
     if (gs->escrow_open)
-        escrow_ui_draw(app->r, SCREEN_W, SCREEN_H, isl,
-                       gs->input.logical_x, gs->input.logical_y);
+        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->exchange_list,
+                      &app->exchange, gs->input.logical_x,
+                      gs->input.logical_y);
 
     /* The one confirmation, on top when open (UI_PLAN Phase 6). It
      * shows the literal Command it will submit; four popups used to be

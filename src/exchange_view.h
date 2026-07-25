@@ -72,12 +72,29 @@ typedef struct {
     char         title[EXCHANGE_TITLE_LEN];
     uint8_t      hue_r, hue_g, hue_b;  /* whose island this is (Phase 5) */
     ExchangeKind kind;
+    uint32_t     nonce;                /* EXCHANGE_OFFER: the quay's
+                                        * state these rows describe    */
+    uint8_t      docking_allowed;      /* EXCHANGE_OFFER: the blockade
+                                        * lever's current position     */
     int32_t      your_gold;
     int32_t      their_gold;           /* EXCHANGE_INFINITE ok         */
     int32_t      capacity;             /* your per-resource storage cap*/
     ExchangeRow  rows[EXCHANGE_MAX_ROWS];
     int32_t      row_count;
 } ExchangeView;
+
+/* Build the OFFER view: the harbour escrow, as seen by the island's
+ * owner (UI_PLAN M5). Rows are the goods sitting on the quay, and the
+ * action cluster becomes take/stage rather than buy/sell — the same
+ * screen with a different counterparty, which is decision 4's whole
+ * claim put to the test.
+ *
+ * `nonce` identifies the state of the quay these rows describe. The
+ * accept command carries it back, and the sim refuses if the escrow
+ * has changed underneath an open panel — a visitor's ship can dock and
+ * take goods between the frame you read and the button you press. */
+void exchange_view_escrow(ExchangeView *out, const UiSnapshot *snap,
+                          int island);
 
 /* Build the marketplace view: your island's stock against the NPC
  * faction's live quotes, both already resolved in the snapshot. Gold is
@@ -148,7 +165,8 @@ typedef enum {
     EXCHANGE_HIT_CLOSE,
     EXCHANGE_HIT_PAGE,       /* `page` is the new page index          */
     EXCHANGE_HIT_SELL,       /* `res` and `qty` are set               */
-    EXCHANGE_HIT_BUY
+    EXCHANGE_HIT_BUY,
+    EXCHANGE_HIT_DOCKING     /* offer view: `qty` is the new state    */
 } ExchangeHitKind;
 
 typedef struct {

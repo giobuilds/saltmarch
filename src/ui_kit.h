@@ -89,7 +89,8 @@ typedef enum {
     UI_ACTION_REJECT,
     UI_ACTION_MENU,       /* the cog                                 */
     UI_ACTION_DEMOLISH,   /* the bulldozer tool                      */
-    UI_ACTION_WORLD       /* the archipelago overview                */
+    UI_ACTION_WORLD,      /* the archipelago overview                */
+    UI_ACTION_DOCKING     /* the harbour's open/closed lever          */
 } UiAction;
 
 /* ---- the layout cursor ------------------------------------

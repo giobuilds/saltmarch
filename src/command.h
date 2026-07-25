@@ -41,8 +41,9 @@
  *   CMD_GRANT_START     a=island (settle it for player_id — the co-op
  *                        join bootstrap; validated: island unowned,
  *                        player owns nothing yet)
- *   CMD_ESCROW_PUT      a=island b=resource c=qty (stockpile -> escrow)
- *   CMD_ESCROW_TAKE     a=island b=resource c=qty (escrow -> stockpile)
+ *   CMD_ESCROW_PUT      a=island b=resource c=qty d=quay nonce
+ *   CMD_ESCROW_TAKE     a=island b=resource c=qty d=quay nonce
+ *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
  *
  * THE LIMIT PRICE (UI_PLAN M3) is the price the screen was showing when
@@ -135,7 +136,8 @@ typedef enum {
     REJ_COUNTERPARTY_NO_GOLD, /* the faction is out of money            */
     REJ_PRICE_MOVED,          /* quote moved past the limit sent        */
     REJ_NOT_OWNER,            /* someone else's island or ship          */
-    REJ_ESCROW_REFUSED,       /* docking forbidden, or offer withdrawn  */
+    REJ_ESCROW_REFUSED,       /* docking forbidden, or no harbour       */
+    REJ_OFFER_CHANGED,        /* the quay moved under an open panel     */
     REJ_UNAVAILABLE,          /* generic: not possible right now        */
 
     REJ_COUNT

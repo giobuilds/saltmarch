@@ -27,6 +27,7 @@ static void snapshot_island(UiIsland *out, const Island *isl)
     out->docking_allowed = (uint8_t)(isl->docking_allowed ? 1 : 0);
     out->owner           = isl->owner;
     out->capacity        = isl->stockpile.capacity;
+    out->escrow_nonce    = island_escrow_nonce(isl);
     out->residents       = pop_total(isl->pop_data, isl->building_count);
 
     for (i = 0; i < RES_COUNT; i++) {

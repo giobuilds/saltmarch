@@ -618,6 +618,16 @@ int game_grant_start(GameState *gs, int island_idx);
 int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty);
 int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty);
 
+/* The same, stamped with the quay state the panel was showing (UI_PLAN
+ * M5). If the escrow has changed since — a visitor docked and took
+ * something — the sim refuses with REJ_OFFER_CHANGED rather than
+ * acting on an offer the player never actually saw. A nonce of 0 means
+ * unstamped, which is what replayed and scripted commands carry. */
+int game_escrow_put_nonce(GameState *gs, int island_idx, ResourceType res,
+                          int qty, uint32_t nonce);
+int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
+                           int qty, uint32_t nonce);
+
 /* Owner only: allow (1) or forbid (0) foreign ships transferring at
  * `island_idx`. A ship that can't dock can't deliver — blockade. */
 int game_set_docking(GameState *gs, int island_idx, int allow);

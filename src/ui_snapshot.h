@@ -62,6 +62,7 @@ typedef struct {
 
     int32_t  stock[RES_COUNT];
     int32_t  escrow[RES_COUNT];
+    uint32_t escrow_nonce;       /* island_escrow_nonce() (UI_PLAN M5) */
     int32_t  capacity;           /* per-resource storage cap           */
 
     int32_t  residents;          /* island total                       */

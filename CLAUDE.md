@@ -92,7 +92,7 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `vitals.c/h` — the alert strip's rules, including the sim's own health (F9 result, tick backlog, feed age)
 - `inventory_view.c/h` + `inventory_ui.c/h` — the stores overlay (`I`)
 - `hud_view.c/h` — the build bar: category tabs, affordability, hit decoding, and the HUD metrics (`HUD_HEIGHT` et al). `ui.c` is now its drawer plus the menu overlay
-- `exchange_view.c/h` — the exchange surface (marketplace today, harbour escrow later): rows, pagination, refusals, hit decoding. `trade_ui.c` is now only its drawer
+- `exchange_view.c/h` — the exchange surface: marketplace (`EXCHANGE_QUOTES`) and harbour escrow (`EXCHANGE_OFFER`), one builder, one drawer (`trade_ui.c`): rows, pagination, refusals, hit decoding. `trade_ui.c` is now only its drawer
 - Overlay convention going forward: a `*_build()` in the SDL-free UI library produces a `UiList`; a `*_draw()` in the client renders that same list; hit-testing queries it. Draw and hit-test can no longer disagree about where a button is
 
 ## History / conventions

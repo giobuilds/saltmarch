@@ -13,6 +13,7 @@
 #include "game.h"
 #include "building.h"
 #include "fonts.h"
+#include "island_bar.h"   /* island_hue, for the ownership pulse */
 #include <SDL3/SDL.h>
 #include <math.h>
 
@@ -462,6 +463,23 @@ void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
 
         col.r = 240; col.g = 120; col.b = 105;
         col.a = (Uint8)(alpha * 255.0f);
+
+        /* "Not your island" gets a border pulse in the owner's colour
+         * as well as the words (UI_PLAN M5). Privacy here is enforced
+         * by validation rather than by hiding state, so the rejection
+         * channel is where the boundary gets taught — and it is taught
+         * only to the person who probed it. */
+        if (f->reason == (uint8_t)REJ_NOT_OWNER &&
+            f->anchor.kind == FX_ANCHOR_TILE) {
+            uint8_t hr, hg, hb;
+            island_hue(f->owner_island, &hr, &hg, &hb);
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            render_draw_diamond_outline(renderer, x, y, cam->zoom,
+                                        hr, hg, hb,
+                                        (unsigned char)(alpha * 220.0f));
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+        }
+
         font_draw_text(renderer, FONT_SMALL, f->text,
                        (int)(x - 40.0f), (int)(y - 28.0f), col);
     }

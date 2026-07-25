@@ -113,7 +113,6 @@ set(SALTMARCH_CLIENT_SOURCES
     src/trade_ui.c
     src/world_ui.c
     src/feed.c
-    src/escrow_ui.c
     src/inventory_ui.c
     src/confirm_ui.c
 )
