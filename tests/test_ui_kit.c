@@ -228,6 +228,37 @@ static void test_list(void)
           "labels are copied into the list, not borrowed");
 }
 
+/* ---- 4b. tooltip placement ------------------------------- */
+/* The bug this exists for: the leftmost HUD slot sits 20px from the
+ * window edge, so a tooltip merely centred on it hung off the screen. */
+static void test_tooltip(void)
+{
+    UiRect screen = { 0.0f, 0.0f, 1920.0f, 1080.0f };
+    UiRect tip;
+
+    tip = ui_tooltip_rect(960.0f, 968.0f, 200.0f, 20.0f, screen);
+    CHECK(near(tip.x, 860.0f) && near(tip.y, 944.0f),
+          "with room on all sides, a tip is centred just above its anchor");
+
+    /* The reported case: first HUD slot, centre x = 52. */
+    tip = ui_tooltip_rect(52.0f, 968.0f, 200.0f, 20.0f, screen);
+    CHECK(tip.x >= 0.0f, "a tip near the left edge is pushed back on screen");
+    CHECK(near(tip.w, 200.0f), "...without being squashed to fit");
+
+    tip = ui_tooltip_rect(1900.0f, 968.0f, 200.0f, 20.0f, screen);
+    CHECK(tip.x + tip.w <= 1920.0f, "a tip near the right edge is pulled in");
+
+    /* No room above: flip below rather than clip against the top. */
+    tip = ui_tooltip_rect(960.0f, 10.0f, 200.0f, 20.0f, screen);
+    CHECK(tip.y >= 0.0f && tip.y > 10.0f,
+          "a tip with no room above flips below its anchor");
+
+    /* Wider than the window: still starts on screen rather than at a
+     * negative x, so at least the beginning of it is readable. */
+    tip = ui_tooltip_rect(960.0f, 968.0f, 3000.0f, 20.0f, screen);
+    CHECK(tip.x >= 0.0f, "an over-wide tip still starts inside the window");
+}
+
 /* ---- 5. the rejection vocabulary ------------------------- */
 static void test_reject_text(void)
 {
@@ -346,6 +377,7 @@ int main(void)
     test_pagination();
     test_ids();
     test_list();
+    test_tooltip();
     test_reject_text();
     test_placement_reasons();
 

@@ -244,14 +244,12 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
      * rule), so the clamp assumes the widest reason in the table. */
     if (hover_reason != REJ_OK) {
         const float TIP_W = 200.0f, TIP_H = 18.0f;
-        float       tx = (float)mouse_x + 12.0f;
-        float       ty = (float)mouse_y - (TIP_H + 6.0f);
-
-        if (tx + TIP_W > (float)screen_w) tx = (float)screen_w - TIP_W;
-        if (tx < 0.0f)                    tx = 0.0f;
-        if (ty < 0.0f)                    ty = (float)mouse_y + 20.0f;
+        UiRect      screen = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
+        UiRect      tip    = ui_tooltip_rect((float)mouse_x + 12.0f + TIP_W * 0.5f,
+                                             (float)mouse_y - 2.0f,
+                                             TIP_W, TIP_H, screen);
 
         font_draw_text(renderer, FONT_SMALL, ui_reject_text(hover_reason),
-                       (int)tx, (int)ty, WARN);
+                       (int)tip.x, (int)tip.y, WARN);
     }
 }

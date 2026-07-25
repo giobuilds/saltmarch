@@ -44,8 +44,8 @@ static void outline(SDL_Renderer *r, UiRect rect,
  * tooltip BOX is fine — it is a drawing decision about a rect nothing
  * hit-tests. Measuring to decide where a clickable thing goes is the
  * banned case (ui_kit.h), and no longer happens anywhere. */
-static void draw_tooltip(SDL_Renderer *renderer, float cx, float bottom_y,
-                         const char *line1, const char *line2)
+static void draw_tooltip(SDL_Renderer *renderer, float cx, float above_y,
+                         UiRect screen, const char *line1, const char *line2)
 {
     SDL_Color   fg   = { 230, 215, 180, 255 };
     SDL_Color   warn = { 235, 150, 130, 255 };
@@ -60,10 +60,10 @@ static void draw_tooltip(SDL_Renderer *renderer, float cx, float bottom_y,
 
     if (!have1) { tw = 120.0f; th = 20.0f; }
 
-    tip.w = tw;
-    tip.h = th;
-    tip.x = cx - tw * 0.5f;
-    tip.y = bottom_y - th - 4.0f;
+    /* Size measured here, position decided by the kit — which clamps it
+     * into the window. The leftmost slot sits 20px from the edge, so a
+     * tip merely centred on it hangs off the screen. */
+    tip = ui_tooltip_rect(cx, above_y, tw, th, screen);
 
     fill(renderer, tip, 50, 42, 28, 240);
     outline(renderer, tip, 140, 120, 70, 255);
@@ -256,8 +256,17 @@ void ui_draw(SDL_Renderer *renderer, const UiList *list,
      * in the sim's own rejection vocabulary. */
     if (hovered_slot) {
         const BuildingDef *def = def_of(hovered_slot);
+        UiRect             bar = list->items[0].rect;
+        UiRect             screen;
         char               line1[64];
         const char        *line2 = NULL;
+
+        /* The bar spans the window, so it tells us how big the window
+         * is without ui_draw needing screen dimensions passed in. */
+        screen.x = 0.0f;
+        screen.y = 0.0f;
+        screen.w = bar.w;
+        screen.h = bar.y + bar.h;
 
         if (def && def->cost[RES_GOLD] > 0)
             SDL_snprintf(line1, sizeof(line1), "%s  -  %d Gold",
@@ -268,9 +277,11 @@ void ui_draw(SDL_Renderer *renderer, const UiList *list,
         if (hovered_slot->reason != (uint8_t)REJ_OK)
             line2 = ui_reject_text((RejectReason)hovered_slot->reason);
 
+        /* Anchored above the BAR, not above the slot: the tab strip sits
+         * between them, and a tip anchored to the slot drew over it. */
         draw_tooltip(renderer,
                      hovered_slot->rect.x + hovered_slot->rect.w * 0.5f,
-                     hovered_slot->rect.y, line1, line2);
+                     bar.y, screen, line1, line2);
     }
     (void)view;
 }

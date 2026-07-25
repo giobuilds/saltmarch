@@ -137,6 +137,24 @@ UiRect ui_panel_centered(float screen_w, float screen_h,
  * Never negative. */
 int ui_rows_that_fit(float avail_h, float row_h, float gap);
 
+/* ---- tooltips ---------------------------------------------
+ * Where a tooltip of a given size goes: centred on `cx`, sitting just
+ * above `above_y`, and clamped to stay inside `bounds` — flipping below
+ * the anchor if there is no room above.
+ *
+ * This lives in the kit, not in the drawers, because it is exactly the
+ * kind of arithmetic that looks obviously right and is not: the first
+ * HUD slot sits 20px from the left edge, so a tooltip centred on it ran
+ * off the window, and a tooltip anchored to a slot rather than to the
+ * bar drew over the tab strip above it. Both are now one function with
+ * a test.
+ *
+ * The SIZE still comes from the drawer (it may measure its text — that
+ * is a drawing decision about a rect nothing hit-tests); the POSITION
+ * is decided here. */
+UiRect ui_tooltip_rect(float cx, float above_y, float w, float h,
+                       UiRect bounds);
+
 /* ---- pagination -------------------------------------------
  * Pagination, not scrolling: a scroll offset is continuous state that
  * a hit-test must agree with mid-gesture, while a page index is a

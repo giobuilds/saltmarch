@@ -153,6 +153,35 @@ int ui_rows_that_fit(float avail_h, float row_h, float gap)
     return n < 0 ? 0 : n;
 }
 
+/* ---- tooltips --------------------------------------------- */
+
+UiRect ui_tooltip_rect(float cx, float above_y, float w, float h,
+                       UiRect bounds)
+{
+    const float MARGIN = 4.0f;
+    UiRect      r;
+
+    r.w = w;
+    r.h = h;
+    r.x = cx - w * 0.5f;
+    r.y = above_y - h - MARGIN;
+
+    /* Horizontal: clamp, do not centre-and-hope. The leftmost HUD slot
+     * is 20px from the edge and its label is wider than that. */
+    if (r.x + r.w > bounds.x + bounds.w - MARGIN)
+        r.x = bounds.x + bounds.w - MARGIN - r.w;
+    if (r.x < bounds.x + MARGIN)
+        r.x = bounds.x + MARGIN;
+
+    /* Vertical: prefer above, flip below when there is no room — a tip
+     * clipped by the top of the window is no more readable than one
+     * clipped by the side. */
+    if (r.y < bounds.y + MARGIN)
+        r.y = above_y + MARGIN;
+
+    return r;
+}
+
 /* ---- pagination ------------------------------------------- */
 
 UiPage ui_paginate(int total, int per_page, int page)
