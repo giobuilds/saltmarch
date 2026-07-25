@@ -18,6 +18,8 @@
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
 #include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
+#include "fx_reject.h"     /* UI_PLAN M1: what happened to my click */
+#include "intent.h"        /* UI_PLAN M1: recording the input stream */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -52,6 +54,13 @@ typedef struct {
     UiList        island_list;
     ConfirmView   confirm;
     UiList        confirm_list;
+    FxReject      fx;
+
+    /* The intent being assembled this frame (UI_PLAN M1), and the
+     * command sequence before the click was handled — the difference is
+     * how we learn what the click produced. */
+    Intent        intent;
+    uint32_t      intent_seq_before;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -134,6 +143,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->island_list,   0, sizeof(app->island_list));
     SDL_memset(&app->confirm,       0, sizeof(app->confirm));
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
+    fx_reject_init(&app->fx);
+    SDL_memset(&app->intent, 0, sizeof(app->intent));
+    app->intent_seq_before = 0;
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -233,6 +245,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* UI_PLAN Phase 0: take the picture the UI will work from. After
      * the tick loop, so every overlay in this frame sees one tick and
      * none of them can observe the world mid-tick. */
+    /* UI_PLAN M1: collect what the ticks just did to the commands this
+     * client submitted, and age the flashes they raised. Before the
+     * snapshot, so a rejection is visible on the same frame the world
+     * failed to change. */
+    fx_reject_drain(&app->fx, gs);
+    fx_reject_update(&app->fx, gs->delta_time);
+
     ui_snapshot_build(&app->snap, gs);
 
     /* The half of the health readings the sim cannot know: how stale
@@ -301,6 +320,24 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->input.inventory_toggle) {
         gs->inventory_open = !gs->inventory_open;
         app->ui.inventory_page = 0;
+    }
+
+    /* UI_PLAN M1: remember the state this frame was drawn in, so a
+     * click recorded below carries the screen the player was actually
+     * looking at. Captured BEFORE the click is handled — afterwards the
+     * overlay may have opened, closed or paged. */
+    {
+        app->intent.tick              = app->snap.tick;
+        app->intent.x                 = gs->input.logical_x;
+        app->intent.y                 = gs->input.logical_y;
+        app->intent.ui.overlay        = (uint8_t)game_topmost_overlay(gs);
+        app->intent.ui.hud_category   = (uint8_t)app->ui.hud_category;
+        app->intent.ui.exchange_page  = (uint16_t)app->ui.exchange_page;
+        app->intent.ui.inventory_page = (uint16_t)app->ui.inventory_page;
+        app->intent.ui.hovered_row    = (int16_t)gs->hovered_row;
+        app->intent.ui.hovered_col    = (int16_t)gs->hovered_col;
+        app->intent.ui.current_island = (int16_t)gs->current_island;
+        app->intent_seq_before        = gs->cmd_seq_last;
     }
 
     /* --- Handle clicks ---------------------------------- */
@@ -406,9 +443,23 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             case CONFIRM_HIT_CHOOSE:
                 game_confirm_choose(gs, ch.option);
                 break;
-            case CONFIRM_HIT_ACCEPT:
-                game_confirm_accept(gs);
+            case CONFIRM_HIT_ACCEPT: {
+                /* Remember where this came from, so a rejection lands
+                 * on the tile the player clicked rather than in a
+                 * corner (UI_PLAN M1). */
+                Command  pending = gs->confirm.chosen ? gs->confirm.alt
+                                                      : gs->confirm.cmd;
+                FxAnchor anchor;
+
+                if (pending.kind == CMD_PLACE_BUILDING)
+                    anchor = fx_anchor_tile(pending.b, pending.c);
+                else
+                    anchor = fx_anchor_rect(app->confirm_list.items[0].rect);
+
+                if (game_confirm_accept(gs))
+                    fx_reject_expect(&app->fx, gs->cmd_seq_last, anchor);
                 break;
+            }
             case CONFIRM_HIT_CANCEL:
             case CONFIRM_HIT_OUTSIDE:
                 game_confirm_cancel(gs);
@@ -431,7 +482,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->inventory_open = 0;
 
         } else if (gs->trade_open) {
-            ExchangeHit hit = exchange_hit(&app->exchange_list, &app->ui,
+            ExchangeHit hit = exchange_hit(&app->exchange_list, &app->exchange,
+                                           &app->ui,
                                            (float)gs->input.logical_x,
                                            (float)gs->input.logical_y);
             switch (hit.kind) {
@@ -443,14 +495,23 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                  * since. */
                 if (qty < 0)
                     qty = app->snap.islands[gs->current_island].stock[hit.res];
-                game_sell_resource(gs, (ResourceType)hit.res, qty);
+                /* The price the row was showing rides along as a limit:
+                 * if the market moves against us before this applies,
+                 * the sim refuses rather than filling worse (M3). */
+                game_sell_resource_limit(gs, (ResourceType)hit.res, qty,
+                                         hit.price);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(hit.rect));
                 break;
             }
             case EXCHANGE_HIT_BUY:
                 /* qty < 0 ("Max") is resolved inside game_buy_resource
                  * itself, since it needs both storage headroom and
                  * Gold on hand to know what "max" means. */
-                game_buy_resource(gs, (ResourceType)hit.res, hit.qty);
+                game_buy_resource_limit(gs, (ResourceType)hit.res, hit.qty,
+                                        hit.price);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(hit.rect));
                 break;
             case EXCHANGE_HIT_PAGE:
                 app->ui.exchange_page = hit.page;
@@ -591,7 +652,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      * drag check), and a per-tile confirmation would
                      * make that gesture unusable. A single click
                      * behaves the same way a 1-tile drag does. */
-                    game_try_place_road(gs, gs->hovered_row, gs->hovered_col);
+                    if (game_try_place_road(gs, gs->hovered_row,
+                                            gs->hovered_col))
+                        fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                         fx_anchor_tile(gs->hovered_row,
+                                                        gs->hovered_col));
                 } else if (gs->selected_building != BUILDING_NONE &&
                           gs->hovered_row >= 0 &&
                           building_can_place(&isl->map, gs->selected_building,
@@ -601,6 +666,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 }
             }
         }
+    }
+
+    /* One record per click, stamped with whichever command it produced
+     * (zero if it produced none — a tab, a page turn, a click on open
+     * water). The pair is what lets CI assert that replaying this click
+     * against this frame emits this command. */
+    if (gs->input.left_click || gs->input.right_click) {
+        app->intent.kind = (uint8_t)(gs->input.left_click ? INTENT_LEFT_CLICK
+                                                          : INTENT_RIGHT_CLICK);
+        app->intent.seq  = (gs->cmd_seq_last != app->intent_seq_before)
+                           ? gs->cmd_seq_last : 0u;
+        intent_record(gs, &app->intent);
     }
 
     /* Right click closes the topmost overlay, else deselects. The
@@ -655,6 +732,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->input.logical_x + 18, gs->input.logical_y + 18, warn);
         }
     }
+
+    /* Ordered but not yet applied (UI_PLAN M1). */
+    render_pending_placements(app->r, &isl->camera, gs);
 
     render_hovered_tile(app->r, &isl->camera,
                         gs->hovered_row, gs->hovered_col);
@@ -734,11 +814,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         font_draw_text(app->r, FONT_SMALL, buf, x, y, hdr);
         y += line;
         for (r = 0; r < (int)RES_GOLD; r++) {
+            SDL_Color spark = { 150, 185, 150, 255 };
+
             SDL_snprintf(buf, sizeof(buf), "%-6s inv %4d  bid %3d  ask %3d",
                          RESOURCE_NAMES[r], fac->inventory[r],
                          faction_bid(fac, (ResourceType)r),
                          faction_ask(fac, (ResourceType)r));
             font_draw_text(app->r, FONT_SMALL, buf, x, y, txt);
+
+            /* The same ring the trade screen draws (UI_PLAN M3): the
+             * tuning overlay and the player's chart must not be able to
+             * disagree about what the price did. */
+            render_sparkline(app->r, (float)(x + 210), (float)y + 2.0f,
+                             60.0f, 12.0f, app->snap.price_hist[r],
+                             app->snap.price_hist_count[r], spark);
             y += line;
         }
     }
@@ -789,6 +878,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
         font_draw_text(app->r, FONT_NORMAL, msg, SCREEN_W / 2 - 300, 8, col);
     }
+
+    /* Flashes last: they answer a click and must not be painted over
+     * by the overlay the click came from. */
+    render_reject_flashes(app->r, &isl->camera, &app->fx);
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;

@@ -88,6 +88,8 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
         row->theirs = snap->counterparty_stock[r];
         row->bid    = snap->bid[r];
         row->ask    = snap->ask[r];
+        row->hist_count = snap->price_hist_count[r];
+        memcpy(row->hist, snap->price_hist[r], sizeof(row->hist));
 
         /* Refusals from THEIR side of the table. The player's own
          * limits (no stock to sell, no gold to pay, no room to store)
@@ -150,7 +152,7 @@ UiRect exchange_col_rect(UiRect row, ExchangeCol col)
 {
     static const float W[EX_COL_COUNT] = {
         EXCHANGE_COL_NAME, EXCHANGE_COL_YOURS, EXCHANGE_COL_THEIRS,
-        EXCHANGE_COL_BID,  EXCHANGE_COL_ASK
+        EXCHANGE_COL_BID,  EXCHANGE_COL_ASK,   EXCHANGE_COL_TREND
     };
     UiRect r = row;
     int    i;
@@ -284,32 +286,44 @@ void exchange_build(UiList *out, const ExchangeView *view,
 
 /* ---- decoding a click -------------------------------------- */
 
-ExchangeHit exchange_hit(const UiList *list, const UiState *st,
-                         float x, float y)
+ExchangeHit exchange_hit(const UiList *list, const ExchangeView *view,
+                         const UiState *st, float x, float y)
 {
     ExchangeHit     hit;
     const UiWidget *w;
 
-    hit.kind = EXCHANGE_HIT_OUTSIDE;
-    hit.res  = -1;
-    hit.qty  = 0;
-    hit.page = st ? st->exchange_page : 0;
+    hit.kind  = EXCHANGE_HIT_OUTSIDE;
+    hit.res   = -1;
+    hit.qty   = 0;
+    hit.price = 0;
+    hit.page  = st ? st->exchange_page : 0;
+    memset(&hit.rect, 0, sizeof(hit.rect));
 
     w = ui_list_hit(list, x, y);
     if (!w) return hit;
+    hit.rect = w->rect;
 
     switch (ui_id_group(w->id)) {
     case UI_GROUP_SELL:
-        hit.kind = EXCHANGE_HIT_SELL;
-        hit.res  = (int)ui_id_value(w->id);
-        hit.qty  = w->value;   /* count, or -1 for "all" */
-        break;
+    case UI_GROUP_BUY: {
+        int      sell = ui_id_group(w->id) == UI_GROUP_SELL;
+        int      res  = (int)ui_id_value(w->id);
+        int      i;
 
-    case UI_GROUP_BUY:
-        hit.kind = EXCHANGE_HIT_BUY;
-        hit.res  = (int)ui_id_value(w->id);
-        hit.qty  = w->value;
+        hit.kind = sell ? EXCHANGE_HIT_SELL : EXCHANGE_HIT_BUY;
+        hit.res  = res;
+        hit.qty  = w->value;   /* count, or -1 for "all"/"max" */
+
+        /* The price this row was DISPLAYING, which travels with the
+         * command as its limit. Read from the view rather than
+         * recomputed, so it is literally the number the player saw. */
+        for (i = 0; view && i < view->row_count; i++)
+            if (view->rows[i].ident == (uint16_t)res) {
+                hit.price = sell ? view->rows[i].bid : view->rows[i].ask;
+                break;
+            }
         break;
+    }
 
     case UI_GROUP_ACTION:
         switch ((UiAction)ui_id_value(w->id)) {

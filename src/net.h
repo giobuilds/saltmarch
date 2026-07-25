@@ -55,8 +55,11 @@
 typedef struct NetSession NetSession;
 
 #define NET_DEFAULT_PORT      7777
-/* Bumped to 2 in Phase 6: HELLO carries a resume id after the version. */
-#define NET_PROTO_VERSION     2u
+/* 2: HELLO carries a resume id after the version (MMO Phase 6).
+ * 3: Command gained a `seq` field (UI_PLAN M1), so the struct that
+ *    crosses the wire is a different size — old and new peers must not
+ *    try to talk. */
+#define NET_PROTO_VERSION     3u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

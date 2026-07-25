@@ -1,10 +1,20 @@
 /*  faction.c  --  The NPC market counterparty (MMO_PLAN Phase 3)  */
 
 #include "faction.h"
+#include <string.h>
 
 void faction_init(Faction *f)
 {
     int i;
+
+    /* Zero the whole struct first. Every byte of this is hashed, and
+     * GameState is malloc'd rather than calloc'd — a field this
+     * function forgets is uninitialised memory entering sim_hash, which
+     * makes two clients of the same world disagree for reasons neither
+     * can see. That is not hypothetical: the price-history ring
+     * (UI_PLAN M3) was added and immediately produced exactly that. */
+    memset(f, 0, sizeof(*f));
+
     f->gold         = FACTION_START_GOLD;
     f->revert_timer = 0;
     for (i = 0; i < RES_COUNT; i++)
@@ -38,9 +48,60 @@ int faction_ask(const Faction *f, ResourceType r)
     return quote(BUY_PRICE[r], f->inventory[r]);
 }
 
+int faction_history(const Faction *f, ResourceType r, int16_t *out, int max)
+{
+    int n, i, start;
+
+    if (r < 0 || r >= RES_COUNT || max <= 0) return 0;
+
+    n = f->hist_count < FACTION_HIST_LEN ? f->hist_count : FACTION_HIST_LEN;
+    if (n > max) n = max;
+
+    /* Oldest first. Before the ring has wrapped the oldest is index 0;
+     * after, it is whatever head points at. */
+    start = (f->hist_count < FACTION_HIST_LEN)
+            ? 0
+            : (int)f->hist_head;
+
+    for (i = 0; i < n; i++)
+        out[i] = f->hist[r][(start + i) % FACTION_HIST_LEN];
+    return n;
+}
+
+/* Sample every good's mid-price into the ring. Deliberately BEFORE the
+ * reversion nudge below, so the first sample of a session is the
+ * untouched baseline rather than one tick of drift. */
+static void faction_sample_history(Faction *f)
+{
+    int r;
+
+    for (r = 0; r < RES_COUNT; r++) {
+        int mid;
+        if (r == RES_GOLD) { f->hist[r][f->hist_head] = 0; continue; }
+        mid = (faction_bid(f, (ResourceType)r) +
+               faction_ask(f, (ResourceType)r)) / 2;
+        /* int16 is ample for any price this economy produces, and keeps
+         * the history cheap enough to be sim state without apology. */
+        if (mid > 32767) mid = 32767;
+        f->hist[r][f->hist_head] = (int16_t)mid;
+    }
+
+    f->hist_head = (uint16_t)((f->hist_head + 1) % FACTION_HIST_LEN);
+    if (f->hist_count < FACTION_HIST_LEN) f->hist_count++;
+}
+
 void faction_tick(Faction *f)
 {
     int i;
+
+    /* History first: it is a record of what the price WAS during this
+     * tick, and it must be sampled whether or not the reversion below
+     * fires this tick. */
+    if (++f->hist_timer >= FACTION_HIST_INTERVAL_TICKS || f->hist_count == 0) {
+        f->hist_timer = 0;
+        faction_sample_history(f);
+    }
+
     if (++f->revert_timer < FACTION_REVERT_INTERVAL_TICKS) return;
     f->revert_timer = 0;
 

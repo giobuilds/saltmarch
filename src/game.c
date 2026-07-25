@@ -186,6 +186,9 @@ GameState *game_init(void)
      * but relies on the pointer/cap being valid. */
     gs->cmd_log     = NULL;
     gs->cmd_count   = 0;
+    gs->intent_log  = NULL;
+    gs->intent_count = 0;
+    gs->intent_cap   = 0;
     gs->cmd_cap     = 0;
     gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
@@ -195,6 +198,9 @@ GameState *game_init(void)
     gs->replay_replay_hash = 0;
     gs->replay_tick        = 0;
 
+    gs->cmd_seq_next    = 1u;
+    gs->cmd_seq_last    = 0u;
+    gs->result_count    = 0;
     gs->local_player_id = 1u;
     gs->net             = NULL;   /* attached by net_attach when hosting/joining */
     gs->net_submit      = NULL;
@@ -209,6 +215,7 @@ void game_free(GameState *gs)
 {
     if (!gs) return;
     command_log_free(gs);
+    intent_log_free(gs);
     free(gs);
 }
 
@@ -255,14 +262,26 @@ typedef struct {
     int32_t  current_island;
     uint64_t sim_tick_no;
     int32_t  cmd_count;
+    int32_t  intent_count;   /* v8: the recorded input stream */
 } SaveHeader;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
 /* v6 (Phase 5): commands carry a meaningful player_id and sim_apply
  * enforces ownership, so a v5 log (player_id 0 throughout) would replay
  * to a world of rejected commands. Same bytes, different meaning — the
- * version bump is the rejection. */
-#define SAVE_VERSION 6u
+ * version bump is the rejection.
+ *
+ * v7 (UI_PLAN M1): Command gained a client-local `seq`, so the struct
+ * this file writes is a different size. The field is ignored by the
+ * sim — a v6 log would replay to the same world — but the bytes no
+ * longer line up, and silently misreading a log is exactly what a
+ * version number is for.
+ *
+ * v8 (UI_PLAN M1): the file gained a second section — the recorded
+ * intent stream, appended after the commands. A v7 log describes the
+ * same world; it simply has no clicks recorded, so the UI harness has
+ * nothing to replay. */
+#define SAVE_VERSION 8u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -273,7 +292,8 @@ int game_save(const GameState *gs, const char *path)
 {
     FILE         *f = fopen(path, "wb");
     SaveHeader    hdr;
-    size_t        log_bytes = sizeof(Command) * (size_t)gs->cmd_count;
+    size_t        log_bytes    = sizeof(Command) * (size_t)gs->cmd_count;
+    size_t        intent_bytes = sizeof(Intent) * (size_t)gs->intent_count;
     int           ok;
 
     if (!f) {
@@ -295,10 +315,13 @@ int game_save(const GameState *gs, const char *path)
     hdr.current_island = gs->current_island;
     hdr.sim_tick_no    = gs->sim_tick_no;
     hdr.cmd_count      = gs->cmd_count;
+    hdr.intent_count   = gs->intent_count;
 
     ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
       && (log_bytes == 0 ||
-          fwrite(gs->cmd_log, log_bytes, 1, f) == 1);
+          fwrite(gs->cmd_log, log_bytes, 1, f) == 1)
+      && (intent_bytes == 0 ||
+          fwrite(gs->intent_log, intent_bytes, 1, f) == 1);
 
     /* fclose can fail where fwrite succeeded (a full disk only surfaces
      * at flush), so a save is not saved until the close says so. */
@@ -309,9 +332,10 @@ int game_save(const GameState *gs, const char *path)
         return 0;
     }
 
-    sim_log("Game saved to %s (seed %u, tick %llu, %d commands)",
+    sim_log("Game saved to %s (seed %u, tick %llu, %d commands, %d intents)",
             path, gs->world_seed,
-            (unsigned long long)gs->sim_tick_no, gs->cmd_count);
+            (unsigned long long)gs->sim_tick_no, gs->cmd_count,
+            gs->intent_count);
     return 1;
 }
 
@@ -367,13 +391,14 @@ int game_load(GameState *gs, const char *path)
         free(buf);
         return 0;
     }
-    if (hdr.cmd_count < 0 ||
+    if (hdr.cmd_count < 0 || hdr.intent_count < 0 ||
         hdr.current_island < 0 || hdr.current_island >= MAX_ISLANDS) {
         sim_log("game_load: %s has an invalid header", path);
         free(buf);
         return 0;
     }
-    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count;
+    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count
+                       + sizeof(Intent)  * (size_t)hdr.intent_count;
     if (need > size) {
         sim_log("game_load: %s is truncated", path);
         free(buf);
@@ -390,6 +415,19 @@ int game_load(GameState *gs, const char *path)
         free(buf);
         return 0;
     }
+    /* The intents are cargo: they describe how the world was reached,
+     * not what it is, so a failure to install them is worth a line in
+     * the log and nothing more. */
+    if (hdr.intent_count > 0) {
+        const Intent *ins = (const Intent *)(buf + sizeof(hdr) +
+                                sizeof(Command) * (size_t)hdr.cmd_count);
+        if (!intent_log_set(gs, ins, hdr.intent_count))
+            sim_log("game_load: could not install %d intents",
+                    hdr.intent_count);
+    } else {
+        gs->intent_count = 0;
+    }
+
     free(buf);
 
     game_set_current_island(gs, hdr.current_island);
@@ -431,7 +469,21 @@ void sim_run_one_tick(GameState *gs)
      * against any straggler rather than deadlocking the cursor). */
     while (gs->cmd_applied < gs->cmd_count &&
            gs->cmd_log[gs->cmd_applied].tick <= gs->sim_tick_no) {
-        sim_apply(gs, &gs->cmd_log[gs->cmd_applied]);
+        const Command *c      = &gs->cmd_log[gs->cmd_applied];
+        RejectReason   reason = sim_apply_reason(gs, c);
+
+        /* Leave a note of what happened for the UI to collect (UI_PLAN
+         * M1). This is client-facing bookkeeping, not world state: it is
+         * not hashed, not saved, and a replay that never drains the ring
+         * simply overwrites it. */
+        if (gs->result_count < SIM_RESULT_RING) {
+            SimResult *r = &gs->results[gs->result_count++];
+            r->seq       = c->seq;
+            r->player_id = c->player_id;
+            r->tick      = gs->sim_tick_no;
+            r->kind      = c->kind;
+            r->reason    = reason;
+        }
         gs->cmd_applied++;
     }
 
@@ -464,6 +516,20 @@ static void fnv_bytes(uint64_t *h, const void *data, size_t n)
         *h ^= p[i];
         *h *= 1099511628211ULL;   /* FNV-1a 64-bit prime */
     }
+}
+
+int sim_results_drain(GameState *gs, SimResult *out, int max)
+{
+    int n = gs->result_count < max ? gs->result_count : max;
+    int i;
+
+    for (i = 0; i < n; i++) out[i] = gs->results[i];
+
+    /* Drained means gone. Anything beyond `max` is dropped rather than
+     * kept: a caller that cannot keep up with its own commands has a
+     * bigger problem than the ones it missed. */
+    gs->result_count = 0;
+    return n;
 }
 
 uint64_t sim_hash(const GameState *gs)
@@ -529,6 +595,13 @@ uint64_t sim_hash(const GameState *gs)
     fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
     fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
+
+    /* The price history too (UI_PLAN M3). It is state the sim produces
+     * and the UI renders, so a replay that reproduced everything except
+     * the chart would be a replay with a hole in it. */
+    fnv_bytes(&h, gs->faction.hist, sizeof(gs->faction.hist));
+    fnv_bytes(&h, &gs->faction.hist_head, sizeof(gs->faction.hist_head));
+    fnv_bytes(&h, &gs->faction.hist_count, sizeof(gs->faction.hist_count));
 
     return h;
 }
@@ -628,22 +701,26 @@ static int commit_placement(GameState *gs, int island, BuildingType type,
  * same function for consistency — one tile placed the same way
  * whether it came from a click or a drag. Roads are free, so there's
  * no resources-vs-gold choice to offer anyway. */
-static int sim_place_road(GameState *gs, int island, int row, int col)
+static RejectReason sim_place_road(GameState *gs, int island,
+                                   int row, int col)
 {
     Island            *isl = &gs->islands[island];
     const BuildingDef *def = &BUILDING_DEFS[BUILDING_ROAD];
+    RejectReason       why;
 
-    if (!isl->settled) return 0;
-    if (!building_can_place(&isl->map, BUILDING_ROAD, row, col))
-        return 0;
+    if (!isl->settled) return REJ_NOT_OWNER;
+
+    why = building_place_check(&isl->map, BUILDING_ROAD, row, col);
+    if (why != REJ_OK) return why;
+
     if (!building_can_afford(&isl->stockpile, BUILDING_ROAD))
-        return 0;
+        return REJ_CANT_AFFORD;
 
     if (commit_placement(gs, island, BUILDING_ROAD, row, col) < 0)
-        return 0;
+        return REJ_OCCUPIED;
 
     stockpile_add(&isl->stockpile, RES_GOLD, -def->cost[RES_GOLD]);
-    return 1;
+    return REJ_OK;
 }
 
 int game_try_place_road(GameState *gs, int row, int col)
@@ -661,37 +738,48 @@ int game_try_place_road(GameState *gs, int row, int col)
  * affordability) so it is safe to call from a replayed log where the
  * accompanying GameState fields no longer describe the moment of
  * submission. */
-static int sim_place_building(GameState *gs, int island, int row, int col,
-                              BuildingType type, int pay_with_gold)
+static RejectReason sim_place_building(GameState *gs, int island,
+                                       int row, int col,
+                                       BuildingType type, int pay_with_gold)
 {
     Island            *isl = &gs->islands[island];
     const BuildingDef *def;
+    RejectReason       why;
     int                i;
 
-    if (type <= BUILDING_NONE || type >= BUILDING_TYPE_COUNT) return 0;
-    if (!isl->settled) return 0;
-    if (row < 0) return 0;
+    if (type <= BUILDING_NONE || type >= BUILDING_TYPE_COUNT)
+        return REJ_UNAVAILABLE;
+    if (!isl->settled) return REJ_NOT_OWNER;
+
+    /* The same check the hover ghost and the HUD tooltip call, giving
+     * the same answer — one validator, not a prediction beside an
+     * authority (UI_PLAN's dual-validation risk). */
+    why = building_place_check(&isl->map, type, row, col);
+    if (why != REJ_OK) return why;
+
     def = &BUILDING_DEFS[type];
 
     if (pay_with_gold) {
         int gold_cost = building_gold_equivalent_cost(type, &gs->faction);
-        if (isl->stockpile.amount[RES_GOLD] < gold_cost) return 0;
+        if (isl->stockpile.amount[RES_GOLD] < gold_cost)
+            return REJ_CANT_AFFORD;
 
         if (commit_placement(gs, island, type, row, col) < 0)
-            return 0;
+            return REJ_OCCUPIED;
 
         stockpile_add(&isl->stockpile, RES_GOLD, -gold_cost);
     } else {
-        if (!building_can_afford(&isl->stockpile, type)) return 0;
+        if (!building_can_afford(&isl->stockpile, type))
+            return REJ_CANT_AFFORD;
 
         if (commit_placement(gs, island, type, row, col) < 0)
-            return 0;
+            return REJ_OCCUPIED;
 
         for (i = 0; i < RES_COUNT; i++)
             if (def->cost[i] > 0)
                 stockpile_add(&isl->stockpile, (ResourceType)i, -def->cost[i]);
     }
-    return 1;
+    return REJ_OK;
 }
 
 /* ---- command builders --------------------------------------
@@ -857,35 +945,56 @@ int game_find_building_at(const GameState *gs, int row, int col)
  * by exactly what the faction's falls — the conservation invariant. The
  * faction cannot pay for more than its gold covers, so qty is clamped to
  * that; a broke faction buys nothing (returns 0). */
-static int sim_sell(GameState *gs, int island, ResourceType res, int qty)
+static RejectReason sim_sell(GameState *gs, int island, ResourceType res,
+                             int qty, int limit)
 {
     Island  *isl = &gs->islands[island];
     Faction *fac = &gs->faction;
-    int      price, revenue;
+    int      price, revenue, wanted = qty;
 
-    if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return 0;
+    if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return REJ_UNAVAILABLE;
 
     price = faction_bid(fac, res);
+
+    /* The screen said `limit`; if the market has since moved against
+     * the seller, refuse rather than fill at the worse price. */
+    if (limit > 0 && price < limit) return REJ_PRICE_MOVED;
+
     if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
     if (price > 0 && qty > fac->gold / price) qty = fac->gold / price;
-    if (qty <= 0) return 0;
+    if (qty <= 0) {
+        /* Which of the two clamps bit decides what the player is told:
+         * an empty warehouse and a broke counterparty are different
+         * problems with different answers. */
+        if (isl->stockpile.amount[res] <= 0) return REJ_NO_STOCK;
+        if (wanted > 0 && price > 0 && fac->gold < price)
+            return REJ_COUNTERPARTY_NO_GOLD;
+        return REJ_NO_STOCK;
+    }
 
     revenue = qty * price;
     stockpile_add(&isl->stockpile, res, -qty);
     stockpile_add(&isl->stockpile, RES_GOLD, revenue);
     fac->gold          -= revenue;
     fac->inventory[res] += qty;
-    return 1;
+    return REJ_OK;
 }
 
-void game_sell_resource(GameState *gs, ResourceType res, int qty)
+void game_sell_resource_limit(GameState *gs, ResourceType res, int qty,
+                              int limit)
 {
     Command c = {0};
     c.kind = CMD_SELL_RESOURCE;
     c.a    = gs->current_island;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = limit;
     command_submit(gs, &c);
+}
+
+void game_sell_resource(GameState *gs, ResourceType res, int qty)
+{
+    game_sell_resource_limit(gs, res, qty, 0);
 }
 
 /* ---- sim_buy / game_buy_resource ----------------------------
@@ -895,15 +1004,18 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty)
  * as much as all three allow", resolved here against live state so it
  * replays correctly. Player gold falls by exactly what the faction's
  * rises (conservation); the faction's inventory drops, lifting the ask. */
-static int sim_buy(GameState *gs, int island, ResourceType res, int qty)
+static RejectReason sim_buy(GameState *gs, int island, ResourceType res,
+                            int qty, int limit)
 {
     Island  *isl = &gs->islands[island];
     Faction *fac = &gs->faction;
     int      price, headroom, max_affordable, max_stock, cost;
 
-    if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return 0;
+    if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return REJ_UNAVAILABLE;
 
     price    = faction_ask(fac, res);
+    if (limit > 0 && price > limit) return REJ_PRICE_MOVED;
+
     headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
     if (headroom < 0) headroom = 0;
 
@@ -918,35 +1030,47 @@ static int sim_buy(GameState *gs, int island, ResourceType res, int qty)
     if (qty > headroom)       qty = headroom;
     if (qty > max_affordable) qty = max_affordable;
     if (qty > max_stock)      qty = max_stock;
-    if (qty <= 0) return 0;
+    if (qty <= 0) {
+        /* Three ways to buy nothing, three different things to say. */
+        if (headroom <= 0)       return REJ_NO_STORAGE;
+        if (max_stock <= 0)      return REJ_NO_STOCK;
+        return REJ_CANT_AFFORD;
+    }
 
     cost = qty * price;
     stockpile_add(&isl->stockpile, RES_GOLD, -cost);
     stockpile_add(&isl->stockpile, res, qty);
     fac->gold          += cost;
     fac->inventory[res] -= qty;
-    return 1;
+    return REJ_OK;
 }
 
-void game_buy_resource(GameState *gs, ResourceType res, int qty)
+void game_buy_resource_limit(GameState *gs, ResourceType res, int qty,
+                             int limit)
 {
     Command c = {0};
     c.kind = CMD_BUY_RESOURCE;
     c.a    = gs->current_island;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = limit;
     command_submit(gs, &c);
 }
 
+void game_buy_resource(GameState *gs, ResourceType res, int qty)
+{
+    game_buy_resource_limit(gs, res, qty, 0);
+}
+
 /* ---- sim_demolish / game_demolish_building ------------------- */
-static int sim_demolish(GameState *gs, int island, int idx)
+static RejectReason sim_demolish(GameState *gs, int island, int idx)
 {
     Island      *isl = &gs->islands[island];
     BuildingType type;
     int          i;
 
-    if (idx < 0 || idx >= isl->building_count) return 0;
-    if (!isl->buildings[idx].active) return 0;
+    if (idx < 0 || idx >= isl->building_count) return REJ_UNAVAILABLE;
+    if (!isl->buildings[idx].active) return REJ_UNAVAILABLE;
 
     type = isl->buildings[idx].type;
 
@@ -985,7 +1109,7 @@ static int sim_demolish(GameState *gs, int island, int idx)
 
     if (type == BUILDING_WAREHOUSE)
         island_recompute_storage_capacity(isl);
-    return 1;
+    return REJ_OK;
 }
 
 void game_demolish_building(GameState *gs, int idx)
@@ -998,18 +1122,19 @@ void game_demolish_building(GameState *gs, int idx)
 }
 
 /* ---- sim_upgrade_house / game_upgrade_house ------------------ */
-static int sim_upgrade_house(GameState *gs, int island, int idx)
+static RejectReason sim_upgrade_house(GameState *gs, int island, int idx)
 {
     Island *isl = &gs->islands[island];
 
-    if (idx < 0 || idx >= isl->building_count) return 0;
-    if (!isl->buildings[idx].active) return 0;
-    if (isl->buildings[idx].type != BUILDING_HOUSE) return 0;
-    if (isl->stockpile.amount[RES_GOLD] < TIER_UPGRADE_COST_GOLD) return 0;
+    if (idx < 0 || idx >= isl->building_count) return REJ_UNAVAILABLE;
+    if (!isl->buildings[idx].active) return REJ_UNAVAILABLE;
+    if (isl->buildings[idx].type != BUILDING_HOUSE) return REJ_UNAVAILABLE;
+    if (isl->stockpile.amount[RES_GOLD] < TIER_UPGRADE_COST_GOLD)
+        return REJ_CANT_AFFORD;
 
     stockpile_add(&isl->stockpile, RES_GOLD, -TIER_UPGRADE_COST_GOLD);
     isl->buildings[idx].type = BUILDING_HOUSE_WORKER;
-    return 1;
+    return REJ_OK;
 }
 
 void game_upgrade_house(GameState *gs, int idx)
@@ -1391,66 +1516,71 @@ static int owns_ship(const GameState *gs, int idx, uint32_t player)
  * that, and replay calls sim_apply directly). Returns 1 if the command
  * mutated state, 0 if it was rejected — rejection is deterministic and
  * not an error. Payload decoding mirrors command.h. */
-int sim_apply(GameState *gs, const Command *c)
+RejectReason sim_apply_reason(GameState *gs, const Command *c)
 {
     switch (c->kind) {
     case CMD_PLACE_BUILDING: {
         BuildingType type = (BuildingType)(c->d / 2);
         int          pay  = c->d & 1;
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_place_building(gs, c->a, c->b, c->c, type, pay);
     }
     case CMD_PLACE_ROAD:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_place_road(gs, c->a, c->b, c->c);
     case CMD_DEMOLISH:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_demolish(gs, c->a, c->b);
     case CMD_SELL_RESOURCE:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_sell(gs, c->a, (ResourceType)c->b, c->c);
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_sell(gs, c->a, (ResourceType)c->b, c->c, c->d);
     case CMD_BUY_RESOURCE:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_buy(gs, c->a, (ResourceType)c->b, c->c);
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_buy(gs, c->a, (ResourceType)c->b, c->c, c->d);
     case CMD_UPGRADE_HOUSE:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_upgrade_house(gs, c->a, c->b);
     case CMD_BUILD_SHIP:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_build_ship(gs, c->a, c->player_id) >= 0;
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_build_ship(gs, c->a, c->player_id) >= 0 ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SHIP_TRANSFER:
         /* Your ship, any island — WHOSE island decides stockpile vs
          * escrow inside the body. */
-        if (!owns_ship(gs, c->a, c->player_id)) return 0;
-        if (c->d < 0 || c->d >= MAX_ISLANDS) return 0;
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        if (c->d < 0 || c->d >= MAX_ISLANDS) return REJ_UNAVAILABLE;
         return sim_ship_transfer(gs, c->a, (ResourceType)c->b, c->c, c->d,
-                                 c->player_id);
+                                 c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SHIP_DEPART:
-        if (!owns_ship(gs, c->a, c->player_id)) return 0;
-        return sim_ship_depart(gs, c->a, c->b);
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_ship_depart(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_COLONISE:
-        if (!owns_ship(gs, c->a, c->player_id)) return 0;
-        return sim_colonise(gs, c->a, c->b, c->player_id);
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_colonise(gs, c->a, c->b, c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SET_ROUTE_RES:
-        if (!owns_ship(gs, c->a, c->player_id)) return 0;
-        return sim_set_route_res(gs, c->a, c->b);
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_set_route_res(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_TOGGLE_ROUTE:
-        if (!owns_ship(gs, c->a, c->player_id)) return 0;
-        return sim_toggle_route(gs, c->a);
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_toggle_route(gs, c->a) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_GRANT_START:
         /* Deliberately ungated: its precondition is owning NOTHING —
          * sim_grant_start validates that itself. */
-        return sim_grant_start(gs, c->a, c->player_id);
+        return sim_grant_start(gs, c->a, c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_ESCROW_PUT:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_escrow_put(gs, c->a, (ResourceType)c->b, c->c);
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_escrow_put(gs, c->a, (ResourceType)c->b, c->c) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_ESCROW_TAKE:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c);
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SET_DOCKING:
-        if (!owns_island(gs, c->a, c->player_id)) return 0;
-        return sim_set_docking(gs, c->a, c->b);
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_set_docking(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
     default:
-        return 0;
+        return REJ_UNAVAILABLE;
     }
+}
+
+int sim_apply(GameState *gs, const Command *c)
+{
+    return sim_apply_reason(gs, c) == REJ_OK;
 }

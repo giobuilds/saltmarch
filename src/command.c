@@ -54,10 +54,20 @@ void command_describe(const Command *c, char *out, size_t n)
         snprintf(out, n, "DEMOLISH  island %d  building %d", c->a, c->b);
         break;
     case CMD_SELL_RESOURCE:
-        snprintf(out, n, "SELL  island %d  res %d  qty %d", c->a, c->b, c->c);
+        if (c->d > 0)
+            snprintf(out, n, "SELL  island %d  res %d  qty %d  at %d+",
+                     c->a, c->b, c->c, c->d);
+        else
+            snprintf(out, n, "SELL  island %d  res %d  qty %d",
+                     c->a, c->b, c->c);
         break;
     case CMD_BUY_RESOURCE:
-        snprintf(out, n, "BUY  island %d  res %d  qty %d", c->a, c->b, c->c);
+        if (c->d > 0)
+            snprintf(out, n, "BUY  island %d  res %d  qty %d  at %d-",
+                     c->a, c->b, c->c, c->d);
+        else
+            snprintf(out, n, "BUY  island %d  res %d  qty %d",
+                     c->a, c->b, c->c);
         break;
     case CMD_UPGRADE_HOUSE:
         snprintf(out, n, "UPGRADE_HOUSE  island %d  building %d", c->a, c->b);
@@ -128,12 +138,21 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
+    /* Stamp the sequence before routing, so a command handed to a co-op
+     * host carries it there and back and the UI recognises its own
+     * (UI_PLAN M1). Sequences start at 1: zero means "not ours". */
+    if (stamped.seq == 0) {
+        if (gs->cmd_seq_next == 0) gs->cmd_seq_next = 1;
+        stamped.seq = gs->cmd_seq_next++;
+    }
+    gs->cmd_seq_last = stamped.seq;
+
     /* In a co-op session the submission is routed through the host's
      * ordering authority instead of the local log (host: stamp + log +
      * broadcast; guest: send upstream and wait for it to come back
      * stamped). Offline, or if the session declines, fall through to
      * local stamping. */
-    if (gs->net && gs->net_submit && gs->net_submit(gs->net, gs, c))
+    if (gs->net && gs->net_submit && gs->net_submit(gs->net, gs, &stamped))
         return 1;
 
     /* Stamp for the next tick to run (sim_tick_no) and with the local
@@ -178,4 +197,49 @@ void command_log_free(GameState *gs)
     gs->cmd_count   = 0;
     gs->cmd_cap     = 0;
     gs->cmd_applied = 0;
+}
+
+/* ---- the recorded input stream (UI_PLAN M1) ---------------- */
+
+int intent_record(GameState *gs, const Intent *in)
+{
+    if (gs->intent_count == gs->intent_cap) {
+        int     ncap = gs->intent_cap ? gs->intent_cap * 2 : 64;
+        Intent *n    = (Intent *)realloc(gs->intent_log,
+                                         (size_t)ncap * sizeof(Intent));
+        if (!n) {
+            /* Unlike the command log, losing one of these breaks
+             * nothing: the world is still a pure function of the
+             * commands. It costs a test case, so say so and move on. */
+            sim_log("intent_record: out of memory at %d intents",
+                    gs->intent_count);
+            return 0;
+        }
+        gs->intent_log = n;
+        gs->intent_cap = ncap;
+    }
+    gs->intent_log[gs->intent_count++] = *in;
+    return 1;
+}
+
+int intent_log_set(GameState *gs, const Intent *ins, int n)
+{
+    if (n > gs->intent_cap) {
+        Intent *g = (Intent *)realloc(gs->intent_log,
+                                      (size_t)n * sizeof(Intent));
+        if (!g) return 0;
+        gs->intent_log = g;
+        gs->intent_cap = n;
+    }
+    if (n > 0) memcpy(gs->intent_log, ins, (size_t)n * sizeof(Intent));
+    gs->intent_count = n;
+    return 1;
+}
+
+void intent_log_free(GameState *gs)
+{
+    free(gs->intent_log);
+    gs->intent_log   = NULL;
+    gs->intent_count = 0;
+    gs->intent_cap   = 0;
 }

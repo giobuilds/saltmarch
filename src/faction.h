@@ -43,10 +43,37 @@
  * "slow mean reversion", the thing that makes prices recover over time. */
 #define FACTION_REVERT_INTERVAL_TICKS  4
 
+/* ---- price history (UI_PLAN M3) ---------------------------
+ * A short ring of past mid-prices per good, sampled on a fixed tick
+ * interval. It exists to answer a question the numbers alone cannot:
+ * "is this price normal?" A bid of 2 means nothing; a bid of 2 after a
+ * week at 3 means you just flooded the market.
+ *
+ * MMO_PLAN's risk register lists "elastic market reads as a rigged slot
+ * machine at tiny scale" — the mitigation is making the elasticity
+ * VISIBLE. Sell-Max leaves a scar on the line; mean reversion visibly
+ * heals it. The F10 tuning overlay and the player's trade screen both
+ * draw this same buffer, so the debug view and the game can never
+ * disagree about what the price did.
+ *
+ * It is sim state: hashed, replayed, integer-only. That costs 6 bytes
+ * per good per sample and buys a history that a replayed session
+ * reproduces exactly. */
+#define FACTION_HIST_LEN            24
+#define FACTION_HIST_INTERVAL_TICKS 50   /* one sample per 5 seconds */
+
 typedef struct {
     int32_t  gold;
     int32_t  inventory[RES_COUNT];   /* GOLD slot unused                 */
     uint32_t revert_timer;           /* ticks toward the next nudge      */
+
+    /* Ring of mid-prices ((bid+ask)/2), oldest-to-newest by index once
+     * hist_count reaches FACTION_HIST_LEN. hist_head is where the next
+     * sample goes. */
+    int16_t  hist[RES_COUNT][FACTION_HIST_LEN];
+    uint16_t hist_head;
+    uint16_t hist_count;
+    uint32_t hist_timer;
 } Faction;
 
 /* Baseline: full gold reserve, every tradeable good at baseline stock. */
@@ -59,9 +86,16 @@ void faction_init(Faction *f);
 int  faction_bid(const Faction *f, ResourceType r);
 int  faction_ask(const Faction *f, ResourceType r);
 
-/* One tick of slow mean reversion of inventory toward baseline. Called
- * once per sim tick from sim_run_one_tick. Gold is deliberately left
- * alone (see FACTION_START_GOLD). */
+/* One tick of slow mean reversion of inventory toward baseline, plus
+ * the periodic price-history sample. Called once per sim tick from
+ * sim_run_one_tick. Gold is deliberately left alone (see
+ * FACTION_START_GOLD). */
 void faction_tick(Faction *f);
+
+/* Read the history for `r` oldest-first into `out` (at most
+ * FACTION_HIST_LEN entries). Returns how many were written — 0 before
+ * the first sample. The ring's internal order is not something callers
+ * should have to think about. */
+int  faction_history(const Faction *f, ResourceType r, int16_t *out, int max);
 
 #endif /* FACTION_H */

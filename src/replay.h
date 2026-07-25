@@ -16,6 +16,7 @@
  * ========================================================= */
 
 #include <stdint.h>
+#include <stdio.h>
 #include "game.h"
 
 /* A scripted session that exercises the float-sensitive paths on
@@ -23,6 +24,45 @@
  * a voyage (progress accumulates) — then 500 ticks. Leaves gs holding
  * the finished world; --record saves it as a .smlog fixture. */
 void replay_record_demo_session(GameState *gs, uint32_t seed);
+
+/* ---- the UI harness (UI_PLAN M1) ---------------------------
+ * Replays a recorded session and, at every recorded click, rebuilds the
+ * snapshot that frame was drawn from and drives the REAL overlay
+ * builders and hit-tests against it.
+ *
+ * Two things are asserted. First, geometry: every widget the UI
+ * produced lies inside the screen — the "the Prev button moved
+ * off-page at 27 goods" class, caught without a display. Second,
+ * emission: where a click produced a command, hit-testing the recorded
+ * position must yield exactly that command's payload.
+ *
+ * The second check is currently limited to the exchange screen, which
+ * is the surface whose click-to-command mapping is a pure function
+ * today. Map clicks and the confirm popup route through main.c's
+ * cascade, which is SDL-side; extracting it is what would widen this,
+ * and is deliberately not done as a side effect of writing the harness.
+ *
+ * Returns 0 if everything checked out, 1 otherwise; `verbose` prints
+ * each mismatch. */
+int replay_verify_ui(GameState *gs, int verbose);
+
+/* Serialise the widget lists at each recorded click to canonical text
+ * on `out` — id, rect, label, one widget per line. Committing the
+ * output makes a golden diff: pixel-free visual regression for layout
+ * that moved when nobody meant it to. */
+void replay_dump_ui(GameState *gs, FILE *out);
+
+/* Record a session driven THROUGH THE UI: the trades are performed by
+ * hit-testing the real exchange screen at real widget positions, and
+ * each click is written to the intent log beside the command it
+ * produced. The result is a fixture that `--replay --verify-ui` can
+ * check, and one that fails if a widget ever moves out from under the
+ * coordinates it was recorded at.
+ *
+ * Separate from replay_record_demo_session() so the determinism fixture
+ * keeps its exact command stream (and its known hash) while this one is
+ * free to change. */
+void replay_record_ui_session(GameState *gs, uint32_t seed);
 
 /* 1 if argv contains a mode flag this module handles (--record or
  * --replay), so the game binary knows to stay headless. */

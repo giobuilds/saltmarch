@@ -99,6 +99,9 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
         out->bid[r]                = faction_bid(&gs->faction, (ResourceType)r);
         out->ask[r]                = faction_ask(&gs->faction, (ResourceType)r);
         out->counterparty_stock[r] = gs->faction.inventory[r];
+        out->price_hist_count[r]   = faction_history(&gs->faction,
+                                         (ResourceType)r, out->price_hist[r],
+                                         FACTION_HIST_LEN);
     }
     out->counterparty_gold = gs->faction.gold;
     out->confirm           = gs->confirm;

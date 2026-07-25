@@ -412,30 +412,61 @@ Deferred: the preview shows the earliest tick a command can apply, not
 the exact one — under lockstep the host adds its delay and the client
 cannot know it. Stated as "or later" rather than guessed at.
 
-### Phase M1 — with MMO Phase 1 (command funnel)
+### Phase M1 — with MMO Phase 1 (command funnel) — **DONE**
 - UI wrappers emit Commands via `command_submit()`; pending ring
   (`{seq, anchor}`), rejection drain, `fx_reject.c` flash-at-anchor.
+  **Done.** `Command` gained a client-local `seq` (save v7, net proto 3);
+  `sim_apply_reason()` reports why, with `sim_apply()` kept as the
+  boolean form because REJ_OK is 0. The reasons come from the mutators
+  themselves — no second validator, per the dual-validation risk. Ship,
+  escrow and route commands still answer `REJ_UNAVAILABLE`; converting
+  those bodies belongs with M5, which is the phase that renders them.
 - Pending-vs-confirmed queued rendering (decision 5) for placements and
-  trades.
+  trades. **Placements done** — drawn straight from the log's unapplied
+  tail, so there is one queue rather than a mirror of it. Trade rows are
+  not yet marked.
 - **INTENT lines in the `.smlog`**: mouse x/y, clicks/wheel/keys, and the
   exact `sim_tick_no` the frame's snapshot was taken at, interleaved with
-  CMD lines.
-- **CI UI replay**: the replay harness re-simulates to each intent's tick,
-  takes the snapshot, drives the real `*_build` + `*_hit_test` with the
-  evolving UiState, and asserts (a) the emitted Command is byte-identical
-  to the next CMD line, (b) every rect lies inside 1920x1080. This is a
-  full click-through UI regression suite on three OSes, in an environment
-  with no xdotool. v1 built the purity; MMO_PLAN built the log; together
-  they are this.
-- Golden UiList diffs: serialise each frame's `UiList` (id, rect, label)
-  to canonical text, diff against committed goldens — pixel-free visual
-  regression for the "Prev button moved off-page at 27 goods" class.
+  CMD lines. **Done** — a second binary section (save v8) rather than
+  text lines, carrying tick, position, the view state (page, tab,
+  overlay) and the hovered tile, plus the `seq` of whatever command the
+  click produced. The hovered tile is recorded because it comes from the
+  camera, and the camera never enters the log.
+- **CI UI replay**: **done**, running on all three platforms
+  (`--record-ui` then `--replay --verify-ui`). The fixture's trades are
+  performed by hit-testing the real exchange screen, so what is recorded
+  is a genuine (frame, position) pair. On replay the harness rebuilds
+  each frame's snapshot at its recorded tick, runs the real builders and
+  hit-tests, and checks both that every widget is on screen and that the
+  click still emits the command the log holds.
 
-### Phase M3 — with MMO Phase 3 (elastic market)
+  Verified to actually fail: making rows 10px taller makes two of the
+  four recorded clicks hit nothing, and the run exits 1. An earlier
+  version of the check passed that silently — a click that hits nothing
+  produced no expected command, and "no expectation" compared equal to
+  everything.
+
+  Limited to the exchange screen for now. Map clicks and the confirm
+  popup route through main.c's cascade, which is SDL-side; widening the
+  harness means extracting that cascade into a pure function, which is
+  its own piece of work and not a side effect of writing this one.
+- Golden UiList diffs: `--dump-ui FILE` writes the canonical text
+  (id, rect, flags, reason, value, label per widget, per recorded
+  click). Not yet committed as goldens or diffed in CI — the geometry
+  assertions cover the same class today, and a golden file is only worth
+  having once the layout has stopped moving every phase.
+
+### Phase M3 — with MMO Phase 3 (elastic market) — **DONE**
 - `exchange_view_faction()`; refusal rendering (greyed cells + reason,
   reusing the existing unaffordable-buy greying path); "faction out of
-  gold" message lands here.
-- Limit-order price stamping + `REJ_PRICE_MOVED` flash.
+  gold" message lands here. **Landed early**, in Phase 1: the fixed
+  price tables were already gone, so the exchange view read the
+  faction's live quotes from the start.
+- Limit-order price stamping + `REJ_PRICE_MOVED` flash. **Done.** The
+  price the clicked row was DISPLAYING rides in the command's spare
+  slot; sim_sell/sim_buy recompute the live quote and refuse when it has
+  moved against the player. Zero means no limit, which is what replayed
+  and scripted commands carry, so old logs are unaffected.
 - **Price-history sparkline column** (~48px per row): the faction keeps a
   small per-resource ring buffer of mid-price sampled every K ticks — sim
   state, in `sim_hash`, so replay covers it; `ExchangeView` carries a
@@ -443,6 +474,20 @@ cannot know it. Stated as "or later" rather than guessed at.
   this is the mitigation for MMO_PLAN's "rigged slot machine" risk, and
   the Phase 3 debug/tuning overlay renders from the same buffer (the
   tuning UI and the player UI cannot disagree about the quote).
+  **Done** — 24 samples per good, one every 50 ticks; the trade screen
+  and the F10 overlay call the same `render_sparkline()`.
+
+*Two things worth recording.* The determinism fixture's hash changed
+(41f8ca6fde89c2ae → 0577606f5f7a9676) for the first time in this whole
+effort: new sim state is hashed state, and that is the intended cost of
+making the history replayable rather than cosmetic.
+
+And adding it immediately exposed a latent bug. `faction_init()` set its
+fields one by one and GameState is malloc'd, so the new array was
+uninitialised memory entering `sim_hash` — two clients of the same world
+disagreeing for reasons neither could see. It memsets first now. The
+co-op resync test caught it the instant the field appeared, which is
+that test earning its keep.
 
 ### Phase M4 — with MMO Phase 4 (shared feed)
 The feed is out-of-process, wall-clock, and **untrusted input**:

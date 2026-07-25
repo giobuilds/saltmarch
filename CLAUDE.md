@@ -24,6 +24,8 @@ cmake --build build -j$(nproc)          # zero warnings is the bar
 ./ci/sim-sdl-free.sh                    # the sim/client boundary holds
 ./ci/smoke-test.sh ./build/saltmarch 5  # the binary actually lives
 ./ci/host-smoke.sh ./build              # server + client over real TCP
+./build/saltmarch_replay --record-ui u.smlog --seed 777 && \
+  ./build/saltmarch_replay --replay u.smlog --verify-ui   # UI click replay
 ./build/saltmarch_replay --record f.smlog --seed 12345 && \
   ./build/saltmarch_replay --replay f.smlog     # determinism gate
 ```
@@ -83,6 +85,9 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
 - `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
 - `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
+- `intent.h` — the recorded input stream: each click carries the sim tick its frame's snapshot was drawn from, which is what makes replaying it meaningful
+- `replay_ui.c` — the record/replay CLI plus the UI harness that re-drives recorded clicks through the real builders and hit-tests
+- `fx_reject.c/h` — correlates submitted commands with their results by `{player_id, seq}` and raises a flash at the tile/widget that emitted a rejected one
 - `confirm_view.c/h` + `confirm_ui.c/h` — the single confirmation popup; it stores the `Command` it will submit and renders it (`command_describe`)
 - `vitals.c/h` — the alert strip's rules, including the sim's own health (F9 result, tick backlog, feed age)
 - `inventory_view.c/h` + `inventory_ui.c/h` — the stores overlay (`I`)
