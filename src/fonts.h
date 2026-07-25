@@ -47,6 +47,10 @@ typedef enum {
  * should surface it rather than continue quietly. */
 int  fonts_init(void);
 
+/* Text-cache counters since startup (UI_PLAN M4). Shown by the F10
+ * overlay so the cache's effect is observable rather than asserted. */
+void fonts_cache_stats(int *hits, int *misses);
+
 /* Release all font resources and shut down SDL_ttf. */
 void fonts_quit(void);
 

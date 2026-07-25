@@ -145,6 +145,14 @@ static void rule_health(RuleOutput *o, const UiHealth *h)
 
     if (h->net_connected == 0)
         emit(o, VITAL_INFO, 0, "Hosting — nobody has joined");
+
+    /* The feed is a file other people append to, so malformed records
+     * are expected rather than exceptional — but dropping them in
+     * silence means a sync script writing garbage looks exactly like a
+     * quiet ocean (UI_PLAN M4). */
+    if (h->feed_malformed > 0)
+        emit(o, VITAL_INFO, h->feed_malformed,
+             "%d unreadable feed records", h->feed_malformed);
 }
 
 /* ---- assembly ---------------------------------------------- */

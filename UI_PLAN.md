@@ -489,7 +489,7 @@ disagreeing for reasons neither could see. It memsets first now. The
 co-op resync test caught it the instant the field appeared, which is
 that test earning its keep.
 
-### Phase M4 — with MMO Phase 4 (shared feed)
+### Phase M4 — with MMO Phase 4 (shared feed) — **DONE**
 The feed is out-of-process, wall-clock, and **untrusted input**:
 - Every feed-derived element carries an age stamp and decay visual; a feed
   heartbeat chip (island header area) goes stale-coloured when feedsync
@@ -505,6 +505,33 @@ The feed is out-of-process, wall-clock, and **untrusted input**:
   risks; untrusted text makes worst-case text throughput
   adversary-controlled, which converts v1's "act reactively" into a
   scheduled prerequisite.
+
+*As built:*
+- `font_draw_text()` keeps its signature and now draws through a cache
+  of `TTF_Text` objects (256 slots, keyed by size and string, colour
+  applied per draw since `TTF_SetTextColor` is cheap). The old
+  rasterise-upload-destroy path survives for strings too long to cache
+  and for the case where the text engine cannot be created — correctness
+  first. The F10 overlay shows frame time and the cache's hit/miss
+  counts, so the claim is checkable rather than asserted.
+- `ui_clean_label()` replaces anything outside printable ASCII with '?'
+  and clamps. feed.c runs every parsed string through it, so a peer's
+  name reaches the renderer with no control bytes in it. Length was
+  already clamped; this closes the content half. Rejecting non-ASCII is
+  a real limitation, taken deliberately: the bundled font is a Latin
+  subset, and a name that renders as blank boxes is no better than one
+  that renders as question marks.
+- The map draws at most `WORLD_MAX_DRAWN_GHOSTS` (24) voyages and states
+  the remainder as "+k more ships at sea".
+- Malformed feed records become a vitals row rather than a silent drop:
+  a sync script writing garbage otherwise looks exactly like a quiet
+  ocean.
+- A feed heartbeat chip sits beside the island header, stale-coloured
+  past two minutes. Ghosts fade out on their own, so without it a sync
+  script that died an hour ago is indistinguishable from an empty sea.
+
+Ghost styling was already distinct and tooltip-only from MMO Phase 4, so
+that bullet needed nothing.
 
 ### Phase M5 — with MMO Phase 5 (lockstep co-op)
 - `exchange_view_offer()` + Accept/Reject footer for harbor escrow; the

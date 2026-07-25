@@ -258,17 +258,29 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
      * how a stale feed fades out. Non-interactive: hover shows an info
      * tooltip, and they never appear in the hit-test. */
     {
-        int gi;
+        int gi, drawn = 0, skipped = 0;
         float hw = (float)TILE_W * WORLD_NODE_ZOOM / 2.0f;
         float hh = (float)TILE_H * WORLD_NODE_ZOOM / 2.0f;
 
         for (gi = 0; gi < ghost_count; gi++) {
             const GhostVoyage *g = &ghosts[gi];
             float t = ghost_progress(g, unix_ms);
+
+            /* Cap what gets drawn (UI_PLAN M4). The ghost list comes
+             * from a file other people append to, so its length is not
+             * ours to decide; past a couple of dozen the map is a mess
+             * and the frame is paying for it. The remainder is counted
+             * and stated rather than silently dropped. */
+            if (drawn >= WORLD_MAX_DRAWN_GHOSTS) {
+                if (t >= 0.0f) skipped++;
+                continue;
+            }
             float ax, ay, bx, by, gx, gy;
             SDL_FRect mr;
 
             if (t < 0.0f) continue;
+
+            drawn++;
 
             node_origin(screen_w, screen_h, g->from, &ax, &ay);
             node_origin(screen_w, screen_h, g->to,   &bx, &by);
@@ -312,6 +324,16 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                 font_draw_text(renderer, FONT_SMALL, tip,
                                (int)bg.x + 6, (int)bg.y + 4, tip_col);
             }
+        }
+
+        /* Say what was left out, rather than quietly showing less
+         * ocean than there is. */
+        if (skipped > 0) {
+            SDL_Color more = { 150, 170, 190, 255 };
+            char      buf[48];
+            SDL_snprintf(buf, sizeof(buf), "+%d more ships at sea", skipped);
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           16, screen_h - 150, more);
         }
     }
 

@@ -287,6 +287,30 @@ const UiWidget *ui_list_find(const UiList *l, uint32_t id)
     return NULL;
 }
 
+/* ---- untrusted text (UI_PLAN M4) -------------------------- */
+
+size_t ui_clean_label(char *dst, size_t cap, const char *src)
+{
+    size_t n = 0;
+
+    if (!dst || cap == 0) return 0;
+    if (!src) { dst[0] = '\0'; return 0; }
+
+    while (src[n] && n + 1 < cap) {
+        unsigned char c = (unsigned char)src[n];
+        /* Printable ASCII only. Anything else — control codes, a
+         * newline, the high half of a UTF-8 sequence — becomes '?'.
+         * Rejecting non-ASCII is a real limitation and a deliberate
+         * one: this game's font ships with a Latin subset, and a name
+         * that renders as blank boxes is not more useful than one that
+         * renders as question marks. */
+        dst[n] = (c >= 0x20 && c < 0x7F) ? (char)c : '?';
+        n++;
+    }
+    dst[n] = '\0';
+    return n;
+}
+
 /* ---- rejection vocabulary --------------------------------- */
 
 const char *ui_reject_text(RejectReason reason)

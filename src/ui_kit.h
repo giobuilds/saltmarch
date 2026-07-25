@@ -30,6 +30,7 @@
  * and hit-testing performed against the same list that was drawn.
  * ========================================================= */
 
+#include <stddef.h>
 #include <stdint.h>
 #include "command.h"   /* RejectReason */
 
@@ -234,6 +235,23 @@ uint32_t ui_list_hit_id(const UiList *l, float x, float y);
 /* Find a widget by id (NULL if absent). Used by drawers that need one
  * specific widget, and by tests. */
 const UiWidget *ui_list_find(const UiList *l, uint32_t id);
+
+/* ---- untrusted text (UI_PLAN M4) --------------------------
+ * Copy `src` into `dst` as a label safe to hand to a font renderer:
+ * clamped to `cap`, always NUL-terminated, and with anything that is
+ * not printable ASCII replaced by '?'.
+ *
+ * The shared feed is a file that other people append to. A peer's
+ * display name reaches this program as bytes from that file, so it can
+ * contain control characters, a newline that would corrupt anything
+ * that logs it, or several kilobytes of nothing. Length was already
+ * clamped at the parser; this closes the content half.
+ *
+ * Not paranoia about crashes — SDL_ttf handles odd bytes — but about a
+ * name that can disguise itself as UI, scroll a log, or make a tooltip
+ * unreadable for everyone who can see it. Returns the number of bytes
+ * written, excluding the terminator. */
+size_t ui_clean_label(char *dst, size_t cap, const char *src);
 
 /* ---- rejection vocabulary ---------------------------------
  * The sim decides why something is impossible; the UI decides how to

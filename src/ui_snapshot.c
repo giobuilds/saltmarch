@@ -72,8 +72,10 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
      * business, not the world's. */
     out->health.replay_state  = gs->replay_state;
     out->health.backlog_ticks = (uint32_t)(gs->sim_acc_ns / SIM_TICK_NS);
-    out->health.feed_age_s    = -1;
-    out->health.net_connected = -1;
+    out->health.feed_age_s     = -1;
+    out->health.net_connected  = -1;
+    out->health.feed_malformed = 0;
+    out->health.feed_ghosts    = 0;
     out->current_island  = gs->current_island;
 
     for (i = 0; i < MAX_ISLANDS; i++)

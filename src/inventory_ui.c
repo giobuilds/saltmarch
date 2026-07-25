@@ -250,6 +250,33 @@ void island_bar_draw(SDL_Renderer *renderer, const UiList *list,
     }
     outline(renderer, bar, 70, 62, 48, 255);
 
+    /* The feed heartbeat (UI_PLAN M4). Staleness has to be a RENDERED
+     * property: the ghosts fade out on their own, so a sync script that
+     * stopped an hour ago looks identical to an empty ocean, and the
+     * player has no way to tell a quiet sea from a broken pipe. */
+    if (snap->health.feed_age_s >= 0) {
+        UiRect    chip = { bar.x + bar.w + 8.0f, bar.y, 96.0f, bar.h };
+        int       age  = snap->health.feed_age_s;
+        int       stale = age >= 120;
+        SDL_Color fg   = stale ? (SDL_Color){ 235, 170, 110, 255 }
+                               : (SDL_Color){ 150, 190, 160, 255 };
+        char      buf[32];
+
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        fill(renderer, chip, 24, 20, 15, 190);
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+        {
+            UiRect pip = { chip.x + 6.0f, chip.y + chip.h * 0.5f - 3.0f,
+                           6.0f, 6.0f };
+            fill(renderer, pip, fg.r, fg.g, fg.b, 255);
+        }
+
+        if (age < 90) SDL_snprintf(buf, sizeof(buf), "feed %ds", age);
+        else          SDL_snprintf(buf, sizeof(buf), "feed %dm", age / 60);
+        font_draw_text(renderer, FONT_SMALL, buf,
+                       (int)(chip.x + 18.0f), (int)(chip.y + 7.0f), fg);
+    }
+
     for (i = 1; i < list->count; i++) {
         const UiWidget *w        = &list->items[i];
         int             disabled = (w->flags & UI_W_DISABLED) != 0;

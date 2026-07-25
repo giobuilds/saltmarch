@@ -259,6 +259,33 @@ static void test_tooltip(void)
     CHECK(tip.x >= 0.0f, "an over-wide tip still starts inside the window");
 }
 
+/* ---- 4c. untrusted labels (UI_PLAN M4) ------------------- */
+/* Peer names arrive as bytes from a file other people append to. */
+static void test_clean_label(void)
+{
+    char out[16];
+
+    ui_clean_label(out, sizeof(out), "Bosun Clegg");
+    CHECK(strcmp(out, "Bosun Clegg") == 0, "an ordinary name is untouched");
+
+    ui_clean_label(out, sizeof(out), "a\nb\tc");
+    CHECK(strcmp(out, "a?b?c") == 0,
+          "control characters cannot smuggle newlines into a log or a tip");
+
+    ui_clean_label(out, sizeof(out), "wildly-too-long-name-here");
+    CHECK(strlen(out) == sizeof(out) - 1 && out[sizeof(out) - 1] == '\0',
+          "an over-long name is clamped and still terminated");
+
+    ui_clean_label(out, sizeof(out), "\x01\x02\x7f");
+    CHECK(strcmp(out, "???") == 0, "unprintables become question marks");
+
+    ui_clean_label(out, sizeof(out), NULL);
+    CHECK(out[0] == '\0', "a missing name is an empty one, not a crash");
+
+    CHECK(ui_clean_label(NULL, 0, "x") == 0,
+          "no output buffer is handled rather than written to");
+}
+
 /* ---- 5. the rejection vocabulary ------------------------- */
 static void test_reject_text(void)
 {
@@ -378,6 +405,7 @@ int main(void)
     test_ids();
     test_list();
     test_tooltip();
+    test_clean_label();
     test_reject_text();
     test_placement_reasons();
 
