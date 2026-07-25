@@ -89,6 +89,7 @@ typedef struct {
      * faction_ask so no overlay reproduces the pricing rule. */
     int32_t  bid[RES_COUNT];
     int32_t  ask[RES_COUNT];
+    int32_t  counterparty_stock[RES_COUNT];
     int32_t  counterparty_gold;
 } UiSnapshot;
 

@@ -20,7 +20,9 @@
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
-#include "ui_kit.h"   /* UI_PLAN Phase 0: rejection vocabulary, widget kit */
+#include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
+#include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
+#include "exchange_view.h"/* UI_PLAN Phase 1: the exchange surface      */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -33,6 +35,16 @@ typedef struct {
     GameState    *g;
     Feed          feed;
     NetSession   *net;   /* NULL when playing offline */
+
+    /* UI_PLAN Phase 0/1. The snapshot is rebuilt once per frame after
+     * the tick loop; overlays read it instead of GameState. `ui` is
+     * view state (which page you are on), never world state. The
+     * exchange view and its widget list are rebuilt each frame so the
+     * list that is hit-tested is the list that was drawn. */
+    UiSnapshot    snap;
+    UiState       ui;
+    ExchangeView  exchange;
+    UiList        exchange_list;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -99,6 +111,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     app->w = window;
     app->r = renderer;
     app->g = gs;
+
+    /* App is SDL_malloc'd, so the UI blocks start as garbage. Zero them
+     * before the first frame: a stray page index would only be clamped,
+     * but a widget list with a nonsense count would be read as real. */
+    SDL_memset(&app->snap,          0, sizeof(app->snap));
+    SDL_memset(&app->ui,            0, sizeof(app->ui));
+    SDL_memset(&app->exchange,      0, sizeof(app->exchange));
+    SDL_memset(&app->exchange_list, 0, sizeof(app->exchange_list));
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
      * Cosmetic identity only — the sim's player_id comes from the co-op
@@ -193,6 +213,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     if (app->net)
         net_after_update(app->net, gs);
+
+    /* UI_PLAN Phase 0: take the picture the UI will work from. After
+     * the tick loop, so every overlay in this frame sees one tick and
+     * none of them can observe the world mid-tick. */
+    ui_snapshot_build(&app->snap, gs);
+    if (gs->trade_open) {
+        exchange_view_market(&app->exchange, &app->snap, gs->current_island);
+        exchange_build(&app->exchange_list, &app->exchange, &app->ui,
+                       (float)SCREEN_W, (float)SCREEN_H);
+    }
 
     /* Shared feed (Phase 4): publish any departures the ticks above
      * just caused, and re-read the inbound feed on its poll interval.
@@ -401,24 +431,37 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         /* Phase 4: if the trade screen is open, only its buttons
          * respond (mirrors the menu_open branch below). */
         } else if (gs->trade_open) {
-            ResourceType res;
-            int          qty;
-            TradeHit     hit = trade_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                 gs->input.logical_x,
-                                                 gs->input.logical_y,
-                                                 &res, &qty);
-            if (hit == TRADE_HIT_SELL) {
-                if (qty < 0) qty = isl->stockpile.amount[res]; /* Sell All */
-                game_sell_resource(gs, res, qty);
-            } else if (hit == TRADE_HIT_BUY) {
+            ExchangeHit hit = exchange_hit(&app->exchange_list, &app->ui,
+                                           (float)gs->input.logical_x,
+                                           (float)gs->input.logical_y);
+            switch (hit.kind) {
+            case EXCHANGE_HIT_SELL: {
+                int qty = hit.qty;
+                /* "All" is resolved here rather than in the sim: the
+                 * player meant "the amount I could see", which is the
+                 * snapshot's number, not whatever production has added
+                 * since. */
+                if (qty < 0)
+                    qty = app->snap.islands[gs->current_island].stock[hit.res];
+                game_sell_resource(gs, (ResourceType)hit.res, qty);
+                break;
+            }
+            case EXCHANGE_HIT_BUY:
                 /* qty < 0 ("Max") is resolved inside game_buy_resource
                  * itself, since it needs both storage headroom and
                  * Gold on hand to know what "max" means. */
-                game_buy_resource(gs, res, qty);
-            } else {
-                /* TRADE_HIT_CLOSE or TRADE_HIT_NONE (click outside
-                 * the panel) both dismiss the screen. */
+                game_buy_resource(gs, (ResourceType)hit.res, hit.qty);
+                break;
+            case EXCHANGE_HIT_PAGE:
+                app->ui.exchange_page = hit.page;
+                break;
+            case EXCHANGE_HIT_NONE:
+                break;                      /* the panel: absorb it     */
+            case EXCHANGE_HIT_CLOSE:
+            case EXCHANGE_HIT_OUTSIDE:
+            default:
                 gs->trade_open = 0;
+                break;
             }
 
         /* CHANGED: if menu is open, only menu buttons respond */
@@ -506,6 +549,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                         case BUILDING_MARKETPLACE:
                             gs->trade_open         = 1;
                             gs->trade_building_idx = found;
+                            app->ui.exchange_page  = 0;
                             break;
                         case BUILDING_HOUSE:
                             gs->tier_upgrade_open = 1;
@@ -632,8 +676,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Phase 4: draw the trade screen on top when open */
     if (gs->trade_open)
-        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &isl->stockpile, &gs->faction,
-                     gs->input.logical_x, gs->input.logical_y);
+        trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->exchange_list,
+                      &app->exchange, gs->input.logical_x,
+                      gs->input.logical_y);
 
     /* Phase 5: harbor escrow panel on top when open */
     if (gs->escrow_open)

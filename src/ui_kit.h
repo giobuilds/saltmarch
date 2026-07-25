@@ -70,6 +70,8 @@ enum {
     UI_GROUP_BUILDING,      /* value = BuildingType                  */
     UI_GROUP_RESOURCE,      /* value = ResourceType                  */
     UI_GROUP_ACTION,        /* value = UiAction below                */
+    UI_GROUP_SELL,          /* value = ResourceType; widget value=qty */
+    UI_GROUP_BUY,           /* value = ResourceType; widget value=qty */
     UI_GROUP_ISLAND,        /* value = island index                  */
     UI_GROUP_SHIP           /* value = ship index                    */
 };

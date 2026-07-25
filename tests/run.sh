@@ -43,13 +43,17 @@ for src in "$root"/tests/test_*.c; do
     #   test_ui_kit    -- sim + UI archives (UI_PLAN Phase 0): layout and
     #                     hit-testing are pure functions that never reach
     #                     for a font metric or a renderer.
+    #   test_exchange  -- the same, for the exchange screen (Phase 1):
+    #                     it drives the REAL layout and hit-test at goods
+    #                     counts the game does not have yet.
     # Handing either of them the client objects and SDL would make the
     # test meaningless -- it would still link the day that stops being
     # true.
     case "$name" in
         test_headless) link_objs="";        link_sdl="" ;;
         test_ui_kit)   link_objs="$uilib";  link_sdl="" ;;
-        *)             link_objs="$objs $netlib"; link_sdl="$sdlflags" ;;
+        test_exchange) link_objs="$uilib";  link_sdl="" ;;
+        *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;
     esac
 
     # shellcheck disable=SC2086

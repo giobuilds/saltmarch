@@ -1,7 +1,8 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **in progress.** Phase 0 (`ui_kit` + `UiSnapshot`) and Phase 0.5
-> (RejectReason) have landed; everything below them is still as planned.
+> Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
+> (RejectReason) and 1 (exchange screen) have landed; everything below
+> them is still as planned.
 > Written for a future session to pick up cold.
 >
 > Note for later phases: MMO_PLAN Phases 1–6 are all shipped, so the
@@ -233,7 +234,7 @@ player hunting for a legal spot reads it without looking away.
 `if (building_can_place(...))` call sites in place would have silently
 inverted every one of them.
 
-### Phase 1 — Exchange screen rewrite (retires the cliff)
+### Phase 1 — Exchange screen rewrite — **DONE**
 The v1 trade rewrite (34px rows, `TRADE_W` → ~760, height computed then
 clamped, pagination `[Prev] 1/2 [Next]`, category grouping) built as the
 generic exchange surface: `ExchangeView` + `exchange_view_fixed()`;
@@ -244,6 +245,29 @@ hit round-trip to `(resource, qty)`, **and** the fixed builder reproduces
 today's prices with `refuse[]` all REJ_OK. Plus the miniature harness: a
 synthetic snapshot driven through build+hit_test with a scripted click
 sequence, asserting the emitted command sequence.
+
+*As built:* panel 860 wide, one 34px row per good, columns
+swatch|name|yours|theirs|bid|ask and a right-anchored
+`[All][-10][-1][+1][+10][Max]` cluster. trade_ui.c is now only a
+drawer — it consumes the `UiList` that `exchange_build()` produced, so
+the rects that are drawn are literally the rects that are hit-tested.
+
+Deviations:
+- `exchange_view_fixed()` was skipped and `exchange_view_market()`
+  written instead: the fixed price tables died with MMO Phase 3, so
+  quotes come from the faction via the snapshot. Category grouping is
+  not implemented — it belongs with Phase 2's resource categories.
+- Rows are a list carrying their own identity rather than parallel
+  `[RES_COUNT]` arrays. That is what lets the test build a 40-row view
+  without RES_COUNT growing to 40 first — i.e. what lets the cliff be
+  *proven* gone rather than argued gone — and it is the shape an escrow
+  offer's cargo lines need at M5 anyway.
+- Direction (sell vs buy) is carried by the widget's id group, and the
+  quantity stays a plain count with `-1` meaning "as much as possible",
+  matching what `game_sell_resource`/`game_buy_resource` already accept.
+- Per-button refusals are computed in the builder from the numbers it
+  already has; `refuse[]` on the row carries only the counterparty's
+  side (out of gold, out of stock). One truth per refusal, not two.
 
 ### Phase 2 — Data model
 Unchanged from v1: `BuildingCategory` on `BuildingDef`, resource-category

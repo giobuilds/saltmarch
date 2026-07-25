@@ -14,7 +14,7 @@
  * ========================================================= */
 
 /* ---- Resource types ------------------------------------
- * RES_GOLD stays last on purpose: trade_ui.c's TRADE_SELLABLE_COUNT
+ * RES_GOLD stays last on purpose: exchange_view.c's row loop
  * (and its "Gold is excluded, conveniently the last slot" comment)
  * depends on every tradeable good being inserted before it. */
 typedef enum {

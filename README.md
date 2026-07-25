@@ -68,7 +68,10 @@ saltmarch/
 │   ├── render.c/h             Isometric projection and all world drawing
 │   ├── fonts.c/h              SDL_ttf wrapper
 │   ├── ui.c/h                 HUD bar and menu overlay
-│   ├── trade_ui.c/h           Marketplace buy/sell screen
+│   ├── ui_kit.c/h             Layout, widget lists, hit-testing (SDL-free)
+│   ├── ui_snapshot.c/h        The per-frame world copy the UI reads
+│   ├── exchange_view.c/h      Exchange surface: rows, pagination, hits
+│   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
 │   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)
 │   ├── build_confirm_ui.c/h   Cost confirmation (resources or Gold)
@@ -308,8 +311,6 @@ The `assets/` tree no longer exists.
 
 ## Known gaps
 
-- **The trade screen is the nearest UI cliff** — it overflows the window
-  at 10 tradeable goods and there are 6. See `UI_PLAN.md`.
 - **Mouse wheel is not overlay-aware**: scrolling over an open modal
   zooms the world behind it.
 - **`building_can_place()`'s `reason` string is never shown** — every

@@ -85,8 +85,9 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
      * pricing rule lives in faction.c and nowhere else, so a screen
      * cannot show a price the sim would not honour. */
     for (r = 0; r < RES_COUNT; r++) {
-        out->bid[r] = faction_bid(&gs->faction, (ResourceType)r);
-        out->ask[r] = faction_ask(&gs->faction, (ResourceType)r);
+        out->bid[r]                = faction_bid(&gs->faction, (ResourceType)r);
+        out->ask[r]                = faction_ask(&gs->faction, (ResourceType)r);
+        out->counterparty_stock[r] = gs->faction.inventory[r];
     }
     out->counterparty_gold = gs->faction.gold;
 }
