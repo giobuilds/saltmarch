@@ -72,6 +72,7 @@ saltmarch/
 │   ├── ui_snapshot.c/h        The per-frame world copy the UI reads
 │   ├── exchange_view.c/h      Exchange surface: rows, pagination, hits
 │   ├── hud_view.c/h           Build bar: category tabs, slots, hit decoding
+│   ├── island_bar.c/h         ‹ Island Name › header, chevrons, per-island hue
 │   ├── vitals.c/h             Alert strip rules, including sim health
 │   ├── inventory_view.c/h     Stores overlay: rows, capacity, pagination
 │   ├── inventory_ui.c/h       Drawing for the stores overlay and vitals

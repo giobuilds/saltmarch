@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
     char         title[EXCHANGE_TITLE_LEN];
+    uint8_t      hue_r, hue_g, hue_b;  /* whose island this is (Phase 5) */
     ExchangeKind kind;
     int32_t      your_gold;
     int32_t      their_gold;           /* EXCHANGE_INFINITE ok         */

@@ -5,6 +5,7 @@
  */
 
 #include "inventory_view.h"
+#include "island_bar.h"
 #include "resource.h"
 #include <stdio.h>
 #include <string.h>
@@ -36,6 +37,7 @@ void inventory_view_build(InventoryView *out, const UiSnapshot *snap,
     isl = &snap->islands[island];
 
     snprintf(out->title, sizeof(out->title), "Stores — %s", isl->name);
+    island_hue(island, &out->hue_r, &out->hue_g, &out->hue_b);
     out->residents = isl->residents;
 
     /* Grouped by category like the exchange screen, for the same

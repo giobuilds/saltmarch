@@ -51,6 +51,7 @@ typedef struct {
     InventoryView inventory;
     UiList        inventory_list;
     VitalsView    vitals;
+    UiList        island_list;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -130,6 +131,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->inventory,     0, sizeof(app->inventory));
     SDL_memset(&app->inventory_list,0, sizeof(app->inventory_list));
     SDL_memset(&app->vitals,        0, sizeof(app->vitals));
+    SDL_memset(&app->island_list,   0, sizeof(app->island_list));
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -238,6 +240,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     app->snap.health.net_connected = app->net ? net_peer_count(app->net) : -1;
 
     vitals_build(&app->vitals, &app->snap, gs->current_island);
+    island_bar_build(&app->island_list, &app->snap, (float)SCREEN_W);
 
     if (gs->inventory_open) {
         inventory_view_build(&app->inventory, &app->snap, gs->current_island);
@@ -547,6 +550,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
+        } else if (island_bar_hit(&app->island_list,
+                                  (float)gs->input.logical_x,
+                                  (float)gs->input.logical_y).kind
+                   == ISLAND_BAR_HIT_SWITCH) {
+            /* The ‹ name › header (UI_PLAN Phase 5). Checked before the
+             * map so a chevron over water switches island rather than
+             * dropping a building in the sea. */
+            IslandBarHit ih = island_bar_hit(&app->island_list,
+                                             (float)gs->input.logical_x,
+                                             (float)gs->input.logical_y);
+            game_set_current_island(gs, ih.island);
+
         } else {
             /* One hit-test against the bar's own widget list (UI_PLAN
              * Phase 3), replacing the four separate ui_*_hit_test calls
@@ -729,6 +744,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      gs->input.logical_y);
 
     /* Phase 4: draw the trade screen on top when open */
+    island_bar_draw(app->r, &app->island_list, &app->snap,
+                    gs->input.logical_x, gs->input.logical_y);
+
     vitals_ui_draw(app->r, SCREEN_W, &app->vitals);
 
     if (gs->inventory_open)

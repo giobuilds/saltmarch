@@ -104,6 +104,14 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         SDL_RenderLine(renderer, panel.x, panel.y + EXCHANGE_TITLE_H,
                        panel.x + panel.w, panel.y + EXCHANGE_TITLE_H);
 
+        /* A stripe of the island's colour down the title bar's left
+         * edge: which island's market this is, answered before the
+         * title has been read (UI_PLAN Phase 5). */
+        {
+            UiRect stripe = { panel.x, panel.y, 5.0f, EXCHANGE_TITLE_H };
+            fill(renderer, stripe, view->hue_r, view->hue_g, view->hue_b, 255);
+        }
+
         font_draw_text(renderer, FONT_NORMAL, view->title,
                        (int)(panel.x + 14.0f), (int)(panel.y + 10.0f), TITLE);
 

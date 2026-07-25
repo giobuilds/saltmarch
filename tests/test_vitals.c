@@ -12,6 +12,7 @@
 
 #include "vitals.h"
 #include "inventory_view.h"
+#include "island_bar.h"
 #include "game.h"
 #include "building.h"
 #include <stdio.h>
@@ -283,6 +284,95 @@ static void test_inventory(void)
     }
 }
 
+/* ---- 7. the island header (UI_PLAN Phase 5) -------------- */
+static void test_island_bar(void)
+{
+    UiSnapshot   s;
+    UiList       list;
+    IslandBarHit hit;
+    uint8_t      r0, g0, b0, r1, g1, b1;
+    int          i;
+
+    /* One settled island: the chevrons exist but lead nowhere. */
+    healthy(&s);
+    s.current_island = 0;
+    island_bar_build(&list, &s, 1920.0f);
+
+    CHECK(list.count > 1, "the header is built");
+    {
+        int disabled = 0, total = 0;
+        for (i = 1; i < list.count; i++) {
+            if (list.items[i].flags & UI_W_HEADER) continue;
+            total++;
+            if (list.items[i].flags & UI_W_DISABLED) disabled++;
+        }
+        CHECK(total == 2 && disabled == 2,
+              "with one island both chevrons are present but disabled");
+    }
+
+    /* Two settled: each chevron carries the island it goes TO. */
+    healthy(&s);
+    s.islands[2].settled = 1;
+    s.current_island     = 0;
+    island_bar_build(&list, &s, 1920.0f);
+    {
+        int found_target = 0;
+        for (i = 1; i < list.count; i++) {
+            const UiWidget *w = &list.items[i];
+            if (w->flags & (UI_W_HEADER | UI_W_DISABLED)) continue;
+            hit = island_bar_hit(&list, w->rect.x + w->rect.w * 0.5f,
+                                 w->rect.y + w->rect.h * 0.5f);
+            if (hit.kind == ISLAND_BAR_HIT_SWITCH && hit.island == 2)
+                found_target = 1;
+        }
+        CHECK(found_target,
+              "a chevron switches to the other SETTLED island");
+    }
+
+    /* Unsettled islands are skipped, not stepped onto. */
+    healthy(&s);
+    s.islands[3].settled = 1;   /* 1 and 2 remain unsettled */
+    s.current_island     = 0;
+    island_bar_build(&list, &s, 1920.0f);
+    for (i = 1; i < list.count; i++) {
+        const UiWidget *w = &list.items[i];
+        if (w->flags & (UI_W_HEADER | UI_W_DISABLED)) continue;
+        hit = island_bar_hit(&list, w->rect.x + w->rect.w * 0.5f,
+                             w->rect.y + w->rect.h * 0.5f);
+        CHECK(hit.island == 3 || hit.island == 0,
+              "chevrons step over islands you have not settled");
+    }
+
+    /* The header names the island it is on. */
+    healthy(&s);
+    memcpy(s.islands[0].name, "Saltford", 9);
+    island_bar_build(&list, &s, 1920.0f);
+    {
+        int named = 0;
+        for (i = 1; i < list.count; i++)
+            if ((list.items[i].flags & UI_W_HEADER) &&
+                strcmp(list.items[i].label, "Saltford") == 0) named = 1;
+        CHECK(named, "the header says which island you are on");
+    }
+
+    /* Hues are fixed per index: two clients looking at the same world
+     * must not disagree about what colour Brinehold is. */
+    island_hue(1, &r0, &g0, &b0);
+    island_hue(1, &r1, &g1, &b1);
+    CHECK(r0 == r1 && g0 == g1 && b0 == b1, "an island's hue is stable");
+    island_hue(2, &r1, &g1, &b1);
+    CHECK(!(r0 == r1 && g0 == g1 && b0 == b1),
+          "different islands get different hues");
+    island_hue(-5, &r1, &g1, &b1);
+    CHECK(1, "an out-of-range index still returns a colour, not garbage");
+
+    /* Clicks that miss the header say so, so the cascade can pass them
+     * to the map underneath. */
+    hit = island_bar_hit(&list, 10.0f, 600.0f);
+    CHECK(hit.kind == ISLAND_BAR_HIT_NONE,
+          "a click away from the header is not a header click");
+}
+
 int main(void)
 {
     printf("== vitals, stores and the overlay arbiter ==\n");
@@ -292,6 +382,7 @@ int main(void)
     test_stalled_sim();
     test_overlay_arbiter();
     test_inventory();
+    test_island_bar();
 
     if (failures == 0) { printf("\nPASSED\n"); return 0; }
     printf("\nFAILED (%d)\n", failures);

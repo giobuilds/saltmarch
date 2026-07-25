@@ -94,6 +94,7 @@ add_library(saltmarch_ui STATIC
     src/hud_view.c
     src/vitals.c
     src/inventory_view.c
+    src/island_bar.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 

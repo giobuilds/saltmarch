@@ -5,6 +5,7 @@
  */
 
 #include "exchange_view.h"
+#include "island_bar.h"
 #include "resource.h"
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +59,7 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
      * "which market am I looking at" is otherwise only answerable by
      * closing the screen (UI_PLAN Phase 5 does this everywhere). */
     snprintf(out->title, sizeof(out->title), "Marketplace — %s", isl->name);
+    island_hue(island, &out->hue_r, &out->hue_g, &out->hue_b);
 
     out->your_gold  = isl->stock[RES_GOLD];
     out->their_gold = snap->counterparty_gold;

@@ -94,6 +94,7 @@ Multiplayer, all three shapes:
 | `D` / Arrow Right | Pan right |
 | Mouse wheel | Zoom toward the cursor (0.8x–1.3x); ignored while an overlay is open |
 | Mouse move | Highlight the tile under the cursor |
+| `‹` `›` header (top centre) | Step between the islands you have settled |
 | `I` | Open the stores overlay (everything this island holds) |
 | `Escape` | Quit |
 

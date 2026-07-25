@@ -2,7 +2,7 @@
 
 > Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
 > (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
-> 4 (vitals, stores, overlay arbiter) have landed; everything below
+> 4 (vitals, stores, overlay arbiter) and 5 (island context) have landed; everything below
 > them is still as planned.
 > Written for a future session to pick up cold.
 >
@@ -354,9 +354,24 @@ asserts the health row appears.
 Deferred: the strip is display-only. Clicking an alert to jump to the
 building it names wants a camera-focus path that does not exist yet.
 
-### Phase 5 — Island context
+### Phase 5 — Island context — **DONE**
 Unchanged from v1 (`‹ Island Name ›` header, chevrons over settled islands,
 per-island hue, island name in overlay titles).
+
+*As built:* `island_bar.c` (SDL-free) builds the header; the drawer sits
+beside the vitals strip in inventory_ui.c. Chevron widgets carry the
+island they switch TO rather than a direction, so a click needs no
+arithmetic to interpret and cannot be misread if the settled set changed
+between frames. They step over unsettled islands — an unclaimed island
+is something you look at from the world map, not somewhere you are — and
+with only one island they are greyed rather than hidden, so the header
+does not change shape when you found your second colony.
+
+`island_hue()` is a fixed table indexed by island slot, not a hash or a
+settlement-order counter: the colour has to be the same for every client
+looking at the same world, or two players describing "the blue island"
+would mean different places. The exchange and stores overlays carry the
+hue on their view structs and draw it as a stripe down the title bar.
 
 ### Phase 6 — Confirm consolidation → command preview
 v1's collapse of demolish/tier-upgrade/ship-build/build-confirm into one

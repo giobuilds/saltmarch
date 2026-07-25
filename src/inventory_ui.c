@@ -69,6 +69,11 @@ void inventory_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         SDL_SetRenderDrawColor(renderer, 120, 100, 60, 255);
         SDL_RenderLine(renderer, panel.x, panel.y + INVENTORY_TITLE_H,
                        panel.x + panel.w, panel.y + INVENTORY_TITLE_H);
+        {
+            UiRect stripe = { panel.x, panel.y, 5.0f, INVENTORY_TITLE_H };
+            fill(renderer, stripe, view->hue_r, view->hue_g, view->hue_b, 255);
+        }
+
         font_draw_text(renderer, FONT_NORMAL, view->title,
                        (int)(panel.x + 14.0f), (int)(panel.y + 10.0f), TITLE);
 
@@ -216,5 +221,58 @@ void vitals_ui_draw(SDL_Renderer *renderer, int screen_w,
         SDL_snprintf(buf, sizeof(buf), "+%d more", v->hidden);
         font_draw_text(renderer, FONT_SMALL, buf,
                        (int)(x + 10.0f), (int)(y + 3.0f), dim);
+    }
+}
+
+/* ---- the island header ------------------------------------ */
+
+void island_bar_draw(SDL_Renderer *renderer, const UiList *list,
+                     const UiSnapshot *snap, int mouse_x, int mouse_y)
+{
+    uint8_t hr, hg, hb;
+    UiRect  bar;
+    int     i;
+
+    if (list->count == 0) return;
+
+    bar = list->items[0].rect;
+    island_hue(snap->current_island, &hr, &hg, &hb);
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    fill(renderer, bar, 24, 20, 15, 210);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    /* The island's colour as a rule under the name: enough to identify
+     * where you are at a glance, not enough to compete with the map. */
+    {
+        UiRect rule = { bar.x, bar.y + bar.h - 3.0f, bar.w, 3.0f };
+        fill(renderer, rule, hr, hg, hb, 255);
+    }
+    outline(renderer, bar, 70, 62, 48, 255);
+
+    for (i = 1; i < list->count; i++) {
+        const UiWidget *w        = &list->items[i];
+        int             disabled = (w->flags & UI_W_DISABLED) != 0;
+        int             hover    = ui_point_in(w->rect, (float)mouse_x,
+                                               (float)mouse_y);
+
+        if (w->flags & UI_W_HEADER) {
+            /* The name, in the island's own colour. */
+            SDL_Color name = { hr, hg, hb, 255 };
+            font_draw_text(renderer, FONT_NORMAL, w->label,
+                           (int)(w->rect.x + 12.0f),
+                           (int)(w->rect.y + 5.0f), name);
+            continue;
+        }
+
+        {
+            SDL_Color col = disabled ? (SDL_Color){ 90, 84, 72, 255 }
+                          : hover    ? (SDL_Color){ 245, 230, 195, 255 }
+                                     : (SDL_Color){ 180, 168, 140, 255 };
+            if (hover && !disabled) fill(renderer, w->rect, 52, 44, 32, 255);
+            font_draw_text(renderer, FONT_NORMAL, w->label,
+                           (int)(w->rect.x + 10.0f),
+                           (int)(w->rect.y + 5.0f), col);
+        }
     }
 }

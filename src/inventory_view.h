@@ -37,6 +37,7 @@ typedef struct {
 
 typedef struct {
     char         title[32];
+    uint8_t      hue_r, hue_g, hue_b;   /* whose island this is (Phase 5) */
     InventoryRow rows[INVENTORY_MAX_ROWS];
     int32_t      row_count;
     int32_t      residents;
