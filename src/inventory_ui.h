@@ -1,0 +1,30 @@
+#ifndef INVENTORY_UI_H
+#define INVENTORY_UI_H
+
+/* =========================================================
+ * inventory_ui.h  --  Drawing the stores overlay and the vitals
+ *                     strip (UI_PLAN Phase 4)
+ *
+ * Two small drawers over two SDL-free views: inventory_view.c decides
+ * the overlay's geometry, vitals.c decides which alerts exist and in
+ * what order. Neither of them knows what a renderer is; neither of the
+ * functions here decides anything.
+ * ========================================================= */
+
+#include <SDL3/SDL.h>
+#include "inventory_view.h"
+#include "ui_kit.h"
+#include "vitals.h"
+
+/* Draw the stores overlay from the list inventory_build() produced. */
+void inventory_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
+                       const UiList *list, const InventoryView *view,
+                       int mouse_x, int mouse_y);
+
+/* Draw the alert strip, top-right under the population readout. Not an
+ * overlay: it is always on, never takes a click, and says nothing when
+ * there is nothing to say. */
+void vitals_ui_draw(SDL_Renderer *renderer, int screen_w,
+                    const VitalsView *v);
+
+#endif /* INVENTORY_UI_H */

@@ -1,8 +1,8 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
 > Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
-> (RejectReason), 1 (exchange screen), 2 (data model) and 3 (HUD tabs)
-> have landed; everything below
+> (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
+> 4 (vitals, stores, overlay arbiter) have landed; everything below
 > them is still as planned.
 > Written for a future session to pick up cold.
 >
@@ -323,7 +323,7 @@ suffices until it does. A tab holding more slots than fit shows a
 "+k" marker rather than paginating; if a category ever gets that big it
 wants splitting, and saying so on screen is how that gets noticed.
 
-### Phase 4 — Vitals, inventory, overlay arbiter
+### Phase 4 — Vitals, inventory, overlay arbiter — **DONE**
 As v1 (rule-driven vitals strip capped at 8 rows with `+k more`; inventory
 overlay; `game_topmost_overlay()`; **fix the mouse-wheel bug**), plus: the
 vitals rule engine reserves **sim-health rows** rendered by the same
@@ -332,6 +332,27 @@ feed age. The player is the monitoring system; a stall is visible seconds
 after it starts.
 **Verify:** as v1, plus a synthetic snapshot with a stalled accumulator
 asserts the health row appears.
+
+*As built:*
+- `vitals.c` — six island rules plus four health rules, each a function
+  of the snapshot producing at most one row; ranked by severity with
+  insertion order as the deliberate tiebreak, so a row never swaps with
+  a peer because a count changed. Feed age landed early (the feed has
+  existed since MMO Phase 4) rather than waiting for M4.
+- `inventory_view.c` + `inventory_ui.c` — the stores overlay on `I`,
+  grouped by category, paged, with capacity as a bar rather than a
+  fraction. It counts goods **at sea and in escrow** as well as stored:
+  "where did my Wood go" is a question the corner panel cannot answer.
+- `game_topmost_overlay()` in game.c, with `game_overlay_open()` beside
+  it. The wheel bug was never a wheel bug — the zoom code simply never
+  asked whether anything was open. Hover highlighting and road-drag
+  now ask the same question, replacing a hand-maintained list of three
+  flags in client.c that was already missing four.
+- The speculative `UiOverlay` enum from Phase 0 was deleted rather than
+  kept in parallel: two enums naming the same thing is how they drift.
+
+Deferred: the strip is display-only. Clicking an alert to jump to the
+building it names wants a camera-focus path that does not exist yet.
 
 ### Phase 5 — Island context
 Unchanged from v1 (`‹ Island Name ›` header, chevrons over settled islands,

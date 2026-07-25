@@ -162,6 +162,10 @@ typedef struct GameState {
     /* Market debug overlay toggle (F10) — cosmetic, not sim state. */
     int  faction_debug;
 
+    /* Inventory overlay (UI_PLAN Phase 4): the full goods list, paged.
+     * The corner panel shows what fits; this shows everything. */
+    int  inventory_open;
+
     /* Harbor escrow panel (Phase 5): open for the CURRENT island's
      * harbor. Owner-gated at open time; current-island-relative like
      * every other overlay, so island switches close it. */
@@ -300,6 +304,35 @@ int  game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
+
+/* ---- the overlay arbiter (UI_PLAN Phase 4) -----------------
+ * Which overlay is on top, or UI_OVERLAY_NONE. Every "is anything open?"
+ * question routes through here rather than each caller re-listing the
+ * flags — that list was already wrong once: the mouse wheel zoomed the
+ * world behind an open modal because the zoom code did not consult it
+ * at all.
+ *
+ * The order below is the layering order the click cascade in main.c
+ * uses, so the two cannot disagree about what "topmost" means. */
+typedef enum {
+    UI_OVERLAY_NONE = 0,
+    UI_OVERLAY_MENU,
+    UI_OVERLAY_BUILD_CONFIRM,
+    UI_OVERLAY_DEMOLISH_CONFIRM,
+    UI_OVERLAY_TIER_UPGRADE,
+    UI_OVERLAY_SHIP_BUILD,
+    UI_OVERLAY_TRADE,
+    UI_OVERLAY_ESCROW,
+    UI_OVERLAY_INVENTORY,
+    UI_OVERLAY_WORLD
+} GameOverlay;
+
+GameOverlay game_topmost_overlay(const GameState *gs);
+
+/* 1 if any overlay is open — the common question, asked by the camera
+ * (do not zoom), the hover logic (do not highlight tiles) and the
+ * drag-placement loop (do not lay road under a popup). */
+int game_overlay_open(const GameState *gs);
 
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:

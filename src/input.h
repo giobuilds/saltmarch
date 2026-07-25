@@ -29,6 +29,10 @@ typedef struct {
      * (MMO_PLAN Phase 3 — the economy test harness). */
     int faction_debug_toggle;
 
+    /* Edge-triggered on I: opens/closes the stores overlay
+     * (UI_PLAN Phase 4). */
+    int inventory_toggle;
+
     /* Level-triggered: 1 while the left button is physically held,
      * 0 otherwise. Unlike left_click (an edge fired once on release,
      * cleared every frame by input_clear_clicks()), this persists

@@ -49,6 +49,7 @@ typedef struct {
     uint8_t connected;       /* road-connected to a warehouse          */
     uint8_t worker_count;
     uint8_t residents;       /* houses only; 0 elsewhere               */
+    uint8_t happy;           /* houses only: needs met last tick       */
 } UiBuilding;
 
 typedef struct {
@@ -75,9 +76,25 @@ typedef struct {
     int32_t  cargo[RES_COUNT];
 } UiShip;
 
+/* How the simulation itself is doing. Not world state — these are
+ * facts about THIS CLIENT's run: whether the last determinism check
+ * passed, whether the tick loop is keeping up, how stale the shared
+ * feed is. UI_PLAN Phase 4 renders them through the same alert
+ * machinery as "this farm has no worker", on the principle that the
+ * player is the monitoring system: a stall should be visible seconds
+ * after it starts rather than at the next desync. */
+typedef struct {
+    int32_t  replay_state;       /* GameState.replay_state (0..3)      */
+    uint32_t backlog_ticks;      /* ticks the accumulator owes         */
+    int32_t  feed_age_s;         /* seconds since the feed changed,
+                                  * -1 when there is no feed           */
+    int32_t  net_connected;      /* -1 offline, else peers connected   */
+} UiHealth;
+
 typedef struct {
     uint64_t tick;               /* the tick this snapshot describes   */
     uint32_t local_player_id;
+    UiHealth health;
 
     UiIsland islands[MAX_ISLANDS];
     int32_t  current_island;
@@ -100,21 +117,17 @@ typedef struct {
  *
  * It is also a pure fold over the input stream, which is what lets a
  * recorded session replay through the real UI in CI (UI_PLAN M1). */
-typedef enum {
-    UI_OVERLAY_NONE = 0,
-    UI_OVERLAY_MENU,
-    UI_OVERLAY_TRADE,
-    UI_OVERLAY_WORLD,
-    UI_OVERLAY_ESCROW,
-    UI_OVERLAY_CONFIRM
-} UiOverlay;
-
 typedef struct {
-    UiOverlay overlay;           /* the topmost open overlay           */
     int32_t   hud_category;      /* HUD tab (UI_PLAN Phase 3)          */
     int32_t   exchange_page;     /* trade screen page (Phase 1)        */
-    int32_t   inventory_open;    /* (Phase 4)                          */
+    int32_t   inventory_page;    /* inventory overlay page (Phase 4)   */
 } UiState;
+
+/* Note: which overlay is OPEN is not here. Phase 0 sketched a
+ * UiOverlay enum on this struct; Phase 4 gave the question a single
+ * real owner instead — game_topmost_overlay() in game.h, reading the
+ * flags that already exist on GameState. Two enums naming the same
+ * thing is how they drift. */
 
 /* Fill `out` from the live world. The one function in the UI layer that
  * is allowed to see a GameState — everything downstream takes the

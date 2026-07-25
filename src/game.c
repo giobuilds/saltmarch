@@ -56,6 +56,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->ship_build_open       = 0;
     gs->ship_build_idx        = -1;
     gs->escrow_open           = 0;
+    gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
     gs->placement_valid       = 0;
@@ -66,6 +67,28 @@ void game_set_current_island(GameState *gs, int idx)
     /* world_open is deliberately NOT cleared here: switching islands
      * is the world map's own primary action, so closing it on switch
      * would dismiss the overlay the moment you used it. */
+}
+
+/* ---- the overlay arbiter (UI_PLAN Phase 4) ----------------- */
+GameOverlay game_topmost_overlay(const GameState *gs)
+{
+    /* Topmost first. The menu is modal over everything; the world map
+     * is the backdrop the others can open on top of. */
+    if (gs->menu_open)             return UI_OVERLAY_MENU;
+    if (gs->build_confirm_open)    return UI_OVERLAY_BUILD_CONFIRM;
+    if (gs->demolish_confirm_open) return UI_OVERLAY_DEMOLISH_CONFIRM;
+    if (gs->tier_upgrade_open)     return UI_OVERLAY_TIER_UPGRADE;
+    if (gs->ship_build_open)       return UI_OVERLAY_SHIP_BUILD;
+    if (gs->trade_open)            return UI_OVERLAY_TRADE;
+    if (gs->escrow_open)           return UI_OVERLAY_ESCROW;
+    if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
+    if (gs->world_open)            return UI_OVERLAY_WORLD;
+    return UI_OVERLAY_NONE;
+}
+
+int game_overlay_open(const GameState *gs)
+{
+    return game_topmost_overlay(gs) != UI_OVERLAY_NONE;
 }
 
 /* The archipelago's fixed make-up. Island 0 is always Saltford, the

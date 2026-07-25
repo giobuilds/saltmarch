@@ -19,6 +19,7 @@
 #include "feed.h"     /* MMO Phase 4: shared voyage feed */
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
+#include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -47,6 +48,9 @@ typedef struct {
     UiList        exchange_list;
     HudView       hud;
     UiList        hud_list;
+    InventoryView inventory;
+    UiList        inventory_list;
+    VitalsView    vitals;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -123,6 +127,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->exchange_list, 0, sizeof(app->exchange_list));
     SDL_memset(&app->hud,           0, sizeof(app->hud));
     SDL_memset(&app->hud_list,      0, sizeof(app->hud_list));
+    SDL_memset(&app->inventory,     0, sizeof(app->inventory));
+    SDL_memset(&app->inventory_list,0, sizeof(app->inventory_list));
+    SDL_memset(&app->vitals,        0, sizeof(app->vitals));
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -224,6 +231,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * none of them can observe the world mid-tick. */
     ui_snapshot_build(&app->snap, gs);
 
+    /* The half of the health readings the sim cannot know: how stale
+     * the shared feed is, and whether anyone is connected. */
+    app->snap.health.feed_age_s    = feed_age_seconds(&app->feed,
+                                                      wall_unix_ms());
+    app->snap.health.net_connected = app->net ? net_peer_count(app->net) : -1;
+
+    vitals_build(&app->vitals, &app->snap, gs->current_island);
+
+    if (gs->inventory_open) {
+        inventory_view_build(&app->inventory, &app->snap, gs->current_island);
+        inventory_build(&app->inventory_list, &app->inventory, &app->ui,
+                        (float)SCREEN_W, (float)SCREEN_H);
+    }
+
     hud_view_build(&app->hud, &app->snap, gs->current_island);
     app->hud.selected      = gs->selected_building;
     app->hud.demolish_mode = gs->demolish_mode;
@@ -262,6 +283,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* F10: toggle the market debug overlay. */
     if (gs->input.faction_debug_toggle)
         gs->faction_debug = !gs->faction_debug;
+
+    /* I: the stores overlay (UI_PLAN Phase 4). Opening resets to the
+     * first page — a page index left over from last time is a small
+     * surprise for no benefit. */
+    if (gs->input.inventory_toggle) {
+        gs->inventory_open = !gs->inventory_open;
+        app->ui.inventory_page = 0;
+    }
 
     /* --- Handle clicks ---------------------------------- */
     if (gs->input.left_click) {
@@ -444,6 +473,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         /* Phase 4: if the trade screen is open, only its buttons
          * respond (mirrors the menu_open branch below). */
+        } else if (gs->inventory_open) {
+            InventoryHit ihit = inventory_hit(&app->inventory_list, &app->ui,
+                                              (float)gs->input.logical_x,
+                                              (float)gs->input.logical_y);
+            if (ihit.kind == INVENTORY_HIT_PAGE)
+                app->ui.inventory_page = ihit.page;
+            else if (ihit.kind == INVENTORY_HIT_CLOSE ||
+                     ihit.kind == INVENTORY_HIT_OUTSIDE)
+                gs->inventory_open = 0;
+
         } else if (gs->trade_open) {
             ExchangeHit hit = exchange_hit(&app->exchange_list, &app->ui,
                                            (float)gs->input.logical_x,
@@ -690,6 +729,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      gs->input.logical_y);
 
     /* Phase 4: draw the trade screen on top when open */
+    vitals_ui_draw(app->r, SCREEN_W, &app->vitals);
+
+    if (gs->inventory_open)
+        inventory_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->inventory_list,
+                          &app->inventory, gs->input.logical_x,
+                          gs->input.logical_y);
+
     if (gs->trade_open)
         trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->exchange_list,
                       &app->exchange, gs->input.logical_x,

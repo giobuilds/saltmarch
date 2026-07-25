@@ -92,6 +92,8 @@ add_library(saltmarch_ui STATIC
     src/ui_snapshot.c
     src/exchange_view.c
     src/hud_view.c
+    src/vitals.c
+    src/inventory_view.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 
@@ -111,6 +113,7 @@ set(SALTMARCH_CLIENT_SOURCES
     src/world_ui.c
     src/feed.c
     src/escrow_ui.c
+    src/inventory_ui.c
 )
 
 add_executable(saltmarch ${SALTMARCH_CLIENT_SOURCES})

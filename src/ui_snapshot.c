@@ -13,6 +13,7 @@
 #include "game.h"
 #include "faction.h"
 #include "population.h"
+#include "simclock.h"
 #include <string.h>
 
 static void snapshot_island(UiIsland *out, const Island *isl)
@@ -52,6 +53,8 @@ static void snapshot_island(UiIsland *out, const Island *isl)
                                                           : b->worker_count);
         u->residents    = (uint8_t)(isl->pop_data[i].active
                                     ? isl->pop_data[i].residents : 0);
+        u->happy        = (uint8_t)(isl->pop_data[i].active
+                                    ? (isl->pop_data[i].happy ? 1 : 0) : 1);
     }
 }
 
@@ -63,6 +66,14 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
 
     out->tick            = gs->sim_tick_no;
     out->local_player_id = gs->local_player_id;
+
+    /* Health the sim can answer for itself. The client fills in the
+     * rest (feed age, peers) after this returns — they are its
+     * business, not the world's. */
+    out->health.replay_state  = gs->replay_state;
+    out->health.backlog_ticks = (uint32_t)(gs->sim_acc_ns / SIM_TICK_NS);
+    out->health.feed_age_s    = -1;
+    out->health.net_connected = -1;
     out->current_island  = gs->current_island;
 
     for (i = 0; i < MAX_ISLANDS; i++)

@@ -72,6 +72,9 @@ saltmarch/
 │   ├── ui_snapshot.c/h        The per-frame world copy the UI reads
 │   ├── exchange_view.c/h      Exchange surface: rows, pagination, hits
 │   ├── hud_view.c/h           Build bar: category tabs, slots, hit decoding
+│   ├── vitals.c/h             Alert strip rules, including sim health
+│   ├── inventory_view.c/h     Stores overlay: rows, capacity, pagination
+│   ├── inventory_ui.c/h       Drawing for the stores overlay and vitals
 │   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
 │   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)
@@ -312,10 +315,6 @@ The `assets/` tree no longer exists.
 
 ## Known gaps
 
-- **Mouse wheel is not overlay-aware**: scrolling over an open modal
-  zooms the world behind it.
-- **`building_can_place()`'s `reason` string is never shown** — every
-  caller passes `NULL`.
 - **Marrowbay generates more farmland than its atoll flavour implies**; nothing
   depends on it, but it reads oddly.
 - Scarcity currently constrains only Hops and Wood. Fish and Grain are

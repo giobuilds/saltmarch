@@ -201,3 +201,23 @@ float ghost_progress(const GhostVoyage *g, uint64_t unix_ms)
     if (elapsed >= dur_ms) return -1.0f;                /* long arrived */
     return (float)elapsed / (float)dur_ms;
 }
+
+int feed_age_seconds(const Feed *f, uint64_t now_unix_ms)
+{
+    uint64_t newest = 0;
+    int      i;
+
+    for (i = 0; i < f->ghost_count; i++)
+        if (f->ghosts[i].departure_unix_ms > newest)
+            newest = f->ghosts[i].departure_unix_ms;
+
+    /* No ghosts at all is "no feed", not "an infinitely old feed":
+     * single-player is the normal case and must not raise an alert. */
+    if (newest == 0) return -1;
+
+    /* A record stamped in the future (a peer's clock ahead of ours)
+     * reads as fresh rather than as a negative age. */
+    if (now_unix_ms <= newest) return 0;
+
+    return (int)((now_unix_ms - newest) / 1000ULL);
+}
