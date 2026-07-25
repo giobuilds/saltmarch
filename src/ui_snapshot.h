@@ -91,6 +91,8 @@ typedef struct {
     int32_t  feed_age_s;         /* seconds since the feed changed,
                                   * -1 when there is no feed           */
     int32_t  net_connected;      /* -1 offline, else peers connected   */
+    int32_t  feed_malformed;     /* records the feed parser rejected   */
+    int32_t  feed_ghosts;        /* voyages currently in the feed      */
 } UiHealth;
 
 typedef struct {

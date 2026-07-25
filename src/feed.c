@@ -6,6 +6,7 @@
  */
 
 #include "feed.h"
+#include "ui_kit.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -108,6 +109,16 @@ static int get_str(const char *line, const char *key, char *out, size_t n)
     if (len >= n) len = n - 1;   /* clamp hostile long names */
     memcpy(out, p, len);
     out[len] = '\0';
+
+    /* Length was never the whole story: this string came out of a file
+     * other people append to, and it is about to be drawn. Strip
+     * anything that is not printable ASCII (UI_PLAN M4). */
+    {
+        char clean[256];
+        ui_clean_label(clean, sizeof(clean) < n + 1 ? sizeof(clean) : n + 1,
+                       out);
+        memcpy(out, clean, strlen(clean) + 1);
+    }
     return 1;
 }
 

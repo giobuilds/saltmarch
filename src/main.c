@@ -258,7 +258,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * the shared feed is, and whether anyone is connected. */
     app->snap.health.feed_age_s    = feed_age_seconds(&app->feed,
                                                       wall_unix_ms());
-    app->snap.health.net_connected = app->net ? net_peer_count(app->net) : -1;
+    app->snap.health.net_connected  = app->net ? net_peer_count(app->net) : -1;
+    app->snap.health.feed_malformed = app->feed.malformed_count;
+    app->snap.health.feed_ghosts    = app->feed.ghost_count;
 
     vitals_build(&app->vitals, &app->snap, gs->current_island);
     island_bar_build(&app->island_list, &app->snap, (float)SCREEN_W);
@@ -813,6 +815,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         SDL_snprintf(buf, sizeof(buf), "MARKET (F10)   gold %d", fac->gold);
         font_draw_text(app->r, FONT_SMALL, buf, x, y, hdr);
         y += line;
+
+        /* Frame time and the text cache's hit rate (UI_PLAN M4). The
+         * cache exists because feed-supplied strings make worst-case
+         * text throughput somebody else's decision; these two numbers
+         * are how that claim stays checkable rather than asserted. */
+        {
+            int hits = 0, misses = 0;
+            fonts_cache_stats(&hits, &misses);
+            SDL_snprintf(buf, sizeof(buf),
+                         "frame %.1f ms   text %d hit / %d miss",
+                         (double)(gs->delta_time * 1000.0f), hits, misses);
+            font_draw_text(app->r, FONT_SMALL, buf, x, y, txt);
+            y += line;
+        }
         for (r = 0; r < (int)RES_GOLD; r++) {
             SDL_Color spark = { 150, 185, 150, 255 };
 

@@ -30,6 +30,13 @@
 #include "feed.h"   /* Phase 4: ghost voyages from the shared feed */
 
 #define WORLD_NODE_ZOOM   2.2f   /* island diamond size vs a map tile */
+
+/* How many ghost voyages the map will draw at once (UI_PLAN M4). The
+ * ghost list is built from a file other people append to, so its length
+ * is not this program's decision; past a couple of dozen the map stops
+ * being readable and the frame starts paying for text it cannot show
+ * usefully. The remainder is counted and stated on screen. */
+#define WORLD_MAX_DRAWN_GHOSTS 24
 #define WORLD_TITLE_Y      40
 
 #define WORLD_PANEL_W    360   /* selected-ship panel, right side */

@@ -43,6 +43,45 @@ static int count_lines(const char *path)
     return n;
 }
 
+/* ---- untrusted input at the parse boundary (UI_PLAN M4) --- */
+static void test_hostile_feed(void)
+{
+    Feed f;
+    FILE *fp = fopen("test_feed_hostile.jsonl", "w");
+
+    if (!fp) { printf("  FAIL: could not write fixture\n"); failures++; return; }
+
+    /* A peer whose display name contains control characters, and a
+     * line that is simply not a record. Both are things a file other
+     * people append to will eventually contain. */
+    fprintf(fp, "{\"hello\":123,\"name\":\"ev\til\tname\"}\n");
+    fprintf(fp, "not json at all\n");
+    fprintf(fp, "{\"player\":123,\"ship\":0,\"from\":0,\"to\":1,"
+                "\"departure_tick\":10,\"cargo\":[0,0,0,0,0,0,0],"
+                "\"departure_unix_ms\":1000}\n");
+    fclose(fp);
+
+    feed_init(&f, "me");
+    feed_reload(&f, "test_feed_hostile.jsonl");
+
+    CHECK(f.malformed_count >= 1,
+          "a line that is not a record is counted, not silently dropped");
+
+    if (f.ghost_count > 0) {
+        int i, clean = 1;
+        for (i = 0; f.ghosts[0].name[i]; i++) {
+            unsigned char c = (unsigned char)f.ghosts[0].name[i];
+            if (c < 0x20 || c >= 0x7F) clean = 0;
+        }
+        CHECK(clean,
+              "a peer's name reaches the renderer with no control bytes in it");
+    } else {
+        printf("  skip: no ghost parsed from the fixture\n");
+    }
+
+    remove("test_feed_hostile.jsonl");
+}
+
 int main(void)
 {
     remove(FEED_OUT_PATH);
@@ -139,6 +178,8 @@ int main(void)
     remove(IN_PATH);
     remove(FEED_OUT_PATH);
     game_free(gs);
+
+    test_hostile_feed();
 
     printf(failures ? "\nFAILED (%d)\n" : "\nPASSED\n", failures);
     return failures ? 1 : 0;
