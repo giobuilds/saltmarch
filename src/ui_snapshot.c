@@ -101,4 +101,5 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
         out->counterparty_stock[r] = gs->faction.inventory[r];
     }
     out->counterparty_gold = gs->faction.gold;
+    out->confirm           = gs->confirm;
 }

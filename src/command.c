@@ -18,6 +18,7 @@
 
 #include "game.h"
 #include "simlog.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,6 +33,73 @@ const char *command_kind_name(CommandKind kind)
 {
     if (kind < 0 || kind >= CMD_COUNT) return "?";
     return KIND_NAMES[kind];
+}
+
+void command_describe(const Command *c, char *out, size_t n)
+{
+    if (!out || n == 0) return;
+
+    /* One case per kind, decoding the same slots command.h documents.
+     * A kind added without a case here still prints its name and raw
+     * slots rather than silently lying about them. */
+    switch (c->kind) {
+    case CMD_PLACE_BUILDING:
+        snprintf(out, n, "PLACE_BUILDING  island %d  (%d,%d)  type %d  pay %s",
+                 c->a, c->b, c->c, c->d / 2, (c->d & 1) ? "Gold" : "goods");
+        break;
+    case CMD_PLACE_ROAD:
+        snprintf(out, n, "PLACE_ROAD  island %d  (%d,%d)", c->a, c->b, c->c);
+        break;
+    case CMD_DEMOLISH:
+        snprintf(out, n, "DEMOLISH  island %d  building %d", c->a, c->b);
+        break;
+    case CMD_SELL_RESOURCE:
+        snprintf(out, n, "SELL  island %d  res %d  qty %d", c->a, c->b, c->c);
+        break;
+    case CMD_BUY_RESOURCE:
+        snprintf(out, n, "BUY  island %d  res %d  qty %d", c->a, c->b, c->c);
+        break;
+    case CMD_UPGRADE_HOUSE:
+        snprintf(out, n, "UPGRADE_HOUSE  island %d  building %d", c->a, c->b);
+        break;
+    case CMD_BUILD_SHIP:
+        snprintf(out, n, "BUILD_SHIP  island %d", c->a);
+        break;
+    case CMD_SHIP_TRANSFER:
+        snprintf(out, n, "SHIP_TRANSFER  ship %d  res %d  qty %d  island %d",
+                 c->a, c->b, c->c, c->d);
+        break;
+    case CMD_SHIP_DEPART:
+        snprintf(out, n, "SHIP_DEPART  ship %d  to island %d", c->a, c->b);
+        break;
+    case CMD_COLONISE:
+        snprintf(out, n, "COLONISE  ship %d  island %d", c->a, c->b);
+        break;
+    case CMD_SET_ROUTE_RES:
+        snprintf(out, n, "SET_ROUTE_RES  ship %d  leg %d", c->a, c->b);
+        break;
+    case CMD_TOGGLE_ROUTE:
+        snprintf(out, n, "TOGGLE_ROUTE  ship %d", c->a);
+        break;
+    case CMD_GRANT_START:
+        snprintf(out, n, "GRANT_START  island %d", c->a);
+        break;
+    case CMD_ESCROW_PUT:
+        snprintf(out, n, "ESCROW_PUT  island %d  res %d  qty %d",
+                 c->a, c->b, c->c);
+        break;
+    case CMD_ESCROW_TAKE:
+        snprintf(out, n, "ESCROW_TAKE  island %d  res %d  qty %d",
+                 c->a, c->b, c->c);
+        break;
+    case CMD_SET_DOCKING:
+        snprintf(out, n, "SET_DOCKING  island %d  allow %d", c->a, c->b);
+        break;
+    default:
+        snprintf(out, n, "%s  %d %d %d %d", command_kind_name(c->kind),
+                 c->a, c->b, c->c, c->d);
+        break;
+    }
 }
 
 /* Append one command to the log, growing by doubling. Returns 1 on

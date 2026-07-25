@@ -219,11 +219,18 @@ static void test_overlay_arbiter(void)
           "the menu is modal over everything");
 
     gs->menu_open = 0;
-    gs->build_confirm_open = 1;
-    CHECK(game_topmost_overlay(gs) == UI_OVERLAY_BUILD_CONFIRM,
+    /* A stale request opens nothing: there is no building 0 on a fresh
+     * island, so the opener refuses rather than storing a command that
+     * would be rejected later (UI_PLAN Phase 6). */
+    game_confirm_demolish(gs, 0);
+    CHECK(game_topmost_overlay(gs) != UI_OVERLAY_CONFIRM,
+          "a confirmation for a building that does not exist never opens");
+
+    game_confirm_ship(gs);
+    CHECK(game_topmost_overlay(gs) == UI_OVERLAY_CONFIRM,
           "a confirm popup outranks the screen that opened it");
 
-    gs->build_confirm_open = 0;
+    game_confirm_cancel(gs);
     gs->trade_open = 0;
     gs->world_open = 0;
     gs->inventory_open = 1;

@@ -42,10 +42,7 @@ static void play_session(GameState *gs, Uint32 seed)
     for (r = 0; r < MAP_ROWS && !placed; r++)
         for (c = 0; c < MAP_COLS && !placed; c++)
             if (building_can_place(&isl->map, BUILDING_HOUSE, r, c)) {
-                gs->selected_building = BUILDING_HOUSE;
-                gs->build_confirm_row = r;
-                gs->build_confirm_col = c;
-                game_place_building_confirmed(gs, 0);
+                game_place_building(gs, r, c, BUILDING_HOUSE, 0);
                 placed = 1;
             }
     gs->selected_building = BUILDING_NONE;

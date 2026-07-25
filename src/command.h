@@ -50,6 +50,7 @@
  * they share d. Decoded in sim_apply.
  * ========================================================= */
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef enum {
@@ -122,5 +123,17 @@ typedef enum {
 /* Human-readable name for a CommandKind, for logging/debug. Never NULL;
  * returns "?" for an out-of-range kind. */
 const char *command_kind_name(CommandKind kind);
+
+/* Decode one command into readable text: kind plus its payload,
+ * interpreted per the table above ("PLACE_BUILDING  island 0  (12,34)
+ * type 3  pay Gold"). Writes at most `n` bytes including the
+ * terminator; never fails.
+ *
+ * This exists so the confirm popup can show the LITERAL command it is
+ * about to submit (UI_PLAN Phase 6). The point is not decoration: the
+ * decoding lives beside the encoding it mirrors, so a popup cannot
+ * describe one thing while sim_apply receives another, and a
+ * screenshot of a confirmation is evidence about the wire format. */
+void command_describe(const Command *c, char *out, size_t n);
 
 #endif /* COMMAND_H */

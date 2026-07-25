@@ -55,6 +55,7 @@ for src in "$root"/tests/test_*.c; do
         test_exchange) link_objs="$uilib";  link_sdl="" ;;
         test_hud)      link_objs="$uilib";  link_sdl="" ;;
         test_vitals)   link_objs="$uilib";  link_sdl="" ;;
+        test_confirm)  link_objs="$uilib";  link_sdl="" ;;
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;
     esac
 

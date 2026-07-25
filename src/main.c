@@ -10,9 +10,6 @@
 #include "render.h"
 #include "ui.h"
 #include "trade_ui.h"  /* Phase 4 */
-#include "build_confirm_ui.h" /* fix pass: gold/resource payment choice */
-#include "demolish_confirm_ui.h" /* bulldozer confirmation */
-#include "tier_upgrade_ui.h" /* production chains: population tier upgrade */
 #include "world_ui.h"        /* archipelago overview */
 #include "ship.h"
 #include "fonts.h"    /* Phase 5 */
@@ -20,6 +17,7 @@
 #include "net.h"      /* MMO Phase 5: lockstep co-op */
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
+#include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -52,6 +50,8 @@ typedef struct {
     UiList        inventory_list;
     VitalsView    vitals;
     UiList        island_list;
+    ConfirmView   confirm;
+    UiList        confirm_list;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -132,6 +132,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->inventory_list,0, sizeof(app->inventory_list));
     SDL_memset(&app->vitals,        0, sizeof(app->vitals));
     SDL_memset(&app->island_list,   0, sizeof(app->island_list));
+    SDL_memset(&app->confirm,       0, sizeof(app->confirm));
+    SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -241,6 +243,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     vitals_build(&app->vitals, &app->snap, gs->current_island);
     island_bar_build(&app->island_list, &app->snap, (float)SCREEN_W);
+
+    if (gs->confirm.open) {
+        confirm_view_build(&app->confirm, &app->snap);
+        confirm_build(&app->confirm_list, &app->confirm,
+                      (float)SCREEN_W, (float)SCREEN_H);
+    }
 
     if (gs->inventory_open) {
         inventory_view_build(&app->inventory, &app->snap, gs->current_island);
@@ -386,92 +394,28 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
-        /* Ship-build confirmation, from clicking a Shipyard. */
-        } else if (gs->ship_build_open) {
-            TierUpgradeHit hit = tier_upgrade_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                          gs->input.logical_x,
-                                                          gs->input.logical_y);
-            if (hit == TU_HIT_OK)
-                game_build_ship(gs);
-            gs->ship_build_open = 0;
-
-        /* Tier-upgrade confirmation: same top priority as the other
-         * confirm popups — mutually exclusive with them in practice. */
-        } else if (gs->tier_upgrade_open) {
-            TierUpgradeHit hit = tier_upgrade_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                          gs->input.logical_x,
-                                                          gs->input.logical_y);
-            if (hit == TU_HIT_OK)
-                game_upgrade_house(gs, gs->tier_upgrade_idx);
-            /* TU_HIT_CANCEL or TU_HIT_NONE (click outside the panel)
-             * both dismiss with no upgrade. */
-            gs->tier_upgrade_open = 0;
-
-        /* Bulldozer confirmation: highest priority of all — mutually
-         * exclusive with build_confirm_open in practice (selecting a
-         * building type already clears demolish_mode and vice versa),
-         * but checked first regardless. */
-        } else if (gs->demolish_confirm_open) {
-            DemolishConfirmHit hit = demolish_confirm_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                                  gs->input.logical_x,
-                                                                  gs->input.logical_y);
-            if (hit == DC_HIT_OK)
-                game_demolish_building(gs, gs->demolish_confirm_idx);
-            /* DC_HIT_CANCEL or DC_HIT_NONE (click outside the panel)
-             * both dismiss with no destruction. */
-            gs->demolish_confirm_open = 0;
-
-        /* Fix pass: if the build-confirmation popup is open, only its
-         * buttons respond (highest priority — mirrors trade_open/
-         * menu_open below). */
-        } else if (gs->build_confirm_open) {
-            BuildConfirmHit hit = build_confirm_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                            gs->input.logical_x,
-                                                            gs->input.logical_y);
-            switch (hit) {
-            case BC_HIT_PAY_RESOURCES:
-                gs->build_confirm_payment = 0;
+        /* The one confirmation (UI_PLAN Phase 6). Four popups —
+         * build, demolish, tier upgrade, ship build — used to appear
+         * here as four near-identical branches; they are one action
+         * over one stored Command now. */
+        } else if (gs->confirm.open) {
+            ConfirmHit ch = confirm_hit(&app->confirm_list,
+                                        (float)gs->input.logical_x,
+                                        (float)gs->input.logical_y);
+            switch (ch.kind) {
+            case CONFIRM_HIT_CHOOSE:
+                game_confirm_choose(gs, ch.option);
                 break;
-            case BC_HIT_PAY_GOLD:
-                gs->build_confirm_payment = 1;
+            case CONFIRM_HIT_ACCEPT:
+                game_confirm_accept(gs);
                 break;
-            case BC_HIT_OK:
-                game_place_building_confirmed(gs, gs->build_confirm_payment);
-                gs->build_confirm_open = 0;
+            case CONFIRM_HIT_CANCEL:
+            case CONFIRM_HIT_OUTSIDE:
+                game_confirm_cancel(gs);
                 break;
-            case BC_HIT_CANCEL:
-            case BC_HIT_NONE:
-                /* Cancel, or a click outside the panel: close with no
-                 * placement and no payment deducted. */
-                gs->build_confirm_open = 0;
-                break;
-            }
-
-        /* Phase 5: harbor escrow panel — same modal priority band as
-         * the confirm popups; every action emits a Command. */
-        } else if (gs->escrow_open) {
-            ResourceType eres;
-            EscrowHit    ehit = escrow_ui_hit_test(SCREEN_W, SCREEN_H,
-                                                   gs->input.logical_x,
-                                                   gs->input.logical_y,
-                                                   &eres);
-            switch (ehit) {
-            case ESCROW_HIT_TAKE:
-                game_escrow_take(gs, gs->current_island, eres,
-                                 isl->escrow[eres]);
-                break;
-            case ESCROW_HIT_PUT:
-                game_escrow_put(gs, gs->current_island, eres, 10);
-                break;
-            case ESCROW_HIT_DOCKING:
-                game_set_docking(gs, gs->current_island,
-                                 !isl->docking_allowed);
-                break;
-            case ESCROW_HIT_CLOSE:
-            case ESCROW_HIT_NONE:
+            case CONFIRM_HIT_NONE:
             default:
-                gs->escrow_open = 0;
-                break;
+                break;      /* the panel: absorb it */
             }
 
         /* Phase 4: if the trade screen is open, only its buttons
@@ -607,10 +551,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      * than destroying immediately (roads included). */
                     int found = game_find_building_at(gs, gs->hovered_row,
                                                       gs->hovered_col);
-                    if (found >= 0) {
-                        gs->demolish_confirm_open = 1;
-                        gs->demolish_confirm_idx  = found;
-                    }
+                    if (found >= 0) game_confirm_demolish(gs, found);
                 } else if (gs->selected_building == BUILDING_NONE) {
                     /* Nothing selected, so a map click means "interact
                      * with whatever building is here". Every case needs
@@ -627,12 +568,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                             app->ui.exchange_page  = 0;
                             break;
                         case BUILDING_HOUSE:
-                            gs->tier_upgrade_open = 1;
-                            gs->tier_upgrade_idx  = found;
+                            game_confirm_upgrade(gs, found);
                             break;
                         case BUILDING_SHIPYARD:
-                            gs->ship_build_open = 1;
-                            gs->ship_build_idx  = found;
+                            game_confirm_ship(gs);
                             break;
                         case BUILDING_HARBOR:
                             /* The escrow panel is the OWNER's desk;
@@ -657,37 +596,31 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                           gs->hovered_row >= 0 &&
                           building_can_place(&isl->map, gs->selected_building,
                                             gs->hovered_row, gs->hovered_col)) {
-                    gs->build_confirm_open    = 1;
-                    gs->build_confirm_row     = gs->hovered_row;
-                    gs->build_confirm_col     = gs->hovered_col;
-                    gs->build_confirm_payment = 0;
+                    game_confirm_build(gs, gs->hovered_row, gs->hovered_col,
+                                       gs->selected_building);
                 }
             }
         }
     }
 
-    /* Right click: close confirm popup, trade screen, or menu if
-     * open (highest priority first), else deselect */
+    /* Right click closes the topmost overlay, else deselects. The
+     * order comes from game_topmost_overlay() rather than a second
+     * hand-maintained list of flags (UI_PLAN Phase 4) — the two used to
+     * be written out separately here and in the click cascade, which is
+     * how they drift. */
     if (gs->input.right_click) {
-        if (gs->world_open)
-            gs->world_open = 0;
-        else if (gs->escrow_open)
-            gs->escrow_open = 0;
-        else if (gs->ship_build_open)
-            gs->ship_build_open = 0;
-        else if (gs->tier_upgrade_open)
-            gs->tier_upgrade_open = 0;       /* cancel, no upgrade */
-        else if (gs->demolish_confirm_open)
-            gs->demolish_confirm_open = 0;   /* cancel, no destruction */
-        else if (gs->build_confirm_open)
-            gs->build_confirm_open = 0;
-        else if (gs->trade_open)
-            gs->trade_open = 0;       /* Phase 4 */
-        else if (gs->menu_open)
-            gs->menu_open = 0;        /* CHANGED: right click closes menu */
-        else {
+        switch (game_topmost_overlay(gs)) {
+        case UI_OVERLAY_MENU:      gs->menu_open      = 0; break;
+        case UI_OVERLAY_CONFIRM:   game_confirm_cancel(gs); break;
+        case UI_OVERLAY_TRADE:     gs->trade_open     = 0; break;
+        case UI_OVERLAY_ESCROW:    gs->escrow_open    = 0; break;
+        case UI_OVERLAY_INVENTORY: gs->inventory_open = 0; break;
+        case UI_OVERLAY_WORLD:     gs->world_open     = 0; break;
+        case UI_OVERLAY_NONE:
+        default:
             gs->selected_building = BUILDING_NONE;
             gs->demolish_mode     = 0;
+            break;
         }
     }
 
@@ -764,40 +697,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         escrow_ui_draw(app->r, SCREEN_W, SCREEN_H, isl,
                        gs->input.logical_x, gs->input.logical_y);
 
-    /* Fix pass: draw the build-confirmation popup on top when open */
-    if (gs->build_confirm_open)
-        build_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                              gs->selected_building, &isl->stockpile, &gs->faction,
-                              gs->build_confirm_payment,
-                              gs->input.logical_x, gs->input.logical_y);
-
-    /* Bulldozer confirmation popup, drawn on top when open */
-    if (gs->demolish_confirm_open) {
-        BuildingType t = isl->buildings[gs->demolish_confirm_idx].type;
-        demolish_confirm_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                                 BUILDING_DEFS[t].name,
-                                 gs->input.logical_x, gs->input.logical_y);
-    }
-
-    /* Tier-upgrade confirmation popup, drawn on top when open */
-    if (gs->tier_upgrade_open)
-        tier_upgrade_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                             "Upgrade to Worker's House?",
-                             "Workers also need Beer.",
-                             TIER_UPGRADE_COST_GOLD,
-                             isl->stockpile.amount[RES_GOLD] >= TIER_UPGRADE_COST_GOLD,
-                             gs->input.logical_x, gs->input.logical_y);
-
-    /* Ship-build confirmation reuses the tier-upgrade popup's shape:
-     * both are "spend Gold to change this building's situation",
-     * so a second near-identical *_ui file would be pure duplication. */
-    if (gs->ship_build_open)
-        tier_upgrade_ui_draw(app->r, SCREEN_W, SCREEN_H,
-                             "Build a Ship?",
-                             "Lay down a ship at this Shipyard.",
-                             SHIP_BUILD_COST_GOLD,
-                             isl->stockpile.amount[RES_GOLD] >= SHIP_BUILD_COST_GOLD,
-                             gs->input.logical_x, gs->input.logical_y);
+    /* The one confirmation, on top when open (UI_PLAN Phase 6). It
+     * shows the literal Command it will submit; four popups used to be
+     * drawn here from four different files. */
+    if (gs->confirm.open)
+        confirm_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->confirm_list,
+                        &app->confirm, gs->input.logical_x,
+                        gs->input.logical_y);
 
     /* Archipelago overview on top of everything when open */
     if (gs->world_open)

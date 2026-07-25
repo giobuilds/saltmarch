@@ -37,6 +37,7 @@
 #include "island.h"      /* MAX_ISLANDS, ISLAND_NAME_LEN               */
 #include "resource.h"    /* RES_COUNT                                  */
 #include "ship.h"        /* MAX_SHIPS                                  */
+#include "game.h"        /* ConfirmState (the pending confirmation)    */
 
 struct GameState;        /* the builder's input; UI code never sees it */
 
@@ -108,6 +109,12 @@ typedef struct {
     int32_t  ask[RES_COUNT];
     int32_t  counterparty_stock[RES_COUNT];
     int32_t  counterparty_gold;
+
+    /* The pending confirmation, copied whole (UI_PLAN Phase 6). The
+     * popup's builder is a pure function of the snapshot like every
+     * other, and the command it renders is the one that will be
+     * submitted — not a reconstruction of it. */
+    ConfirmState confirm;
 } UiSnapshot;
 
 /* ---- client-side view state -------------------------------

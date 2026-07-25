@@ -95,6 +95,7 @@ add_library(saltmarch_ui STATIC
     src/vitals.c
     src/inventory_view.c
     src/island_bar.c
+    src/confirm_view.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 
@@ -108,13 +109,11 @@ set(SALTMARCH_CLIENT_SOURCES
     src/ui.c
     src/fonts.c
     src/trade_ui.c
-    src/build_confirm_ui.c
-    src/demolish_confirm_ui.c
-    src/tier_upgrade_ui.c
     src/world_ui.c
     src/feed.c
     src/escrow_ui.c
     src/inventory_ui.c
+    src/confirm_ui.c
 )
 
 add_executable(saltmarch ${SALTMARCH_CLIENT_SOURCES})

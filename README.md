@@ -79,9 +79,8 @@ saltmarch/
 │   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
 │   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)
-│   ├── build_confirm_ui.c/h   Cost confirmation (resources or Gold)
-│   ├── demolish_confirm_ui.c/h  "Destroy this building?"
-│   ├── tier_upgrade_ui.c/h    Spend-Gold-to-confirm (upgrade, build ship)
+│   ├── confirm_view.c/h       The one confirmation: options + command preview
+│   ├── confirm_ui.c/h         Drawing for it
 │   ├── feed.c/h               Shared voyage feed (ghost multiplayer)
 │   ├── net.c/h                Lockstep protocol over TCP (its own library)
 │   └── replay_main.c          main() for the headless replay tool

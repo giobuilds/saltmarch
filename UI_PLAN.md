@@ -1,8 +1,9 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
+> Status: **numbered phases complete; M-phases remain.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
 > (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
-> 4 (vitals, stores, overlay arbiter) and 5 (island context) have landed; everything below
+> 4 (vitals, stores, overlay arbiter), 5 (island context) and 6 (confirm
+> consolidation) have landed; everything below
 > them is still as planned.
 > Written for a future session to pick up cold.
 >
@@ -373,7 +374,7 @@ looking at the same world, or two players describing "the blue island"
 would mean different places. The exchange and stores overlays carry the
 hue on their view structs and draw it as a stripe down the title bar.
 
-### Phase 6 — Confirm consolidation → command preview
+### Phase 6 — Confirm consolidation → command preview — **DONE**
 v1's collapse of demolish/tier-upgrade/ship-build/build-confirm into one
 `confirm_ui.c`, with a new job: the popup renders the *literal Command it
 will submit* (kind, decoded payload, apply tick). The confirm layer and
@@ -381,6 +382,35 @@ the wire format become the same rendering code — screenshots become
 forensics, and the UI cannot drift from what `sim_apply` receives.
 **Verify:** hit-test results identical before/after; rendered preview
 matches the submitted Command byte-for-byte in the headless harness.
+
+*As built:* `game_confirm_build/demolish/upgrade/ship()` construct the
+Command when the popup OPENS and store it in `GameState.confirm`;
+accepting submits that struct verbatim. The preview text comes from
+`command_describe()` in command.c — decoding that lives beside the
+encoding it mirrors, so the popup cannot describe one action while
+sim_apply receives another. The test compares the rendered command with
+the one that reached the log, as bytes.
+
+Storing the command rather than the ingredients also made structural
+the property the old build popup maintained by hand: the tile is
+captured at open time, so moving the cursor to the buttons — or
+selecting a different building type — cannot change what gets built.
+There is a test for that specifically.
+
+The openers validate: a confirmation for a building that no longer
+exists never opens, instead of opening and submitting a command the sim
+would reject.
+
+Three files went away (build_confirm_ui, demolish_confirm_ui,
+tier_upgrade_ui — the last of which was already doing double duty for
+ship building), along with four popup flag sets in GameState, four
+branches in the click cascade and four in the draw order. Right-click
+dismissal now reads the layering from `game_topmost_overlay()` rather
+than repeating it as a second hand-maintained list.
+
+Deferred: the preview shows the earliest tick a command can apply, not
+the exact one — under lockstep the host adds its delay and the client
+cannot know it. Stated as "or later" rather than guessed at.
 
 ### Phase M1 — with MMO Phase 1 (command funnel)
 - UI wrappers emit Commands via `command_submit()`; pending ring
