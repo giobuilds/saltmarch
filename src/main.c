@@ -19,6 +19,7 @@
 #include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
 #include "fx_reject.h"     /* UI_PLAN M1: what happened to my click */
 #include "intent.h"        /* UI_PLAN M1: recording the input stream */
+#include "scrub_view.h"    /* MMO later phases: the time scrubber   */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -51,6 +52,7 @@ typedef struct {
     UiList        inventory_list;
     VitalsView    vitals;
     UiList        island_list;
+    UiList        scrub_list;
     ConfirmView   confirm;
     UiList        confirm_list;
     FxReject      fx;
@@ -140,6 +142,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->inventory_list,0, sizeof(app->inventory_list));
     SDL_memset(&app->vitals,        0, sizeof(app->vitals));
     SDL_memset(&app->island_list,   0, sizeof(app->island_list));
+    SDL_memset(&app->scrub_list,    0, sizeof(app->scrub_list));
     SDL_memset(&app->confirm,       0, sizeof(app->confirm));
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
     fx_reject_init(&app->fx);
@@ -264,6 +267,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     vitals_build(&app->vitals, &app->snap, gs->current_island);
     island_bar_build(&app->island_list, &app->snap, (float)SCREEN_W);
 
+    if (game_scrubbing(gs))
+        scrub_build(&app->scrub_list, gs->sim_tick_no, game_scrub_max(gs),
+                    (float)SCREEN_W, (float)SCREEN_H);
+
     if (gs->confirm.open) {
         confirm_view_build(&app->confirm, &app->snap);
         confirm_build(&app->confirm_list, &app->confirm,
@@ -322,6 +329,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->input.faction_debug_toggle)
         gs->faction_debug = !gs->faction_debug;
 
+    /* F8: the time-travel scrubber (MMO_PLAN later phases). Entering
+     * freezes the sim and refuses submissions; leaving returns to the
+     * tick the world actually reached. */
+    if (gs->input.scrub_toggle) {
+        if (game_scrubbing(gs)) game_scrub_end(gs);
+        else                    game_scrub_begin(gs);
+    }
+
     /* I: the stores overlay (UI_PLAN Phase 4). Opening resets to the
      * first page — a page index left over from last time is a small
      * surprise for no benefit. */
@@ -349,7 +364,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     }
 
     /* --- Handle clicks ---------------------------------- */
-    if (gs->input.left_click) {
+    if (gs->input.left_click && game_scrubbing(gs)) {
+        /* The scrubber is modal over everything: while you are looking
+         * at the past, the only thing a click can do is move you
+         * through it or bring you back. */
+        ScrubHit sh = scrub_hit(&app->scrub_list, game_scrub_max(gs),
+                                (float)gs->input.logical_x,
+                                (float)gs->input.logical_y);
+        if (sh.kind == SCRUB_HIT_SEEK)      game_scrub_to(gs, sh.tick);
+        else if (sh.kind == SCRUB_HIT_LIVE) game_scrub_end(gs);
+
+    } else if (gs->input.left_click) {
 
         /* Archipelago overview: checked before the confirm popups
          * only in the sense that it cannot coexist with them —
@@ -956,6 +981,44 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             break;
         }
         font_draw_text(app->r, FONT_NORMAL, msg, SCREEN_W / 2 - 300, 8, col);
+    }
+
+    /* The scrubber, above every overlay: it is what you are doing. */
+    if (game_scrubbing(gs)) {
+        SDL_Color warn = { 245, 200, 120, 255 };
+        char      buf[96];
+        int       i;
+
+        for (i = 0; i < app->scrub_list.count; i++) {
+            const UiWidget *w = &app->scrub_list.items[i];
+            SDL_FRect       r = { w->rect.x, w->rect.y, w->rect.w, w->rect.h };
+            int             action = ui_id_value(w->id);
+
+            SDL_SetRenderDrawBlendMode(app->r, SDL_BLENDMODE_BLEND);
+            if (i == 0)                            /* the bar          */
+                SDL_SetRenderDrawColor(app->r, 22, 18, 12, 225);
+            else if (action == UI_ACTION_PREV)     /* the track        */
+                SDL_SetRenderDrawColor(app->r, 60, 52, 38, 255);
+            else if (w->flags & UI_W_HEADER)       /* the handle       */
+                SDL_SetRenderDrawColor(app->r, 245, 200, 120, 255);
+            else                                   /* back-to-now      */
+                SDL_SetRenderDrawColor(app->r, 70, 58, 36, 255);
+            SDL_RenderFillRect(app->r, &r);
+            SDL_SetRenderDrawBlendMode(app->r, SDL_BLENDMODE_NONE);
+
+            if (w->label[0])
+                font_draw_text(app->r, FONT_SMALL, w->label,
+                               (int)(w->rect.x + 8.0f),
+                               (int)(w->rect.y + 4.0f), warn);
+        }
+
+        SDL_snprintf(buf, sizeof(buf),
+                     "VIEWING TICK %llu of %llu — the world is paused and "
+                     "nothing can be ordered (F8 to return)",
+                     (unsigned long long)gs->sim_tick_no,
+                     (unsigned long long)game_scrub_max(gs));
+        font_draw_text(app->r, FONT_SMALL, buf, 40,
+                       SCREEN_H - (int)SCRUB_H - 22, warn);
     }
 
     /* Flashes last: they answer a click and must not be painted over

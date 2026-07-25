@@ -35,6 +35,9 @@ SDL_AppResult input_handle_event(InputState *input,
         case SDL_SCANCODE_I:
             if (down) input->inventory_toggle = 1;
             break;
+        case SDL_SCANCODE_F8:
+            if (down) input->scrub_toggle = 1;
+            break;
         case SDL_SCANCODE_F10:
             if (down) input->faction_debug_toggle = 1;
             break;
@@ -87,5 +90,6 @@ void input_clear_clicks(InputState *input)
     input->replay_check         = 0;
     input->faction_debug_toggle = 0;
     input->inventory_toggle     = 0;
+    input->scrub_toggle         = 0;
     input->scroll_y             = 0.0f;   /* CHANGED: reset scroll each frame */
 }

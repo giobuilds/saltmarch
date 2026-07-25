@@ -108,6 +108,7 @@ Multiplayer, all three shapes:
 | Mouse move | Highlight the tile under the cursor |
 | `‹` `›` header (top centre) | Step between the islands you have settled |
 | `I` | Open the stores overlay (everything this island holds) |
+| `F8` | Time-travel scrubber: freeze the world and re-simulate to any past tick |
 | `Escape` | Quit |
 
 ### Building

@@ -275,6 +275,16 @@ typedef struct GameState {
      * world and replay the log against it. */
     uint32_t  world_seed;
 
+    /* ---- the scrubber (MMO_PLAN later phases) --------------
+     * A world is (seed, ordered log), so any past tick is reachable by
+     * re-simulating to it. While scrubbing, `scrub_live_tick` remembers
+     * where the world actually is, the sim does not advance, and
+     * command_submit refuses everything — acting in the past would
+     * append commands stamped behind the log's own head and corrupt the
+     * one thing the whole architecture rests on. */
+    int       scrub_active;
+    uint64_t  scrub_live_tick;
+
     /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
      * replay_valid is 1 while the live world is exactly what replaying
      * (world_seed, cmd_log) from tick 0 produces — true after
@@ -407,6 +417,30 @@ GameOverlay game_topmost_overlay(const GameState *gs);
  * (do not zoom), the hover logic (do not highlight tiles) and the
  * drag-placement loop (do not lay road under a popup). */
 int game_overlay_open(const GameState *gs);
+
+/* ---- the time-travel scrubber (MMO_PLAN later phases) ------
+ * Enter scrub mode (remembering the live tick), jump to any past tick,
+ * and leave again (returning to the live tick). Jumping re-simulates
+ * from tick 0 through the existing log, which at a 64x64 grid costs
+ * milliseconds per thousand ticks — no checkpoint machinery needed yet.
+ *
+ * The log is never truncated: scrubbing back and then forward again
+ * lands on the same state, because the commands were always there.
+ *
+ * While scrubbing, the sim is frozen and submissions are refused. The
+ * UI can be driven as normal — hit-testing a past screen works, because
+ * an overlay only ever reads a snapshot — which is what makes this a
+ * debugging tool rather than a screenshot. */
+void game_scrub_begin(GameState *gs);
+void game_scrub_to(GameState *gs, uint64_t tick);
+void game_scrub_end(GameState *gs);
+
+/* 1 while viewing the past. Callers that advance time or submit
+ * commands must check it. */
+int  game_scrubbing(const GameState *gs);
+
+/* The furthest tick the scrubber can reach — the live world's tick. */
+uint64_t game_scrub_max(const GameState *gs);
 
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:

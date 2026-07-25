@@ -343,7 +343,11 @@ Carbon.
 
 ---
 
-## Later phases (design-complete, do not start until 1–6 are green)
+## Later phases — **all landed**
+
+Every item below is implemented, with what was actually built and where
+it deviates recorded inline. What remains of this document is the risk
+register and the non-goals.
 
 - **Port charters — DONE.** `COLONY_FOUNDING_GOLD` splits: `CHARTER_BID_GOLD`
   (150) goes to the faction — the economy's first real gold sink — and the
@@ -392,8 +396,19 @@ Carbon.
   nearest legal free tile, scanning in a fixed order to stay
   deterministic. What survives from a recording is the sequence and
   pace of what was built, not the layout: a script, not a blueprint.
-- **Time-travel debug scrubber:** checkpoint + log = re-simulate to any past
-  tick; UI slider. Solo-dev killer tool.
+- **Time-travel debug scrubber — DONE.** F8 freezes the world and puts a
+  bar across the bottom; click anywhere on it to re-simulate to that
+  tick. `game_scrub_to()` copies the log out, rebuilds from the seed and
+  puts the log back, so scrubbing back and then forward lands on the
+  same state — the commands were always there. No checkpoint machinery
+  was needed: re-simulating a few thousand ticks of a 64x64 grid costs
+  milliseconds.
+
+  `command_submit()` refuses everything while scrubbing, and the tick
+  pump does not advance. Acting in the past would append a command
+  stamped behind the log's own head, and "the world is the ordered log"
+  would stop being true — which is the invariant every other feature
+  here stands on.
 
 ## Risk register
 

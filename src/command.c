@@ -143,6 +143,13 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
+    /* Nothing may be submitted while viewing the past (MMO_PLAN's
+     * scrubber). A command stamped for a tick the log has already
+     * passed would be inserted behind its own head, and "the world is
+     * the ordered log" would stop being true — which is the one
+     * invariant everything else in this architecture stands on. */
+    if (gs->scrub_active) return 0;
+
     /* Stamp the sequence before routing, so a command handed to a co-op
      * host carries it there and back and the UI recognises its own
      * (UI_PLAN M1). Sequences start at 1: zero means "not ours". */

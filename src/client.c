@@ -135,6 +135,11 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
      * little less during that stall, which is invisible in single
      * player and is what the future server's continuous ticking exists
      * to make authoritative anyway. */
+    /* Time does not pass in the past (MMO_PLAN's scrubber). The
+     * accumulator is left alone rather than zeroed, so leaving scrub
+     * mode does not spend a backlog of stored-up ticks in one frame. */
+    if (game_scrubbing(gs)) return;
+
     gs->sim_acc_ns += frame_ns;
     if (gs->sim_acc_ns > SIM_TICK_NS * 8)
         gs->sim_acc_ns = SIM_TICK_NS * 8;

@@ -61,6 +61,63 @@ void game_set_current_island(GameState *gs, int idx)
      * would dismiss the overlay the moment you used it. */
 }
 
+/* ---- the scrubber (MMO_PLAN later phases) ------------------ */
+
+int game_scrubbing(const GameState *gs) { return gs->scrub_active; }
+
+uint64_t game_scrub_max(const GameState *gs)
+{
+    return gs->scrub_active ? gs->scrub_live_tick : gs->sim_tick_no;
+}
+
+void game_scrub_begin(GameState *gs)
+{
+    if (gs->scrub_active) return;
+    gs->scrub_active    = 1;
+    gs->scrub_live_tick = gs->sim_tick_no;
+}
+
+void game_scrub_to(GameState *gs, uint64_t tick)
+{
+    Command *saved;
+    int      count;
+    uint32_t seed;
+
+    if (!gs->scrub_active) return;
+    if (tick > gs->scrub_live_tick) tick = gs->scrub_live_tick;
+
+    /* The log is the world's history and must survive the trip. Copy it
+     * out, rebuild from the seed, put it back: install_world resets the
+     * log to what it is given, so handing it the live log keeps every
+     * later command available for scrubbing forward again. */
+    count = gs->cmd_count;
+    seed  = gs->world_seed;
+    saved = (Command *)malloc(sizeof(Command) * (size_t)(count > 0 ? count : 1));
+    if (!saved) return;
+    if (count > 0) memcpy(saved, gs->cmd_log, sizeof(Command) * (size_t)count);
+
+    game_install_world(gs, seed, tick, saved, count);
+    free(saved);
+
+    /* install_world cleared these; scrubbing is a view, not a new
+     * world, so restore the fact that we are in it. */
+    gs->scrub_active = 1;
+    /* scrub_live_tick survives install_world (it is not world state),
+     * but be explicit: the live head is wherever we came from. */
+    if (gs->scrub_live_tick < tick) gs->scrub_live_tick = tick;
+}
+
+void game_scrub_end(GameState *gs)
+{
+    uint64_t live;
+
+    if (!gs->scrub_active) return;
+
+    live = gs->scrub_live_tick;
+    game_scrub_to(gs, live);
+    gs->scrub_active = 0;
+}
+
 /* ---- the overlay arbiter (UI_PLAN Phase 4) ----------------- */
 GameOverlay game_topmost_overlay(const GameState *gs)
 {
@@ -200,6 +257,8 @@ GameState *game_init(void)
 
     gs->cmd_seq_next    = 1u;
     gs->cmd_seq_last    = 0u;
+    gs->scrub_active    = 0;
+    gs->scrub_live_tick = 0;
     gs->result_count    = 0;
     gs->local_player_id = 1u;
     gs->net             = NULL;   /* attached by net_attach when hosting/joining */
