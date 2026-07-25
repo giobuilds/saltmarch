@@ -38,14 +38,18 @@ int main(void)
     expect_name(BUILDING_WAREHOUSE,    "Warehouse");
     expect_name(BUILDING_FARM,         "Farm");
     expect_name(BUILDING_LUMBERJACK,   "Lumberjack");
-    expect_name(BUILDING_HOUSE,        "House");
+    expect_name(BUILDING_HOUSE,        "Marsh Cottage");
     expect_name(BUILDING_ROAD,         "Road");
     expect_name(BUILDING_MARKETPLACE,  "Marketplace");
     expect_name(BUILDING_HOP_FARM,     "Hop Farm");
     expect_name(BUILDING_MALTHOUSE,    "Malthouse");
     expect_name(BUILDING_BREWERY,      "Brewery");
     expect_name(BUILDING_SHIPYARD,     "Shipyard");
-    expect_name(BUILDING_HOUSE_WORKER, "Worker's House");
+    expect_name(BUILDING_HOUSE_WORKER, "Wright's House");
+    expect_name(BUILDING_HARBOR,       "Harbor");
+    expect_name(BUILDING_SAWMILL,      "Sawmill");
+    expect_name(BUILDING_CLAY_PIT,     "Clay Pit");
+    expect_name(BUILDING_BAKEHOUSE,    "Bakehouse");
 
     /* Every enum value must have a row at all — a NULL name means a
      * designated row was forgotten entirely. */
@@ -149,8 +153,23 @@ int main(void)
     /* The two properties the swap actually broke. */
     CHECK(BUILDING_DEFS[BUILDING_SHIPYARD].hud_placeable == 1,
           "Shipyard is HUD-placeable (ship-build popup reachable)");
-    CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].hud_placeable == 0,
-          "Worker's House is upgrade-only, not on the HUD");
+    /* A Wright's House was upgrade-only until SUPPLY_CHAIN Phase 3
+     * made it the base of the second house line. Both base tiers are
+     * on the HUD now, and every def in the table is placeable — so
+     * the guard becomes "nothing is unreachable", which is what the
+     * swapped-row bug actually broke. */
+    {
+        int t, unreachable = 0;
+        for (t = 0; t < BUILDING_TYPE_COUNT; t++)
+            if (!BUILDING_DEFS[t].hud_placeable) {
+                printf("  FAIL: %s is on no HUD tab and reachable no other "
+                       "way\n", BUILDING_DEFS[t].name);
+                unreachable++;
+            }
+        CHECK(unreachable == 0, "every building can be reached from the HUD");
+    }
+    CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].cost[RES_GOLD] > 0,
+          "and a Wright's House costs something, now that it is built");
 
     printf(failures ? "\nFAILED (%d)\n" : "\nPASSED\n", failures);
     return failures ? 1 : 0;

@@ -107,10 +107,20 @@ int main(void)
     char json[256];
     int  len = voyage_record_to_json(&v, json, sizeof(json));
 
-    /* RES_COUNT is 7; cargo prints all seven slots. */
-    const char *expect =
-        "{\"player\":0,\"ship\":1,\"from\":0,\"to\":2,"
-        "\"departure_tick\":1234,\"cargo\":[0,5,0,0,0,0,400]}";
+    /* cargo prints every slot, so the expected string is built from
+     * RES_COUNT rather than written out — it was a literal until
+     * SUPPLY_CHAIN Phase 3 added thirteen goods, at which point the
+     * test was asserting the width of the enum as much as the format. */
+    char expect[256];
+    {
+        int  n = snprintf(expect, sizeof(expect),
+                          "{\"player\":0,\"ship\":1,\"from\":0,\"to\":2,"
+                          "\"departure_tick\":1234,\"cargo\":[0,5");
+        for (int i = 2; i < RES_COUNT; i++)
+            n += snprintf(expect + n, sizeof(expect) - (size_t)n, ",%d",
+                          i == (int)RES_GOLD ? 400 : 0);
+        snprintf(expect + n, sizeof(expect) - (size_t)n, "]}");
+    }
     CHECK(len == (int)strlen(expect), "serialised length is correct");
     CHECK(strcmp(json, expect) == 0, "VoyageRecord JSON matches the wire format");
     if (strcmp(json, expect) != 0) printf("    got: %s\n", json);

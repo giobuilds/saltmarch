@@ -70,6 +70,24 @@ typedef enum {
      * Shipyard. Clicking a placed one opens the escrow panel. */
     BUILDING_HARBOR       = 12,
 
+    /* ---- SUPPLY_CHAIN Phase 3: the northern base economy ----
+     * Seven chains feeding the two base tiers. Appended rather than
+     * inserted, so every existing type keeps its value and only the
+     * resource enum shifts under this phase's SAVE_VERSION bump. */
+    BUILDING_SAWMILL      = 13,   /* Timber   -> Planks               */
+    BUILDING_SHEEP_PASTURE = 14,  /* pasture  -> Wool                 */
+    BUILDING_KNITTING_HOUSE = 15, /* Wool     -> Oilskins             */
+    BUILDING_POTATO_FIELD = 16,   /* potato soil -> Potatoes          */
+    BUILDING_STILL        = 17,   /* Potatoes -> Marsh Gin            */
+    BUILDING_CLAY_PIT     = 18,   /* a clay deposit -> Clay           */
+    BUILDING_BRICKWORKS   = 19,   /* Clay     -> Bricks               */
+    BUILDING_PIG_PEN      = 20,   /* pasture  -> Pigs                 */
+    BUILDING_BUTCHERY     = 21,   /* Pigs     -> Sausages             */
+    BUILDING_TALLOW_WORKS = 22,   /* Pigs     -> Tallow               */
+    BUILDING_SOAP_BOILERY = 23,   /* Tallow   -> Soap                 */
+    BUILDING_WINDMILL     = 24,   /* Grain    -> Flour                */
+    BUILDING_BAKEHOUSE    = 25,   /* Flour    -> Bread                */
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

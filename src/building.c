@@ -112,9 +112,12 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_GOLD] = 60 },
         .hud_placeable = 1
     },
-    /* Phase 5: House — residents live here, generate gold when fed */
+    /* Phase 5: residents live here and generate gold when fed.
+     * Renamed to Marsh Cottage in SUPPLY_CHAIN Phase 3: it is now the
+     * base of ONE of three house lines rather than the bottom of a
+     * single ladder, and "House" no longer says which. */
     [BUILDING_HOUSE] = {
-        .name = "House",
+        .name = "Marsh Cottage",
         .category = BCAT_HOUSING,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
@@ -216,14 +219,18 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_WOOD] = 40, [RES_GOLD] = 250 },
         .hud_placeable = 1
     },
-    /* Population tiers, Phase 1: Worker's House is reached only by
-     * upgrading a placed BUILDING_HOUSE (game_upgrade_house, game.c),
-     * never placed directly — hud_placeable = 0 keeps it off the HUD
-     * bar (see ui.c's filtered slot list). cost[] is irrelevant since
-     * building_place() is never called for this type; the upgrade's
-     * Gold cost lives in game_upgrade_house() instead. */
+    /* Was Worker's House, reachable only by upgrading a Marsh Cottage.
+     * SUPPLY_CHAIN Phase 3 makes it the base of the SECOND house line
+     * and therefore something you build: hud_placeable is 1 and cost[]
+     * is now load-bearing where it used to be ignored.
+     *
+     * The visible cost of the three-line model is that the old
+     * Cottage -> Worker's House ladder is gone. Both are base tiers
+     * now; their upgrade targets are Artisans (Phase 4) and Engineers
+     * (Phase 6). Dearer than a cottage because Wrights want four goods
+     * a cottage does not. */
     [BUILDING_HOUSE_WORKER] = {
-        .name = "Worker's House",
+        .name = "Wright's House",
         .category = BCAT_HOUSING,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
@@ -231,8 +238,8 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .produces = RES_COUNT, .produce_amt = 0,
         .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
-        .cost = { 0 },
-        .hud_placeable = 0
+        .cost = { [RES_PLANKS] = 10, [RES_BRICKS] = 5, [RES_GOLD] = 180 },
+        .hud_placeable = 1
     },
     /* MMO Phase 5: the inter-player airlock (see building.h). No
      * production — like Marketplace/Shipyard it is a gateway you click,
@@ -247,6 +254,202 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
+        .hud_placeable = 1
+    },
+
+    /* ================================================================
+     * SUPPLY_CHAIN Phase 3 — the northern base economy
+     *
+     * Seven chains. Three start at terrain Phase 1 added and could not
+     * have been written before it: the Potato Field names a crop, the
+     * Clay Pit names a deposit, and the pastures name grazing.
+     *
+     * Costs scale with depth: a field is cheap, the workshop that
+     * consumes it is not. Tick rates run slower the further along a
+     * chain a building sits, so a single upstream producer feeds
+     * roughly one downstream consumer without the player having to
+     * count ratios on paper.
+     * ================================================================ */
+
+    [BUILDING_SAWMILL] = {
+        .name = "Sawmill",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 150, .col_g = 115, .col_b = 70,
+        .produces = RES_PLANKS, .produce_amt = 1,
+        .consumes = { RES_WOOD, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 20, [RES_GOLD] = 120 },
+        .hud_placeable = 1
+    },
+    /* Grazing is the one crop bit that is not exclusive with the
+     * others (map.h), so a pasture and a farm compete for the same
+     * ground — which is the decision it exists to create. */
+    [BUILDING_SHEEP_PASTURE] = {
+        .name = "Sheep Pasture",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_PASTURE,
+        .col_r = 190, .col_g = 195, .col_b = 175,
+        .produces = RES_WOOL, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_GOLD] = 90 },
+        .hud_placeable = 1
+    },
+    [BUILDING_KNITTING_HOUSE] = {
+        .name = "Knitting House",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 165, .col_g = 150, .col_b = 125,
+        .produces = RES_OILSKINS, .produce_amt = 1,
+        .consumes = { RES_WOOL, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 140 },
+        .hud_placeable = 1
+    },
+    [BUILDING_POTATO_FIELD] = {
+        .name = "Potato Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_POTATO,
+        .col_r = 130, .col_g = 145, .col_b = 75,
+        .produces = RES_POTATOES, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_GOLD] = 80 },
+        .hud_placeable = 1
+    },
+    [BUILDING_STILL] = {
+        .name = "Still",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 170, .col_g = 160, .col_b = 190,
+        .produces = RES_MARSH_GIN, .produce_amt = 1,
+        .consumes = { RES_POTATOES, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 130 },
+        .hud_placeable = 1
+    },
+    /* The first building that names a deposit. Its footprint must sit
+     * entirely on clay, which is what makes a seam a place rather than
+     * a number. */
+    [BUILDING_CLAY_PIT] = {
+        .name = "Clay Pit",
+        .category = BCAT_EXTRACTION,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_deposit = DEPOSIT_CLAY,
+        .col_r = 190, .col_g = 110, .col_b = 70,
+        .produces = RES_CLAY, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_GOLD] = 90 },
+        .hud_placeable = 1
+    },
+    [BUILDING_BRICKWORKS] = {
+        .name = "Brickworks",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 175, .col_g = 90, .col_b = 60,
+        .produces = RES_BRICKS, .produce_amt = 1,
+        .consumes = { RES_CLAY, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 130 },
+        .hud_placeable = 1
+    },
+    /* One Pig Pen feeds two different workshops — the first place the
+     * player has to choose what a raw good becomes. */
+    [BUILDING_PIG_PEN] = {
+        .name = "Pig Pen",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_PASTURE,
+        .col_r = 200, .col_g = 160, .col_b = 155,
+        .produces = RES_PIGS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_BUTCHERY] = {
+        .name = "Butchery",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 175, .col_g = 95, .col_b = 95,
+        .produces = RES_SAUSAGES, .produce_amt = 1,
+        .consumes = { RES_PIGS, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 150 },
+        .hud_placeable = 1
+    },
+    [BUILDING_TALLOW_WORKS] = {
+        .name = "Tallow Works",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 190, .col_b = 150,
+        .produces = RES_TALLOW, .produce_amt = 1,
+        .consumes = { RES_PIGS, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SOAP_BOILERY] = {
+        .name = "Soap Boilery",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 210, .col_g = 205, .col_b = 190,
+        .produces = RES_SOAP, .produce_amt = 1,
+        .consumes = { RES_TALLOW, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 13.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 160 },
+        .hud_placeable = 1
+    },
+    [BUILDING_WINDMILL] = {
+        .name = "Windmill",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 205, .col_g = 195, .col_b = 165,
+        .produces = RES_FLOUR, .produce_amt = 1,
+        .consumes = { RES_GRAIN, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 20, [RES_GOLD] = 120 },
+        .hud_placeable = 1
+    },
+    [BUILDING_BAKEHOUSE] = {
+        .name = "Bakehouse",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 195, .col_g = 150, .col_b = 95,
+        .produces = RES_BREAD, .produce_amt = 1,
+        .consumes = { RES_FLOUR, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 140 },
         .hud_placeable = 1
     },
 };

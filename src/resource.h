@@ -26,7 +26,31 @@ typedef enum {
     RES_HOPS  = 3,
     RES_MALT  = 4,
     RES_BEER  = 5,
-    RES_GOLD  = 6,
+
+    /* ---- SUPPLY_CHAIN Phase 3: the northern base tiers ----
+     * Seven chains, each a raw good and what is made from it. They are
+     * grouped by chain rather than by raw/refined so a reader can see
+     * the pairs; RESOURCE_CATEGORIES says which is which.
+     *
+     * Inserting these before RES_GOLD shifts its value, which is why
+     * this phase bumps SAVE_VERSION — a log recorded before the change
+     * would replay as different commands. Every table indexed by this
+     * enum is designated, so none of them silently misalign. */
+    RES_PLANKS,     /* Timber   -> Sawmill                            */
+    RES_WOOL,       /* Sheep Pasture                                  */
+    RES_OILSKINS,   /* Wool     -> Knitting House   (Marshfolk want)  */
+    RES_POTATOES,   /* Potato Field                                   */
+    RES_MARSH_GIN,  /* Potatoes -> Still            (Marshfolk want)  */
+    RES_CLAY,       /* Clay Pit  (a deposit)                          */
+    RES_BRICKS,     /* Clay     -> Brickworks                         */
+    RES_PIGS,       /* Pig Pen                                        */
+    RES_SAUSAGES,   /* Pigs     -> Butchery         (Wrights want)    */
+    RES_TALLOW,     /* Pigs     -> Tallow Works                       */
+    RES_SOAP,       /* Tallow   -> Soap Boilery     (Wrights want)    */
+    RES_FLOUR,      /* Grain    -> Windmill                           */
+    RES_BREAD,      /* Flour    -> Bakehouse        (Wrights want)    */
+
+    RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;
 

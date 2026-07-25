@@ -339,8 +339,16 @@ typedef struct {
  * v8 (UI_PLAN M1): the file gained a second section — the recorded
  * intent stream, appended after the commands. A v7 log describes the
  * same world; it simply has no clicks recorded, so the UI harness has
- * nothing to replay. */
-#define SAVE_VERSION 8u
+ * nothing to replay.
+ *
+ * v9 (SUPPLY_CHAIN Phase 3): thirteen goods inserted before RES_GOLD,
+ * which shifts its value and every resource index a command carries.
+ * The bytes of a v8 log are unchanged but their MEANING is not — a
+ * recorded "sell 5 of resource 6" was Gold and is now Bricks. Nothing
+ * about the format changed; the vocabulary did, which is the harder
+ * kind of incompatibility to notice and the reason the plan's ground
+ * rule 5 says every content phase bumps this. */
+#define SAVE_VERSION 9u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
