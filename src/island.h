@@ -38,6 +38,28 @@
 
 #define ISLAND_NAME_LEN 16
 
+/* ---- marine insurance (MMO_PLAN later phases) --------------
+ * A voyage can be insured at departure: a premium paid to the faction
+ * now, a payout from the faction if pirates take the cargo. The
+ * premium is per LANE and moves with experience — every insured
+ * voyage that arrives safely nudges it down, every one that is raided
+ * nudges it up, as an exponential moving average.
+ *
+ * That EMA is the point. It turns the faction's books into the game's
+ * information layer: a lane whose premium has crept up is a lane that
+ * has been losing ships, and that is knowledge a player can act on
+ * before losing one of their own. Insurance is a price signal wearing
+ * a mechanic's clothes.
+ *
+ * Premiums are stored in tenths of a percent of cargo value so the
+ * whole thing stays integer, and are clamped to a sane band.
+ */
+#define INSURANCE_PREMIUM_START   80    /* 8.0% of declared value      */
+#define INSURANCE_PREMIUM_MIN     20
+#define INSURANCE_PREMIUM_MAX    400
+#define INSURANCE_EMA_SHIFT        3    /* how fast experience moves it */
+#define INSURANCE_MIN_PREMIUM_GOLD 5
+
 /* ---- charter terms ----------------------------------------
  * Deliberately gentle: a working colony pays for itself many times
  * over, so upkeep is a reason to keep an island productive rather than

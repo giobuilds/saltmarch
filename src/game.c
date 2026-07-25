@@ -530,9 +530,44 @@ void sim_run_one_tick(GameState *gs)
     for (i = 0; i < MAX_ISLANDS; i++)
         island_update(&gs->islands[i]);
 
-    /* 3. Voyages advance independently of any island. */
+    /* 3. Voyages advance independently of any island. Insurance is
+     * settled either side of the move: what was at sea before, and
+     * what has arrived after. */
+    {
+        int s2;
+        for (s2 = 0; s2 < gs->ship_count; s2++)
+            gs->ships[s2].was_at_sea = (gs->ships[s2].at_island < 0);
+    }
     ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
-                 gs->sim_tick_no);
+                 gs->sim_tick_no, gs->world_seed);
+
+    /* Anything that just made port with a policy on it gets settled,
+     * and the lane's premium learns from the outcome either way. */
+    for (i = 0; i < gs->ship_count; i++) {
+        Ship *sh = &gs->ships[i];
+        int   raided;
+
+        if (!sh->active || !sh->insured) continue;
+        if (!sh->was_at_sea || sh->at_island < 0) continue;   /* still out */
+
+        raided = voyage_is_raided(gs->world_seed, i, sh->departure_tick,
+                                  sh->from_island, sh->to_island);
+        if (raided) {
+            int payout = sh->insured_value / 2;   /* pirates took half */
+            if (payout > gs->faction.gold) payout = gs->faction.gold;
+            if (payout > 0) {
+                gs->faction.gold -= payout;
+                stockpile_add(&gs->islands[sh->at_island].stockpile,
+                              RES_GOLD, payout);
+                sim_log("Insurance paid %d Gold on ship %d's raided voyage",
+                        payout, i);
+            }
+        }
+        faction_lane_experience(&gs->faction, sh->from_island, sh->to_island,
+                                raided);
+        sh->insured       = 0;
+        sh->insured_value = 0;
+    }
 
     /* 4. Charters fall due (MMO_PLAN later phases). Before the market
      * tick so an island that just paid its upkeep is priced against the
@@ -635,12 +670,15 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->route_res_ba, sizeof(sh->route_res_ba));
         fnv_bytes(&h, &sh->route_qty, sizeof(sh->route_qty));
         fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
+        fnv_bytes(&h, &sh->insured, sizeof(sh->insured));
+        fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
     }
 
     /* The market is world state too (Phase 3). */
     fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
     fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
+    fnv_bytes(&h, gs->faction.lane_premium, sizeof(gs->faction.lane_premium));
 
     /* The price history too (UI_PLAN M3). It is state the sim produces
      * and the UI renders, so a replay that reproduced everything except
@@ -1295,23 +1333,89 @@ void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
  * Was an inline mutation in main.c's world overlay; now a command like
  * every other. The ship must be docked somewhere other than its
  * destination. */
-static int sim_ship_depart(GameState *gs, int ship_idx, int dest)
+static RejectReason sim_ship_depart(GameState *gs, int ship_idx, int dest,
+                                    int insure)
 {
     Ship *sh;
+    int   premium = 0;
 
-    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
-    if (dest < 0 || dest >= MAX_ISLANDS) return 0;
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return REJ_UNAVAILABLE;
+    if (dest < 0 || dest >= MAX_ISLANDS) return REJ_UNAVAILABLE;
     sh = &gs->ships[ship_idx];
-    if (!sh->active) return 0;
-    if (sh->at_island < 0) return 0;         /* already at sea       */
-    if (sh->at_island == dest) return 0;     /* nowhere to go        */
+    if (!sh->active) return REJ_UNAVAILABLE;
+    if (sh->at_island < 0) return REJ_UNAVAILABLE;   /* already at sea */
+    if (sh->at_island == dest) return REJ_UNAVAILABLE;
+
+    /* The premium is charged before the ship leaves, from the island it
+     * is leaving — an underwriter is paid up front or not at all. */
+    if (insure) {
+        Island *home = &gs->islands[sh->at_island];
+        premium = game_insurance_quote(gs, ship_idx, dest);
+        if (premium > 0) {
+            if (home->stockpile.amount[RES_GOLD] < premium)
+                return REJ_CANT_AFFORD;
+            stockpile_add(&home->stockpile, RES_GOLD, -premium);
+            gs->faction.gold += premium;
+        }
+    }
+
+    /* The declared value is fixed here, at departure. Settling a raid
+     * against the hold as it arrives would pay out on what the pirates
+     * left rather than what they took. */
+    sh->insured       = insure ? 1 : 0;
+    sh->insured_value = 0;
+    if (insure) {
+        int r;
+        for (r = 0; r < RES_COUNT; r++) {
+            if (sh->cargo[r] <= 0) continue;
+            sh->insured_value += (r == (int)RES_GOLD)
+                ? sh->cargo[r]
+                : sh->cargo[r] * faction_bid(&gs->faction, (ResourceType)r);
+        }
+    }
 
     sh->from_island    = sh->at_island;
     sh->to_island      = dest;
     sh->at_island      = -1;                 /* now at sea           */
     sh->departure_tick = gs->sim_tick_no;    /* fixes the whole voyage */
     sh->progress       = 0.0f;
-    return 1;
+    return REJ_OK;
+}
+
+int game_insurance_quote(const GameState *gs, int ship_idx, int dest_island)
+{
+    const Ship *sh;
+    int         value = 0, r, premium, cost;
+
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
+    sh = &gs->ships[ship_idx];
+    if (!sh->active || sh->at_island < 0) return 0;
+
+    /* Declared value is what the faction would PAY for the hold — the
+     * price it would have to make good, not the price the owner hoped
+     * for. Gold aboard is worth its face. */
+    for (r = 0; r < RES_COUNT; r++) {
+        if (sh->cargo[r] <= 0) continue;
+        value += (r == (int)RES_GOLD)
+                 ? sh->cargo[r]
+                 : sh->cargo[r] * faction_bid(&gs->faction, (ResourceType)r);
+    }
+    if (value <= 0) return 0;
+
+    premium = faction_lane_premium(&gs->faction, sh->at_island, dest_island);
+    cost    = (value * premium) / 1000;
+    if (cost < INSURANCE_MIN_PREMIUM_GOLD) cost = INSURANCE_MIN_PREMIUM_GOLD;
+    return cost;
+}
+
+int game_ship_depart_insured(GameState *gs, int ship_idx, int dest_island)
+{
+    Command c = {0};
+    c.kind = CMD_SHIP_DEPART;
+    c.a    = ship_idx;
+    c.b    = dest_island;
+    c.c    = 1;                     /* insure this voyage */
+    return command_submit(gs, &c);
 }
 
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island)
@@ -1645,7 +1749,7 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
                                  c->player_id);
     case CMD_SHIP_DEPART:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_ship_depart(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_ship_depart(gs, c->a, c->b, c->c);
     case CMD_COLONISE:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_colonise(gs, c->a, c->b, c->player_id) ? REJ_OK : REJ_UNAVAILABLE;

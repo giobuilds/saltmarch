@@ -28,6 +28,11 @@
 #include "resource.h"
 #include <stdint.h>
 
+/* island.h includes this header, so the island count cannot come from
+ * there without a cycle. Kept in step by a compile-time assert in
+ * faction.c. */
+#define MAX_ISLANDS_FOR_LANES 4
+
 /* Baseline inventory the faction holds of each tradeable good, and the
  * elasticity scale (kept equal, which makes the quote curve exactly
  * "2x price when empty, base price at baseline, 0 at twice baseline"). */
@@ -67,6 +72,13 @@ typedef struct {
     int32_t  inventory[RES_COUNT];   /* GOLD slot unused                 */
     uint32_t revert_timer;           /* ticks toward the next nudge      */
 
+    /* Per-lane insurance premium, in tenths of a percent of declared
+     * cargo value (MMO_PLAN later phases). Indexed [from][to]; the
+     * diagonal is unused. Moves as an EMA on every insured voyage's
+     * outcome, so the table is a map of where ships have been lost.
+     * Sim state: hashed and replayed. */
+    int16_t  lane_premium[MAX_ISLANDS_FOR_LANES][MAX_ISLANDS_FOR_LANES];
+
     /* Ring of mid-prices ((bid+ask)/2), oldest-to-newest by index once
      * hist_count reaches FACTION_HIST_LEN. hist_head is where the next
      * sample goes. */
@@ -76,8 +88,18 @@ typedef struct {
     uint32_t hist_timer;
 } Faction;
 
-/* Baseline: full gold reserve, every tradeable good at baseline stock. */
+/* Baseline: full gold reserve, every tradeable good at baseline stock,
+ * every lane at the starting premium. */
 void faction_init(Faction *f);
+
+/* The premium this lane currently charges, in tenths of a percent. */
+int  faction_lane_premium(const Faction *f, int from, int to);
+
+/* Fold one insured voyage's outcome into the lane's premium: `raided`
+ * pushes it up, a safe arrival pulls it down. An EMA rather than a
+ * counter, so a lane that was dangerous last month stops being priced
+ * as though it still is. */
+void faction_lane_experience(Faction *f, int from, int to, int raided);
 
 /* Price the faction will PAY the player for one unit of `r` (bid), and
  * price it CHARGES the player for one unit (ask). ask > bid always (the

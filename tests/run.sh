@@ -60,6 +60,7 @@ for src in "$root"/tests/test_*.c; do
         test_intent)   link_objs="$uilib";  link_sdl="" ;;
         test_escrow)   link_objs="$uilib";  link_sdl="" ;;
         test_charter)  link_objs="";        link_sdl="" ;;
+        test_piracy)   link_objs="";        link_sdl="" ;;
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;
     esac
 

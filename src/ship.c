@@ -1,6 +1,7 @@
 /*  ship.c  --  Vessels moving goods between islands  */
 
 #include "ship.h"
+#include "simlog.h"
 #include <stdio.h>   /* snprintf for the voyage-record serialiser */
 
 int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty)
@@ -118,8 +119,52 @@ static void route_turnaround(Ship *s, Island islands[], int island_count,
     }
 }
 
+int voyage_is_raided(uint32_t world_seed, int ship_id,
+                     uint64_t departure_tick, int from, int to)
+{
+    /* FNV-1a over the voyage's identity. Not cryptographic and not
+     * trying to be: it needs to be well-mixed, integer-only and
+     * identical on every platform, which rules out anything touching
+     * floating point or the C library's rand. */
+    uint32_t h = 2166136261u;
+    uint32_t parts[5];
+    int      i;
+
+    parts[0] = world_seed;
+    parts[1] = (uint32_t)ship_id;
+    parts[2] = (uint32_t)(departure_tick & 0xFFFFFFFFu);
+    parts[3] = (uint32_t)(departure_tick >> 32);
+    parts[4] = (uint32_t)((from << 8) ^ to);
+
+    for (i = 0; i < 5; i++) {
+        h ^= parts[i];
+        h *= 16777619u;
+    }
+    return (int)(h % 1000u) < PIRACY_CHANCE_PER_MILLE;
+}
+
+/* The raid itself: pirates take a share of everything aboard. Called
+ * exactly once per voyage, at the halfway tick. */
+static void voyage_raid(Ship *s, int ship_id)
+{
+    int r, taken = 0;
+
+    for (r = 0; r < RES_COUNT; r++) {
+        int take = (s->cargo[r] * PIRACY_TAKE_NUMERATOR +
+                    PIRACY_TAKE_DENOMINATOR - 1) / PIRACY_TAKE_DENOMINATOR;
+        if (take <= 0) continue;
+        s->cargo[r] -= take;
+        taken       += take;
+    }
+
+    if (taken > 0)
+        sim_log("Ship %d was raided mid-voyage: %d units taken",
+                ship_id, taken);
+}
+
 void ships_update(Ship ships[], int ship_count,
-                  Island islands[], int island_count, uint64_t sim_tick_no)
+                  Island islands[], int island_count, uint64_t sim_tick_no,
+                  uint32_t world_seed)
 {
     int i;
 
@@ -139,6 +184,16 @@ void ships_update(Ship ships[], int ship_count,
         /* At sea. Arrival is an exact integer test on the tick; progress
          * is only a cached 0..1 derivation for the renderer. */
         elapsed = sim_tick_no - s->departure_tick;
+
+        /* The raid check, exactly once, at the halfway mark. Testing
+         * for equality rather than ">=" is what makes it once: a ship
+         * that has already passed the midpoint is not robbed again by
+         * the next tick. */
+        if (elapsed == (uint64_t)(SHIP_VOYAGE_TICKS / 2) &&
+            voyage_is_raided(world_seed, i, s->departure_tick,
+                             s->from_island, s->to_island))
+            voyage_raid(s, i);
+
         if (elapsed >= (uint64_t)SHIP_VOYAGE_TICKS) {
             s->at_island = s->to_island;   /* arrived */
             s->progress  = 0.0f;

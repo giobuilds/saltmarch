@@ -34,7 +34,7 @@
  *   CMD_UPGRADE_HOUSE   a=island b=building index
  *   CMD_BUILD_SHIP      a=island b=shipyard index (unused today)
  *   CMD_SHIP_TRANSFER   a=ship   b=resource c=qty (sign=load/unload) d=island
- *   CMD_SHIP_DEPART     a=ship   b=destination island
+ *   CMD_SHIP_DEPART     a=ship   b=destination island c=insure (0/1)
  *   CMD_COLONISE        a=ship   b=island index
  *   CMD_SET_ROUTE_RES   a=ship   b=leg (0=outbound A->B, 1=back B->A)
  *   CMD_TOGGLE_ROUTE    a=ship

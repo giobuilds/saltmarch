@@ -355,10 +355,19 @@ Carbon.
   network is a better prize than bare ground, and it gives an abandoned
   colony a history. Charter state is hashed and replayed like everything
   else.
-- **Loss mechanics, then insurance:** first NPC piracy events on voyages
-  (deterministic, seeded from `(voyage_id, event_id)` so the feed stays a
-  dumb log), then per-lane premium EMA of insured losses; the premium
-  ticker on world_ui becomes the game's information layer.
+- **Loss mechanics, then insurance — DONE**, in that order. A raid is
+  `voyage_is_raided(world_seed, ship, departure_tick, from, to)`: derived
+  from the voyage's identity rather than rolled, checked once at the
+  halfway tick, so every client, replay and server computes the same raid
+  without the feed carrying a word about it. Pirates take half the hold.
+  Insurance is bought at departure (`CMD_SHIP_DEPART` slot c), the
+  premium paid to the faction from the port it sails from, the declared
+  value fixed at departure so a payout is computed on what was taken
+  rather than what was left. Every settled policy folds its outcome into
+  a per-lane EMA (`faction_lane_experience`), and world_ui shows the
+  resulting premiums per lane beside the button — a lane whose quote has
+  crept up is a lane that has been losing ships, which is knowledge a
+  player can act on before it is their ship.
 - **Interception / tide-time PvP:** an intercept is a Command referencing a
   voyage; both sides deterministically compute the engagement from the
   ordered log plus seeded RNG. The feed/server never becomes a real-time

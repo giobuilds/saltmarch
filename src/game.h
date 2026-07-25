@@ -594,6 +594,17 @@ int game_colonise(GameState *gs, int ship_idx, int island_idx);
  * like every other mutation (MMO_PLAN Phase 1a). */
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island);
 
+/* As above, but buying marine insurance for the voyage: the premium is
+ * paid to the faction at departure, and a raid is compensated on
+ * arrival (MMO_PLAN later phases). Refused if the premium cannot be
+ * paid — insurance you could not afford is not insurance. */
+int game_ship_depart_insured(GameState *gs, int ship_idx, int dest_island);
+
+/* What a voyage would cost to insure right now, in Gold: the lane's
+ * premium applied to the hold's value at the faction's bid. Zero if
+ * there is nothing aboard worth insuring. */
+int game_insurance_quote(const GameState *gs, int ship_idx, int dest_island);
+
 /* Cycle the resource carried on one leg of ship `ship_idx`'s trade
  * route: `leg` 0 is the outbound (A->B) slot, 1 the return (B->A) slot.
  * The cycle runs through every good and RES_COUNT ("carry nothing"). */

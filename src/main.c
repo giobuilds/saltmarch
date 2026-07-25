@@ -423,6 +423,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                             hit == WORLD_HIT_ROUTE_OUT ? 0 : 1);
                 break;
 
+            case WORLD_HIT_INSURE:
+                /* Sail now, insured. The destination is the ship's last
+                 * declared one — the same "select then click an island"
+                 * grammar as an ordinary departure, with the premium
+                 * added (MMO_PLAN later phases). */
+                if (gs->world_selected_ship >= 0) {
+                    const Ship *sel = &gs->ships[gs->world_selected_ship];
+                    int dest = sel->to_island;
+                    if (sel->at_island >= 0 && dest != sel->at_island)
+                        game_ship_depart_insured(gs, gs->world_selected_ship,
+                                                 dest);
+                }
+                break;
+
             case WORLD_HIT_ROUTE_TOGGLE:
                 if (gs->world_selected_ship >= 0)
                     game_ship_toggle_route(gs, gs->world_selected_ship);
@@ -837,6 +851,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       app->feed.ghosts, app->feed.ghost_count, wall_unix_ms(),
+                      &gs->faction,
+                      gs->world_selected_ship >= 0
+                          ? game_insurance_quote(gs, gs->world_selected_ship,
+                                gs->ships[gs->world_selected_ship].to_island)
+                          : 0,
                       gs->input.logical_x, gs->input.logical_y);
 
     /* F10 market debug overlay: the economy test harness. Shows the
