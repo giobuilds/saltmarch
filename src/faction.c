@@ -1,7 +1,42 @@
 /*  faction.c  --  The NPC market counterparty (MMO_PLAN Phase 3)  */
 
 #include "faction.h"
+#include "island.h"   /* the insurance constants, and the lane-count check */
 #include <string.h>
+
+int faction_lane_premium(const Faction *f, int from, int to)
+{
+    if (from < 0 || from >= MAX_ISLANDS_FOR_LANES ||
+        to   < 0 || to   >= MAX_ISLANDS_FOR_LANES)
+        return INSURANCE_PREMIUM_START;
+    return f->lane_premium[from][to];
+}
+
+void faction_lane_experience(Faction *f, int from, int to, int raided)
+{
+    int p, target;
+
+    if (from < 0 || from >= MAX_ISLANDS_FOR_LANES ||
+        to   < 0 || to   >= MAX_ISLANDS_FOR_LANES)
+        return;
+
+    p      = f->lane_premium[from][to];
+    target = raided ? INSURANCE_PREMIUM_MAX : INSURANCE_PREMIUM_MIN;
+
+    /* p += (target - p) >> shift, in integers. The shift is the EMA's
+     * memory: bigger means slower to believe the most recent voyage. */
+    p += (target - p) >> INSURANCE_EMA_SHIFT;
+
+    /* An integer EMA can stall short of its target when the difference
+     * shifts to zero; nudge it so experience always moves the price at
+     * least a little, or a lane could sit at a stale premium forever. */
+    if (raided && p <= f->lane_premium[from][to]) p++;
+    if (!raided && p >= f->lane_premium[from][to]) p--;
+
+    if (p < INSURANCE_PREMIUM_MIN) p = INSURANCE_PREMIUM_MIN;
+    if (p > INSURANCE_PREMIUM_MAX) p = INSURANCE_PREMIUM_MAX;
+    f->lane_premium[from][to] = (int16_t)p;
+}
 
 void faction_init(Faction *f)
 {
@@ -19,6 +54,13 @@ void faction_init(Faction *f)
     f->revert_timer = 0;
     for (i = 0; i < RES_COUNT; i++)
         f->inventory[i] = (i == RES_GOLD) ? 0 : FACTION_BASE_INVENTORY;
+
+    {
+        int a, b;
+        for (a = 0; a < MAX_ISLANDS_FOR_LANES; a++)
+            for (b = 0; b < MAX_ISLANDS_FOR_LANES; b++)
+                f->lane_premium[a][b] = INSURANCE_PREMIUM_START;
+    }
 }
 
 /* Linear elastic quote from a base price and the current inventory:

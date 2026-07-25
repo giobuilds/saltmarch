@@ -67,6 +67,16 @@ typedef struct {
     float    progress;    /* 0..1 along the current voyage (derived)  */
     int   cargo[RES_COUNT];
 
+    /* Marine insurance (MMO_PLAN later phases). Set at departure when
+     * the player paid a premium; cleared on arrival once the outcome
+     * has been settled. `insured_value` is the declared cargo value the
+     * payout is computed from — recorded at departure so a raid cannot
+     * be settled against a hold the pirates already emptied. */
+    int          insured;
+    int32_t      insured_value;
+    int          was_at_sea;     /* set by the tick loop, to spot the
+                                  * frame a voyage ends on           */
+
     /* Phase-4 trade-route fields: declared now so the save format
      * does not change again when routes land. */
     int          route_active;
@@ -105,8 +115,47 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
  * stockpiles without the player being present. `sim_tick_no` is the
  * current world tick, used to test arrival and refresh the cached
  * progress; ships_update does not advance the clock itself. */
+/* ---- piracy (MMO_PLAN later phases) ------------------------
+ * A voyage can be raided. The event is not rolled from an RNG and not
+ * carried in the feed: it is DERIVED from the voyage's own identity —
+ * (world seed, ship, departure tick, lane) — so every client, every
+ * replay and every server computes the same raid for the same voyage
+ * without anything having to tell them about it. The shared feed stays
+ * a dumb log of departures, which is the property MMO_PLAN protects.
+ *
+ * The check happens once, mid-voyage, so a ship that is already home
+ * cannot be robbed retroactively by a late tick.
+ */
+#define PIRACY_CHANCE_PER_MILLE  80    /* 8% of voyages are raided     */
+#define PIRACY_TAKE_NUMERATOR     1    /* pirates take half the hold   */
+#define PIRACY_TAKE_DENOMINATOR   2
+
+/* Would this voyage be raided? Pure: the same arguments always give
+ * the same answer, which is what makes it replayable. Exposed for the
+ * insurance premium (it prices the same risk) and for tests. */
+int voyage_is_raided(uint32_t world_seed, int ship_id, uint64_t departure_tick,
+                     int from, int to);
+
+/* ---- interception (MMO_PLAN later phases) ------------------
+ * PvP that never needs a real-time arbiter. An intercept is a Command
+ * naming a voyage; the engagement is computed from the ordered log plus
+ * a seeded hash, so both players' clients — and the server — reach the
+ * same outcome from the same log without exchanging a shot.
+ *
+ * "Tide-time" is the honest description: you commit to an attack and
+ * the sea resolves it at a tick boundary. There is nothing to aim and
+ * nothing to dodge, which is what keeps the feed a dumb log.
+ */
+#define INTERCEPT_ATTACKER_ODDS   55   /* percent, out of 100          */
+
+/* Does the attacker prevail? Pure and seeded, like the piracy roll. */
+int intercept_attacker_wins(uint32_t world_seed,
+                            int attacker_ship, uint64_t attacker_departure,
+                            int target_ship, uint64_t target_departure);
+
 void ships_update(Ship ships[], int ship_count,
-                  Island islands[], int island_count, uint64_t sim_tick_no);
+                  Island islands[], int island_count, uint64_t sim_tick_no,
+                  uint32_t world_seed);
 
 /* Total units of `res` currently in transit or sitting in holds —
  * the term that makes world conservation checkable: for any resource,

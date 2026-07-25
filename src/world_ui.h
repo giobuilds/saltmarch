@@ -26,6 +26,7 @@
 
 #include <SDL3/SDL.h>
 #include "island.h"
+#include "faction.h"
 #include "ship.h"
 #include "feed.h"   /* Phase 4: ghost voyages from the shared feed */
 
@@ -52,7 +53,8 @@ typedef enum {
     WORLD_HIT_COLONISE = 6,  /* found a colony with the selected ship  */
     WORLD_HIT_ROUTE_OUT   = 7, /* cycle the outbound (A->B) good       */
     WORLD_HIT_ROUTE_BACK  = 8, /* cycle the return (B->A) good         */
-    WORLD_HIT_ROUTE_TOGGLE= 9  /* start/stop the repeating route       */
+    WORLD_HIT_ROUTE_TOGGLE= 9, /* start/stop the repeating route       */
+    WORLD_HIT_INSURE      =10   /* sail the selected ship, insured      */
 } WorldHit;
 
 /* Draw the overview. `islands` is the whole archipelago and
@@ -65,6 +67,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
+                   const Faction *faction, int insurance_quote,
                    int mouse_x, int mouse_y);
 
 /* Hit-test a click. On WORLD_HIT_ISLAND, *out_island is the index. */

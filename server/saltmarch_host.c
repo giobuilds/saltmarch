@@ -23,12 +23,17 @@
  *                      at shutdown)
  *    --ticks N         run N ticks as fast as real time allows, then exit
  *                      — how the tests and CI drive it
+ *    --ghost FILE:N    seed island N with the recorded session in FILE
+ *                      as an NPC neighbour (repeatable). The behaviour
+ *                      is somebody's actual play, replayed — there is
+ *                      no AI in this program.
  *    --quiet           silence the sim's own narration
  *
  *  Ctrl-C (SIGINT) or SIGTERM writes a final checkpoint and exits 0.
  */
 
 #include "game.h"
+#include "ghost_faction.h"
 #include "net.h"
 #include "simclock.h"
 #include "simlog.h"
@@ -110,6 +115,9 @@ int main(int argc, char *argv[])
     uint64_t    run_ticks    = 0;      /* 0 = forever */
     int         quiet        = 0;
     int         i;
+    const char *ghosts[MAX_ISLANDS];
+    int         ghost_islands[MAX_ISLANDS];
+    int         ghost_count  = 0;
 
     GameState  *gs;
     NetSession *ns;
@@ -128,6 +136,17 @@ int main(int argc, char *argv[])
             ckpt_seconds = strtoull(argv[++i], NULL, 10);
         else if (strcmp(argv[i], "--ticks") == 0 && i + 1 < argc)
             run_ticks = strtoull(argv[++i], NULL, 10);
+        else if (strcmp(argv[i], "--ghost") == 0 && i + 1 < argc &&
+                 ghost_count < MAX_ISLANDS) {
+            /* FILE:N — a recorded session and the island to run it on. */
+            char *spec = argv[++i];
+            char *colon = strrchr(spec, ':');
+            if (!colon) { usage(argv[0]); return 2; }
+            *colon = '\0';
+            ghosts[ghost_count]        = spec;
+            ghost_islands[ghost_count] = (int)strtol(colon + 1, NULL, 10);
+            ghost_count++;
+        }
         else if (strcmp(argv[i], "--quiet") == 0)
             quiet = 1;
         else { usage(argv[0]); return 2; }
@@ -163,6 +182,19 @@ int main(int argc, char *argv[])
          * the founding island, and anyone else is granted a fresh one. */
         gs->local_player_id = PLAYER_NONE;
         printf("host: new world seed %u\n", seed);
+    }
+
+    /* Neighbours, if any were asked for. Seeded as ordinary commands in
+     * the log, so they replay, hash and desync-check like players. */
+    for (i = 0; i < ghost_count; i++) {
+        int n = ghost_faction_seed(gs, ghosts[i], ghost_islands[i],
+                                  (uint32_t)(900 + i), 20);
+        if (n < 0)
+            fprintf(stderr, "host: could not seed a ghost from %s\n",
+                    ghosts[i]);
+        else
+            printf("host: island %d seeded with %d commands from %s\n",
+                   ghost_islands[i], n, ghosts[i]);
     }
 
     ns = net_host(port);

@@ -343,23 +343,72 @@ Carbon.
 
 ---
 
-## Later phases (design-complete, do not start until 1–6 are green)
+## Later phases — **all landed**
 
-- **Port charters:** `COLONY_FOUNDING_GOLD` becomes a bid paid TO the
-  faction; charter upkeep is a tick-driven gold drain; lapse relists the
-  island. New players join by bidding on lapsed charters.
-- **Loss mechanics, then insurance:** first NPC piracy events on voyages
-  (deterministic, seeded from `(voyage_id, event_id)` so the feed stays a
-  dumb log), then per-lane premium EMA of insured losses; the premium
-  ticker on world_ui becomes the game's information layer.
-- **Interception / tide-time PvP:** an intercept is a Command referencing a
-  voyage; both sides deterministically compute the engagement from the
-  ordered log plus seeded RNG. The feed/server never becomes a real-time
-  physics arbiter.
-- **Ghost factions from replays:** seed NPC islands with recorded human
-  command logs replayed at offset ticks — believable neighbours, zero AI.
-- **Time-travel debug scrubber:** checkpoint + log = re-simulate to any past
-  tick; UI slider. Solo-dev killer tool.
+Every item below is implemented, with what was actually built and where
+it deviates recorded inline. What remains of this document is the risk
+register and the non-goals.
+
+- **Port charters — DONE.** `COLONY_FOUNDING_GOLD` splits: `CHARTER_BID_GOLD`
+  (150) goes to the faction — the economy's first real gold sink — and the
+  rest becomes the colony's treasury, because an island that cannot pay for
+  a road is stranded. Upkeep is `CHARTER_UPKEEP_GOLD` every
+  `CHARTER_UPKEEP_TICKS`, also to the faction; `CHARTER_GRACE_PAYMENTS`
+  missed and the charter lapses. A lapsed island relists unowned and
+  dormant **with its buildings still standing** — a ruin with a road
+  network is a better prize than bare ground, and it gives an abandoned
+  colony a history. Charter state is hashed and replayed like everything
+  else.
+- **Loss mechanics, then insurance — DONE**, in that order. A raid is
+  `voyage_is_raided(world_seed, ship, departure_tick, from, to)`: derived
+  from the voyage's identity rather than rolled, checked once at the
+  halfway tick, so every client, replay and server computes the same raid
+  without the feed carrying a word about it. Pirates take half the hold.
+  Insurance is bought at departure (`CMD_SHIP_DEPART` slot c), the
+  premium paid to the faction from the port it sails from, the declared
+  value fixed at departure so a payout is computed on what was taken
+  rather than what was left. Every settled policy folds its outcome into
+  a per-lane EMA (`faction_lane_experience`), and world_ui shows the
+  resulting premiums per lane beside the button — a lane whose quote has
+  crept up is a lane that has been losing ships, which is knowledge a
+  player can act on before it is their ship.
+- **Interception / tide-time PvP — DONE.** `CMD_INTERCEPT` names a voyage
+  by (ship, departure tick); the tick binds the reference, so a stale
+  click is refused with `REJ_NO_TARGET` rather than landing on whatever
+  voyage that ship is on now. `intercept_attacker_wins()` is a seeded
+  hash like the piracy roll, so both clients and the server reach the
+  same outcome from the ordered log — the feed never becomes an arbiter.
+  Cargo is the whole stake: the winner takes the loser's hold up to its
+  own capacity, and no ship is ever sunk. Losing a hold is a setback;
+  losing a ship would be an evening's work gone.
+- **Ghost factions from replays — DONE.** `ghost_faction_seed()` reads a
+  `.smlog`, re-addresses its island-scoped commands to another island
+  under an NPC player id, shifts their ticks, and appends them to the
+  ordinary command log — so a neighbour replays, hashes and
+  desync-checks exactly like a player. `saltmarch_host --ghost FILE:N`
+  populates a server's unclaimed islands with recorded neighbours.
+
+  Two honest limits. Commands naming a **ship, escrow or colonisation
+  are dropped**: ship indices are world-scoped, so honouring a recorded
+  "load ship 0" would reach into whatever ship 0 is in THIS world.
+  And **coordinates are advisory** — the recorder's tiles are mostly
+  water on somebody else's island, so each placement snaps to the
+  nearest legal free tile, scanning in a fixed order to stay
+  deterministic. What survives from a recording is the sequence and
+  pace of what was built, not the layout: a script, not a blueprint.
+- **Time-travel debug scrubber — DONE.** F8 freezes the world and puts a
+  bar across the bottom; click anywhere on it to re-simulate to that
+  tick. `game_scrub_to()` copies the log out, rebuilds from the seed and
+  puts the log back, so scrubbing back and then forward lands on the
+  same state — the commands were always there. No checkpoint machinery
+  was needed: re-simulating a few thousand ticks of a 64x64 grid costs
+  milliseconds.
+
+  `command_submit()` refuses everything while scrubbing, and the tick
+  pump does not advance. Acting in the past would append a command
+  stamped behind the log's own head, and "the world is the ordered log"
+  would stop being true — which is the invariant every other feature
+  here stands on.
 
 ## Risk register
 

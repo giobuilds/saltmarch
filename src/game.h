@@ -275,6 +275,16 @@ typedef struct GameState {
      * world and replay the log against it. */
     uint32_t  world_seed;
 
+    /* ---- the scrubber (MMO_PLAN later phases) --------------
+     * A world is (seed, ordered log), so any past tick is reachable by
+     * re-simulating to it. While scrubbing, `scrub_live_tick` remembers
+     * where the world actually is, the sim does not advance, and
+     * command_submit refuses everything — acting in the past would
+     * append commands stamped behind the log's own head and corrupt the
+     * one thing the whole architecture rests on. */
+    int       scrub_active;
+    uint64_t  scrub_live_tick;
+
     /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
      * replay_valid is 1 while the live world is exactly what replaying
      * (world_seed, cmd_log) from tick 0 produces — true after
@@ -408,6 +418,30 @@ GameOverlay game_topmost_overlay(const GameState *gs);
  * drag-placement loop (do not lay road under a popup). */
 int game_overlay_open(const GameState *gs);
 
+/* ---- the time-travel scrubber (MMO_PLAN later phases) ------
+ * Enter scrub mode (remembering the live tick), jump to any past tick,
+ * and leave again (returning to the live tick). Jumping re-simulates
+ * from tick 0 through the existing log, which at a 64x64 grid costs
+ * milliseconds per thousand ticks — no checkpoint machinery needed yet.
+ *
+ * The log is never truncated: scrubbing back and then forward again
+ * lands on the same state, because the commands were always there.
+ *
+ * While scrubbing, the sim is frozen and submissions are refused. The
+ * UI can be driven as normal — hit-testing a past screen works, because
+ * an overlay only ever reads a snapshot — which is what makes this a
+ * debugging tool rather than a screenshot. */
+void game_scrub_begin(GameState *gs);
+void game_scrub_to(GameState *gs, uint64_t tick);
+void game_scrub_end(GameState *gs);
+
+/* 1 while viewing the past. Callers that advance time or submit
+ * commands must check it. */
+int  game_scrubbing(const GameState *gs);
+
+/* The furthest tick the scrubber can reach — the live world's tick. */
+uint64_t game_scrub_max(const GameState *gs);
+
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:
  * current_island is always a valid index. */
@@ -453,6 +487,15 @@ int  game_save(const GameState *gs, const char *path);
 int  game_load(GameState *gs, const char *path);
 
 #define SAVE_FILE_PATH "saltmarch_save.dat"
+
+/* Read just the command log out of a .smlog, without touching the
+ * current world. The caller owns *out_cmds and must free() it. Returns
+ * 1 on success, 0 on a missing, corrupt or wrong-version file.
+ *
+ * Exists for ghost factions (MMO_PLAN later phases): seeding an NPC
+ * island means replaying somebody else's recorded commands, which means
+ * reading their log without becoming their world. */
+int game_load_commands(const char *path, Command **out_cmds, int *out_count);
 
 /* The per-frame client update (camera, hover, drag input, and the
  * accumulator that spends real time on fixed sim ticks) lives in
@@ -594,6 +637,17 @@ int game_colonise(GameState *gs, int ship_idx, int island_idx);
  * like every other mutation (MMO_PLAN Phase 1a). */
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island);
 
+/* As above, but buying marine insurance for the voyage: the premium is
+ * paid to the faction at departure, and a raid is compensated on
+ * arrival (MMO_PLAN later phases). Refused if the premium cannot be
+ * paid — insurance you could not afford is not insurance. */
+int game_ship_depart_insured(GameState *gs, int ship_idx, int dest_island);
+
+/* What a voyage would cost to insure right now, in Gold: the lane's
+ * premium applied to the hold's value at the faction's bid. Zero if
+ * there is nothing aboard worth insuring. */
+int game_insurance_quote(const GameState *gs, int ship_idx, int dest_island);
+
 /* Cycle the resource carried on one leg of ship `ship_idx`'s trade
  * route: `leg` 0 is the outbound (A->B) slot, 1 the return (B->A) slot.
  * The cycle runs through every good and RES_COUNT ("carry nothing"). */
@@ -602,6 +656,14 @@ int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
 /* Toggle ship `ship_idx`'s trade route on or off. When arming, the
  * route repeats the ship's last voyage (from_island -> to_island). */
 int game_ship_toggle_route(GameState *gs, int ship_idx);
+
+/* Attack another player's voyage with one of yours (MMO_PLAN later
+ * phases). Both ships must be at sea; `target_departure` binds the
+ * command to the voyage the player actually saw, so an intercept cannot
+ * land on a later voyage of the same ship. The engagement is computed
+ * deterministically inside the sim — there is nothing to aim. */
+int game_intercept(GameState *gs, int my_ship, int target_ship,
+                   uint64_t target_departure);
 
 /* ---- Phase 5: ownership-era commands ----------------------- */
 

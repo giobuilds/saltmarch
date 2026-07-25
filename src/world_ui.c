@@ -149,6 +149,13 @@ static SDL_FRect route_btn_rect(int screen_w, int screen_h, int which)
     return r;
 }
 
+/* The insure-and-sail button, under the route controls. */
+static SDL_FRect insure_btn_rect(int screen_w, int screen_h)
+{
+    SDL_FRect r = route_btn_rect(screen_w, screen_h, 3);
+    return r;
+}
+
 static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
 {
     SDL_FRect p = panel_rect(screen_w, screen_h);
@@ -164,6 +171,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
+                   const Faction *faction, int insurance_quote,
                    int mouse_x, int mouse_y)
 {
     SDL_FRect sea = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
@@ -416,6 +424,56 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            docked ? txt : dim);
         }
 
+        /* --- Insurance (MMO_PLAN later phases) --------------
+         * The premium and the lane's history, side by side: a quote
+         * that has crept up IS the news that this lane has been losing
+         * ships. The faction's books are the game's information layer,
+         * so they are shown where the decision is made. */
+        {
+            SDL_FRect ib     = insure_btn_rect(screen_w, screen_h);
+            int       docked = sh->at_island >= 0;
+            int       affordable = docked && insurance_quote > 0 &&
+                        islands[sh->at_island].stockpile.amount[RES_GOLD]
+                            >= insurance_quote;
+            SDL_Color lane_col = { 150, 175, 200, 255 };
+
+            SDL_SetRenderDrawColor(renderer, affordable ? 46 : 30,
+                                   affordable ? 66 : 40,
+                                   affordable ? 52 : 44, 255);
+            SDL_RenderFillRect(renderer, &ib);
+            SDL_SetRenderDrawColor(renderer, affordable ? 120 : 70,
+                                   affordable ? 165 : 90,
+                                   affordable ? 130 : 100, 255);
+            SDL_RenderRect(renderer, &ib);
+
+            if (docked && insurance_quote > 0)
+                SDL_snprintf(buf, sizeof(buf), "Sail insured  (%d Gold)",
+                             insurance_quote);
+            else if (docked)
+                SDL_snprintf(buf, sizeof(buf), "Sail insured  (empty hold)");
+            else
+                SDL_snprintf(buf, sizeof(buf), "Sail insured  (at sea)");
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(ib.x + 8.0f), (int)(ib.y + 4.0f),
+                           affordable ? txt : dim);
+
+            /* The lane ticker: what the underwriter thinks of each
+             * route out of here, in tenths of a percent. */
+            if (faction && docked) {
+                int to, ty = (int)(ib.y + ib.h + 6.0f);
+                for (to = 0; to < island_count; to++) {
+                    if (to == sh->at_island) continue;
+                    SDL_snprintf(buf, sizeof(buf), "%s -> %s   %d.%d%%",
+                                 islands[sh->at_island].name, islands[to].name,
+                                 faction_lane_premium(faction, sh->at_island, to) / 10,
+                                 faction_lane_premium(faction, sh->at_island, to) % 10);
+                    font_draw_text(renderer, FONT_SMALL, buf,
+                                   (int)(ib.x + 8.0f), ty, lane_col);
+                    ty += 16;
+                }
+            }
+        }
+
         /* --- Trade route ------------------------------------ */
         {
             static const char *NONE = "(nothing)";
@@ -529,6 +587,8 @@ WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
             return WORLD_HIT_ROUTE_BACK;
         if (point_in(route_btn_rect(screen_w, screen_h, 2), mouse_x, mouse_y))
             return WORLD_HIT_ROUTE_TOGGLE;
+        if (point_in(insure_btn_rect(screen_w, screen_h), mouse_x, mouse_y))
+            return WORLD_HIT_INSURE;
         for (res = 0; res < RES_COUNT; res++) {
             if (point_in(cargo_btn_rect(screen_w, screen_h, res, 0),
                         mouse_x, mouse_y)) {

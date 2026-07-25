@@ -26,7 +26,8 @@ static const char *const KIND_NAMES[CMD_COUNT] = {
     "PLACE_BUILDING", "PLACE_ROAD", "DEMOLISH", "SELL_RESOURCE",
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
     "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
-    "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING"
+    "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING",
+    "INTERCEPT"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -105,6 +106,10 @@ void command_describe(const Command *c, char *out, size_t n)
     case CMD_SET_DOCKING:
         snprintf(out, n, "SET_DOCKING  island %d  allow %d", c->a, c->b);
         break;
+    case CMD_INTERCEPT:
+        snprintf(out, n, "INTERCEPT  ship %d -> ship %d  (departed %d)",
+                 c->a, c->b, c->c);
+        break;
     default:
         snprintf(out, n, "%s  %d %d %d %d", command_kind_name(c->kind),
                  c->a, c->b, c->c, c->d);
@@ -137,6 +142,13 @@ static int cmd_log_push(GameState *gs, const Command *c)
 int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
+
+    /* Nothing may be submitted while viewing the past (MMO_PLAN's
+     * scrubber). A command stamped for a tick the log has already
+     * passed would be inserted behind its own head, and "the world is
+     * the ordered log" would stop being true — which is the one
+     * invariant everything else in this architecture stands on. */
+    if (gs->scrub_active) return 0;
 
     /* Stamp the sequence before routing, so a command handed to a co-op
      * host carries it there and back and the UI recognises its own

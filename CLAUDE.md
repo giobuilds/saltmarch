@@ -85,6 +85,8 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
 - `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
 - `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
+- `ghost_faction.c/h` — seeds an NPC island by re-addressing a recorded human session (MMO_PLAN later phases); coordinates are snapped, ship-scoped commands dropped
+- `scrub_view.c/h` — the F8 time-travel bar; `game_scrub_*` in game.h freezes the sim and refuses submissions while viewing the past
 - `intent.h` — the recorded input stream: each click carries the sim tick its frame's snapshot was drawn from, which is what makes replaying it meaningful
 - `replay_ui.c` — the record/replay CLI plus the UI harness that re-drives recorded clicks through the real builders and hit-tests
 - `fx_reject.c/h` — correlates submitted commands with their results by `{player_id, seq}` and raises a flash at the tile/widget that emitted a rejected one

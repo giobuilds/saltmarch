@@ -67,6 +67,7 @@ set(SALTMARCH_SIM_SOURCES
     src/faction.c
     src/replay.c
     src/simlog.c
+    src/ghost_faction.c
 )
 
 add_library(saltmarch_sim STATIC ${SALTMARCH_SIM_SOURCES})
@@ -97,6 +98,7 @@ add_library(saltmarch_ui STATIC
     src/island_bar.c
     src/confirm_view.c
     src/fx_reject.c
+    src/scrub_view.c
     src/replay_ui.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)

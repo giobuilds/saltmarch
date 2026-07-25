@@ -32,6 +32,8 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
      * closed harbors are an owner's explicit choice, not a default. */
     isl->owner           = 0;
     isl->docking_allowed = 1;
+    isl->charter_timer   = 0;
+    isl->charter_arrears = 0;
     /* escrow[] was zeroed by the memset above. */
 
     sim_log("Island '%s' generated (seed=%u, profile=%d, settled=%d)",

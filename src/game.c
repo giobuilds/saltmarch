@@ -61,6 +61,63 @@ void game_set_current_island(GameState *gs, int idx)
      * would dismiss the overlay the moment you used it. */
 }
 
+/* ---- the scrubber (MMO_PLAN later phases) ------------------ */
+
+int game_scrubbing(const GameState *gs) { return gs->scrub_active; }
+
+uint64_t game_scrub_max(const GameState *gs)
+{
+    return gs->scrub_active ? gs->scrub_live_tick : gs->sim_tick_no;
+}
+
+void game_scrub_begin(GameState *gs)
+{
+    if (gs->scrub_active) return;
+    gs->scrub_active    = 1;
+    gs->scrub_live_tick = gs->sim_tick_no;
+}
+
+void game_scrub_to(GameState *gs, uint64_t tick)
+{
+    Command *saved;
+    int      count;
+    uint32_t seed;
+
+    if (!gs->scrub_active) return;
+    if (tick > gs->scrub_live_tick) tick = gs->scrub_live_tick;
+
+    /* The log is the world's history and must survive the trip. Copy it
+     * out, rebuild from the seed, put it back: install_world resets the
+     * log to what it is given, so handing it the live log keeps every
+     * later command available for scrubbing forward again. */
+    count = gs->cmd_count;
+    seed  = gs->world_seed;
+    saved = (Command *)malloc(sizeof(Command) * (size_t)(count > 0 ? count : 1));
+    if (!saved) return;
+    if (count > 0) memcpy(saved, gs->cmd_log, sizeof(Command) * (size_t)count);
+
+    game_install_world(gs, seed, tick, saved, count);
+    free(saved);
+
+    /* install_world cleared these; scrubbing is a view, not a new
+     * world, so restore the fact that we are in it. */
+    gs->scrub_active = 1;
+    /* scrub_live_tick survives install_world (it is not world state),
+     * but be explicit: the live head is wherever we came from. */
+    if (gs->scrub_live_tick < tick) gs->scrub_live_tick = tick;
+}
+
+void game_scrub_end(GameState *gs)
+{
+    uint64_t live;
+
+    if (!gs->scrub_active) return;
+
+    live = gs->scrub_live_tick;
+    game_scrub_to(gs, live);
+    gs->scrub_active = 0;
+}
+
 /* ---- the overlay arbiter (UI_PLAN Phase 4) ----------------- */
 GameOverlay game_topmost_overlay(const GameState *gs)
 {
@@ -200,6 +257,8 @@ GameState *game_init(void)
 
     gs->cmd_seq_next    = 1u;
     gs->cmd_seq_last    = 0u;
+    gs->scrub_active    = 0;
+    gs->scrub_live_tick = 0;
     gs->result_count    = 0;
     gs->local_player_id = 1u;
     gs->net             = NULL;   /* attached by net_attach when hosting/joining */
@@ -438,6 +497,42 @@ int game_load(GameState *gs, const char *path)
     return 1;
 }
 
+int game_load_commands(const char *path, Command **out_cmds, int *out_count)
+{
+    FILE       *f = fopen(path, "rb");
+    SaveHeader  hdr;
+    Command    *cmds;
+    long        size_l;
+
+    *out_cmds  = NULL;
+    *out_count = 0;
+
+    if (!f) return 0;
+
+    if (fseek(f, 0, SEEK_END) != 0 || (size_l = ftell(f)) < 0 ||
+        fseek(f, 0, SEEK_SET) != 0) { fclose(f); return 0; }
+    if ((size_t)size_l < sizeof(hdr)) { fclose(f); return 0; }
+
+    if (fread(&hdr, sizeof(hdr), 1, f) != 1) { fclose(f); return 0; }
+    if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION ||
+        hdr.cmd_count < 0) { fclose(f); return 0; }
+
+    if (hdr.cmd_count == 0) { fclose(f); return 1; }
+
+    cmds = (Command *)malloc(sizeof(Command) * (size_t)hdr.cmd_count);
+    if (!cmds) { fclose(f); return 0; }
+    if (fread(cmds, sizeof(Command) * (size_t)hdr.cmd_count, 1, f) != 1) {
+        free(cmds);
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+
+    *out_cmds  = cmds;
+    *out_count = hdr.cmd_count;
+    return 1;
+}
+
 /* ---- game_install_world -----------------------------------
  * The (seed, log, tick) -> world constructor shared by game_load and
  * the net layer's join/resync path. See game.h. */
@@ -453,6 +548,109 @@ int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
         sim_run_one_tick(gs);
 
     return 1;
+}
+
+/* ---- interception (MMO_PLAN later phases) ------------------
+ * The engagement, resolved from the log. Cargo is the stake: the winner
+ * takes what the loser was carrying, up to its own hold's capacity, and
+ * a failed attack costs the attacker the same way. Nothing is destroyed
+ * that was not aboard, and no ship is ever sunk — losing a hold is a
+ * setback, losing a ship would be an evening's work gone. */
+static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
+                                  uint64_t target_departure, uint32_t player)
+{
+    Ship *mine, *target;
+    int   attacker_wins, r;
+    Ship *winner, *loser;
+
+    if (my_idx < 0 || my_idx >= gs->ship_count)         return REJ_UNAVAILABLE;
+    if (target_idx < 0 || target_idx >= gs->ship_count) return REJ_NO_TARGET;
+    if (my_idx == target_idx)                           return REJ_NO_TARGET;
+
+    mine   = &gs->ships[my_idx];
+    target = &gs->ships[target_idx];
+
+    if (!mine->active || mine->at_island >= 0)     return REJ_UNAVAILABLE;
+    if (!target->active || target->at_island >= 0) return REJ_NO_TARGET;
+
+    /* Your own convoy is not a target. */
+    if (target->owner == player) return REJ_NO_TARGET;
+
+    /* The reference is bound to a voyage, not a ship: if the target
+     * has sailed again since the attacker committed, this command names
+     * something that no longer exists. */
+    if (target->departure_tick != target_departure) return REJ_NO_TARGET;
+
+    attacker_wins = intercept_attacker_wins(gs->world_seed, my_idx,
+                                            mine->departure_tick,
+                                            target_idx,
+                                            target->departure_tick);
+    winner = attacker_wins ? mine   : target;
+    loser  = attacker_wins ? target : mine;
+
+    for (r = 0; r < RES_COUNT; r++) {
+        int room, take;
+        if (loser->cargo[r] <= 0) continue;
+        room = SHIP_CARGO_CAPACITY - winner->cargo[r];
+        if (room <= 0) continue;
+        take = loser->cargo[r] < room ? loser->cargo[r] : room;
+        loser->cargo[r]  -= take;
+        winner->cargo[r] += take;
+    }
+
+    sim_log("Ship %d intercepted ship %d at sea — %s prevailed",
+            my_idx, target_idx, attacker_wins ? "the attacker"
+                                              : "the defender");
+    return REJ_OK;
+}
+
+int game_intercept(GameState *gs, int my_ship, int target_ship,
+                   uint64_t target_departure)
+{
+    Command c = {0};
+    c.kind = CMD_INTERCEPT;
+    c.a    = my_ship;
+    c.b    = target_ship;
+    c.c    = (int32_t)target_departure;
+    return command_submit(gs, &c);
+}
+
+/* ---- charters (MMO_PLAN later phases) ----------------------
+ * One island's upkeep, once per tick. An island that cannot pay
+ * accrues arrears; enough of them and the charter lapses, which
+ * relists the island: unowned and dormant, buildings intact, ready for
+ * the next charter. That is how a persistent world hands islands to
+ * new players without anyone administering it. */
+static void sim_charter_tick(GameState *gs, int island)
+{
+    Island *isl = &gs->islands[island];
+
+    if (!isl->settled || isl->owner == PLAYER_NONE) return;
+
+    if (++isl->charter_timer < CHARTER_UPKEEP_TICKS) return;
+    isl->charter_timer = 0;
+
+    if (isl->stockpile.amount[RES_GOLD] >= CHARTER_UPKEEP_GOLD) {
+        stockpile_add(&isl->stockpile, RES_GOLD, -CHARTER_UPKEEP_GOLD);
+        gs->faction.gold += CHARTER_UPKEEP_GOLD;
+        isl->charter_arrears = 0;
+        return;
+    }
+
+    isl->charter_arrears++;
+    sim_log("[%s] charter payment missed (%d of %d)", isl->name,
+            isl->charter_arrears, CHARTER_GRACE_PAYMENTS);
+
+    if (isl->charter_arrears < CHARTER_GRACE_PAYMENTS) return;
+
+    /* Lapsed. The buildings stay standing — an abandoned colony is a
+     * better prize than bare ground, and a ruin with a road network
+     * tells a story the map otherwise cannot. */
+    sim_log("[%s] CHARTER LAPSED — the island is relisted", isl->name);
+    isl->settled         = 0;
+    isl->owner           = PLAYER_NONE;
+    isl->charter_arrears = 0;
+    isl->charter_timer   = 0;
 }
 
 /* ---- sim_run_one_tick -----------------------------------
@@ -492,14 +690,55 @@ void sim_run_one_tick(GameState *gs)
     for (i = 0; i < MAX_ISLANDS; i++)
         island_update(&gs->islands[i]);
 
-    /* 3. Voyages advance independently of any island. */
+    /* 3. Voyages advance independently of any island. Insurance is
+     * settled either side of the move: what was at sea before, and
+     * what has arrived after. */
+    {
+        int s2;
+        for (s2 = 0; s2 < gs->ship_count; s2++)
+            gs->ships[s2].was_at_sea = (gs->ships[s2].at_island < 0);
+    }
     ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
-                 gs->sim_tick_no);
+                 gs->sim_tick_no, gs->world_seed);
 
-    /* 4. The market drifts back toward baseline (price recovery). */
+    /* Anything that just made port with a policy on it gets settled,
+     * and the lane's premium learns from the outcome either way. */
+    for (i = 0; i < gs->ship_count; i++) {
+        Ship *sh = &gs->ships[i];
+        int   raided;
+
+        if (!sh->active || !sh->insured) continue;
+        if (!sh->was_at_sea || sh->at_island < 0) continue;   /* still out */
+
+        raided = voyage_is_raided(gs->world_seed, i, sh->departure_tick,
+                                  sh->from_island, sh->to_island);
+        if (raided) {
+            int payout = sh->insured_value / 2;   /* pirates took half */
+            if (payout > gs->faction.gold) payout = gs->faction.gold;
+            if (payout > 0) {
+                gs->faction.gold -= payout;
+                stockpile_add(&gs->islands[sh->at_island].stockpile,
+                              RES_GOLD, payout);
+                sim_log("Insurance paid %d Gold on ship %d's raided voyage",
+                        payout, i);
+            }
+        }
+        faction_lane_experience(&gs->faction, sh->from_island, sh->to_island,
+                                raided);
+        sh->insured       = 0;
+        sh->insured_value = 0;
+    }
+
+    /* 4. Charters fall due (MMO_PLAN later phases). Before the market
+     * tick so an island that just paid its upkeep is priced against the
+     * same faction gold every other trade this tick saw. */
+    for (i = 0; i < MAX_ISLANDS; i++)
+        sim_charter_tick(gs, i);
+
+    /* 5. The market drifts back toward baseline (price recovery). */
     faction_tick(&gs->faction);
 
-    /* 5. Advance the world clock. */
+    /* 6. Advance the world clock. */
     gs->sim_tick_no++;
 }
 
@@ -543,6 +782,8 @@ uint64_t sim_hash(const GameState *gs)
         const Island *isl = &gs->islands[i];
 
         fnv_bytes(&h, &isl->settled, sizeof(isl->settled));
+        fnv_bytes(&h, &isl->charter_timer, sizeof(isl->charter_timer));
+        fnv_bytes(&h, &isl->charter_arrears, sizeof(isl->charter_arrears));
         fnv_bytes(&h, isl->stockpile.amount, sizeof(isl->stockpile.amount));
         fnv_bytes(&h, &isl->stockpile.capacity, sizeof(isl->stockpile.capacity));
         /* Phase 5: ownership and the harbor airlock are world state. */
@@ -589,12 +830,15 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->route_res_ba, sizeof(sh->route_res_ba));
         fnv_bytes(&h, &sh->route_qty, sizeof(sh->route_qty));
         fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
+        fnv_bytes(&h, &sh->insured, sizeof(sh->insured));
+        fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
     }
 
     /* The market is world state too (Phase 3). */
     fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
     fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
+    fnv_bytes(&h, gs->faction.lane_premium, sizeof(gs->faction.lane_premium));
 
     /* The price history too (UI_PLAN M3). It is state the sim produces
      * and the UI renders, so a replay that reproduced everything except
@@ -1249,23 +1493,89 @@ void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
  * Was an inline mutation in main.c's world overlay; now a command like
  * every other. The ship must be docked somewhere other than its
  * destination. */
-static int sim_ship_depart(GameState *gs, int ship_idx, int dest)
+static RejectReason sim_ship_depart(GameState *gs, int ship_idx, int dest,
+                                    int insure)
 {
     Ship *sh;
+    int   premium = 0;
 
-    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
-    if (dest < 0 || dest >= MAX_ISLANDS) return 0;
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return REJ_UNAVAILABLE;
+    if (dest < 0 || dest >= MAX_ISLANDS) return REJ_UNAVAILABLE;
     sh = &gs->ships[ship_idx];
-    if (!sh->active) return 0;
-    if (sh->at_island < 0) return 0;         /* already at sea       */
-    if (sh->at_island == dest) return 0;     /* nowhere to go        */
+    if (!sh->active) return REJ_UNAVAILABLE;
+    if (sh->at_island < 0) return REJ_UNAVAILABLE;   /* already at sea */
+    if (sh->at_island == dest) return REJ_UNAVAILABLE;
+
+    /* The premium is charged before the ship leaves, from the island it
+     * is leaving — an underwriter is paid up front or not at all. */
+    if (insure) {
+        Island *home = &gs->islands[sh->at_island];
+        premium = game_insurance_quote(gs, ship_idx, dest);
+        if (premium > 0) {
+            if (home->stockpile.amount[RES_GOLD] < premium)
+                return REJ_CANT_AFFORD;
+            stockpile_add(&home->stockpile, RES_GOLD, -premium);
+            gs->faction.gold += premium;
+        }
+    }
+
+    /* The declared value is fixed here, at departure. Settling a raid
+     * against the hold as it arrives would pay out on what the pirates
+     * left rather than what they took. */
+    sh->insured       = insure ? 1 : 0;
+    sh->insured_value = 0;
+    if (insure) {
+        int r;
+        for (r = 0; r < RES_COUNT; r++) {
+            if (sh->cargo[r] <= 0) continue;
+            sh->insured_value += (r == (int)RES_GOLD)
+                ? sh->cargo[r]
+                : sh->cargo[r] * faction_bid(&gs->faction, (ResourceType)r);
+        }
+    }
 
     sh->from_island    = sh->at_island;
     sh->to_island      = dest;
     sh->at_island      = -1;                 /* now at sea           */
     sh->departure_tick = gs->sim_tick_no;    /* fixes the whole voyage */
     sh->progress       = 0.0f;
-    return 1;
+    return REJ_OK;
+}
+
+int game_insurance_quote(const GameState *gs, int ship_idx, int dest_island)
+{
+    const Ship *sh;
+    int         value = 0, r, premium, cost;
+
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
+    sh = &gs->ships[ship_idx];
+    if (!sh->active || sh->at_island < 0) return 0;
+
+    /* Declared value is what the faction would PAY for the hold — the
+     * price it would have to make good, not the price the owner hoped
+     * for. Gold aboard is worth its face. */
+    for (r = 0; r < RES_COUNT; r++) {
+        if (sh->cargo[r] <= 0) continue;
+        value += (r == (int)RES_GOLD)
+                 ? sh->cargo[r]
+                 : sh->cargo[r] * faction_bid(&gs->faction, (ResourceType)r);
+    }
+    if (value <= 0) return 0;
+
+    premium = faction_lane_premium(&gs->faction, sh->at_island, dest_island);
+    cost    = (value * premium) / 1000;
+    if (cost < INSURANCE_MIN_PREMIUM_GOLD) cost = INSURANCE_MIN_PREMIUM_GOLD;
+    return cost;
+}
+
+int game_ship_depart_insured(GameState *gs, int ship_idx, int dest_island)
+{
+    Command c = {0};
+    c.kind = CMD_SHIP_DEPART;
+    c.a    = ship_idx;
+    c.b    = dest_island;
+    c.c    = 1;                     /* insure this voyage */
+    return command_submit(gs, &c);
 }
 
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island)
@@ -1295,21 +1605,33 @@ static int sim_colonise(GameState *gs, int ship_idx, int island_idx,
     if (!sh->active) return 0;
     if (sh->at_island != island_idx) return 0;     /* must be there   */
     if (isl->settled) return 0;                    /* already claimed */
+    if (isl->owner != PLAYER_NONE && isl->owner != player) return 0;
     if (sh->cargo[RES_GOLD] < COLONY_FOUNDING_GOLD) return 0;
 
-    /* The grant physically leaves the hold and becomes the colony's
-     * treasury — without it the new island could not pay for so much
-     * as a road, since every cost is denominated in its own Gold. */
+    /* The founding gold leaves the hold and splits two ways: the
+     * charter bid goes to the faction (the plan's "a bid paid TO the
+     * faction" — and the economy's first real gold sink), the rest
+     * becomes the colony's treasury. Without that remainder the new
+     * island could not pay for so much as a road, since every cost is
+     * denominated in its own Gold. */
     sh->cargo[RES_GOLD] -= COLONY_FOUNDING_GOLD;
+    gs->faction.gold    += CHARTER_BID_GOLD;
 
+    /* A relisted island keeps whatever its last holder built; only the
+     * treasury is fresh. Ruins with a road network are a better prize
+     * than bare ground, and it gives an abandoned colony a history. */
     stockpile_init(&isl->stockpile);
-    stockpile_add(&isl->stockpile, RES_GOLD, COLONY_FOUNDING_GOLD);
-    isl->settled = 1;
-    isl->owner   = player;
+    stockpile_add(&isl->stockpile, RES_GOLD,
+                  COLONY_FOUNDING_GOLD - CHARTER_BID_GOLD);
+    isl->settled         = 1;
+    isl->owner           = player;
+    isl->charter_timer   = 0;
+    isl->charter_arrears = 0;
     camera_init(&isl->camera, SCREEN_W, SCREEN_H, MAP_COLS, MAP_ROWS);
 
-    sim_log("Colony founded on %s with %d Gold (player %u)",
-            isl->name, COLONY_FOUNDING_GOLD, player);
+    sim_log("Charter bought on %s: %d Gold to the faction, %d Gold "
+            "treasury (player %u)", isl->name, CHARTER_BID_GOLD,
+            COLONY_FOUNDING_GOLD - CHARTER_BID_GOLD, player);
     return 1;
 }
 
@@ -1587,7 +1909,7 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
                                  c->player_id);
     case CMD_SHIP_DEPART:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_ship_depart(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_ship_depart(gs, c->a, c->b, c->c);
     case CMD_COLONISE:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_colonise(gs, c->a, c->b, c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
@@ -1609,6 +1931,13 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c,
                                (uint32_t)c->d);
+    case CMD_INTERCEPT:
+        /* Your ship, anyone else's voyage. Ownership of the ATTACKER is
+         * checked here; the target's ownership is checked in the body,
+         * where "not yours" is the whole point rather than a rejection. */
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_intercept(gs, c->a, c->b, (uint64_t)(uint32_t)c->c,
+                             c->player_id);
     case CMD_SET_DOCKING:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_set_docking(gs, c->a, c->b);
