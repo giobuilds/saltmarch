@@ -37,7 +37,7 @@
 
 /* Enough for any plausible goods table; a view is a value type, so this
  * is a stack-sized bound rather than a design limit. */
-#define EXCHANGE_MAX_ROWS  64
+#define EXCHANGE_MAX_ROWS  96
 #define EXCHANGE_NAME_LEN  16
 #define EXCHANGE_TITLE_LEN 32
 

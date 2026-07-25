@@ -147,6 +147,16 @@ void island_update(Island *isl);
  * a Warehouse built on one island would raise another's caps. */
 void island_recompute_storage_capacity(Island *isl);
 
+/* Is an active, ROAD-CONNECTED building of `type` standing here?
+ * BUILDING_NONE answers 1 ("nothing required"), so a caller with an
+ * optional prerequisite need not special-case it.
+ *
+ * Defined in game.c rather than island.c because it is the sim half of
+ * tier_upgrade_check()'s prerequisite (population.h) — the one part of
+ * the upgrade rule the shared function cannot answer, since the sim
+ * reads Island and the UI reads a snapshot. */
+int island_has_building(const Island *isl, BuildingType type);
+
 /* A stamp over the harbour quay's contents and its docking flag
  * (UI_PLAN M5). The escrow panel shows a state; the command it emits
  * carries this back; sim_apply refuses if the quay has changed since —

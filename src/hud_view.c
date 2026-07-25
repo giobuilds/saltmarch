@@ -111,8 +111,8 @@ void hud_build(UiList *out, const HudView *view, const UiState *st,
 
     /* Which tab. Clamped rather than trusted: hud_category is client
      * state that outlives a def table being re-categorised. */
-    chosen = st ? (int)st->hud_category : BCAT_GATHERING;
-    if (chosen <= BCAT_NONE || chosen >= BCAT_COUNT) chosen = BCAT_GATHERING;
+    chosen = st ? (int)st->hud_category : BCAT_FARMING;
+    if (chosen <= BCAT_NONE || chosen >= BCAT_COUNT) chosen = BCAT_FARMING;
 
     /* ---- the tab strip ---------------------------------- */
     {

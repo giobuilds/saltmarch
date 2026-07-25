@@ -106,29 +106,39 @@ int main(void)
         CHECK(ok, "resource categories have distinct names");
     }
 
-    /* A category is only useful if it actually groups: every one of
-     * them must hold at least one building, or it is a tab that opens
-     * onto nothing. */
+    /* A category is only useful if it actually groups. Every one of
+     * them held a building until SUPPLY_CHAIN Phase 2 widened the set
+     * ahead of the content that fills it: Factories is empty until the
+     * foundries arrive in Phase 4, and the HUD already gives an empty
+     * category no tab. So the assertion is now that exactly the
+     * categories we know to be empty are empty — which fails both when
+     * one is forgotten and when Phase 4 fills Factories without
+     * updating this list. */
     {
-        int c, empty = 0;
+        int c, unexpected = 0;
         for (c = 1; c < BCAT_COUNT; c++) {
-            int n = 0, t;
+            int n = 0, t, expected_empty = (c == BCAT_FACTORY);
             for (t = 0; t < BUILDING_TYPE_COUNT; t++)
                 if ((int)BUILDING_DEFS[t].category == c &&
                     BUILDING_DEFS[t].hud_placeable) n++;
-            if (n == 0) {
-                printf("  FAIL: category '%s' has no placeable buildings\n",
-                       building_category_name((BuildingCategory)c));
-                empty++;
+            if ((n == 0) != expected_empty) {
+                printf("  FAIL: category '%s' has %d placeable buildings\n",
+                       building_category_name((BuildingCategory)c), n);
+                unexpected++;
             }
         }
-        CHECK(empty == 0, "every category has at least one placeable building");
+        CHECK(unexpected == 0,
+              "every category holds buildings, except Factories until Phase 4");
     }
 
     /* A couple of pinned assignments, so a careless re-categorisation
      * shows up as a failing test rather than a reshuffled HUD. */
-    CHECK(BUILDING_DEFS[BUILDING_BREWERY].category == BCAT_PRODUCTION,
-          "the Brewery is Production, not Gathering");
+    CHECK(BUILDING_DEFS[BUILDING_BREWERY].category == BCAT_WORKSHOP,
+          "the Brewery is a workshop, not a field");
+    CHECK(BUILDING_DEFS[BUILDING_LUMBERJACK].category == BCAT_EXTRACTION,
+          "the Lumberjack takes something out of the land");
+    CHECK(BUILDING_DEFS[BUILDING_FARM].category == BCAT_FARMING,
+          "the Farm grows something");
     CHECK(BUILDING_DEFS[BUILDING_HARBOR].category == BCAT_MARITIME,
           "the Harbor is Maritime");
     CHECK(RESOURCE_CATEGORIES[RES_BEER] == RCAT_REFINED,

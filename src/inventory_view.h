@@ -21,7 +21,7 @@
 #include "ui_kit.h"
 #include "ui_snapshot.h"
 
-#define INVENTORY_MAX_ROWS 64
+#define INVENTORY_MAX_ROWS 96
 #define INVENTORY_NAME_LEN 16
 
 typedef struct {

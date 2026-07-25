@@ -137,6 +137,10 @@ typedef enum {
      * building they are holding. */
     REJ_NEEDS_CROP,           /* wrong crop for this soil               */
     REJ_NEEDS_DEPOSIT,        /* no such mineral under or beside it     */
+    /* Upgrading a house is gated on being able to supply the tier it
+     * would become (SUPPLY_CHAIN Phase 2), not on gold alone. */
+    REJ_NEEDS_GOODS,          /* the next tier's needs aren't in stock  */
+    REJ_NEEDS_BUILDING,       /* the island lacks a required building   */
     REJ_NEEDS_COAST,          /* no adjacent water                      */
     REJ_NEEDS_FOREST,         /* no adjacent forest                     */
     REJ_OCCUPIED,             /* another building is already there      */

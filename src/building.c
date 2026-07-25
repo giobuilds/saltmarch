@@ -66,12 +66,12 @@
 const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     [BUILDING_FISHERS_HUT] = {
         .name = "Fisher's Hut",
-        .category = BCAT_GATHERING,
+        .category = BCAT_FARMING,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_NEEDS_COAST,
         .col_r = 210, .col_g = 180, .col_b = 100,
         .produces = RES_FISH, .produce_amt = 1,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 6.0f,
         .cost = { [RES_GOLD] = 60 },
         .hud_placeable = 1
@@ -83,31 +83,31 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 160, .col_g = 100, .col_b = 60,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
         .hud_placeable = 1
     },
     [BUILDING_FARM] = {
         .name = "Farm",
-        .category = BCAT_GATHERING,
+        .category = BCAT_FARMING,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_NEEDS_FERTILE,
         .col_r = 80, .col_g = 160, .col_b = 50,
         .produces = RES_GRAIN, .produce_amt = 1,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 8.0f,
         .cost = { [RES_GOLD] = 80 },
         .hud_placeable = 1
     },
     [BUILDING_LUMBERJACK] = {
         .name = "Lumberjack",
-        .category = BCAT_GATHERING,
+        .category = BCAT_EXTRACTION,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_NEEDS_FOREST,
         .col_r = 120, .col_g = 80, .col_b = 40,
         .produces = RES_WOOD, .produce_amt = 1,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 5.0f,
         .cost = { [RES_GOLD] = 60 },
         .hud_placeable = 1
@@ -120,7 +120,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 210, .col_g = 190, .col_b = 160,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 15, [RES_GOLD] = 80 },
         .hud_placeable = 1
@@ -137,7 +137,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 110, .col_g = 105, .col_b = 100,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { 0 },
         .hud_placeable = 1
@@ -152,7 +152,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 200, .col_g = 140, .col_b = 60,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
         .hud_placeable = 1
@@ -165,37 +165,38 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * to tick at all (all-or-nothing, see game_tick_buildings, game.c). */
     [BUILDING_HOP_FARM] = {
         .name = "Hop Farm",
-        .category = BCAT_GATHERING,
+        .category = BCAT_FARMING,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
         .needs_fertility = FERTILE_HOP,
         .col_r = 90, .col_g = 150, .col_b = 60,
         .produces = RES_HOPS, .produce_amt = 1,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 8.0f,
         .cost = { [RES_GOLD] = 80 },
         .hud_placeable = 1
     },
     [BUILDING_MALTHOUSE] = {
         .name = "Malthouse",
-        .category = BCAT_PRODUCTION,
+        .category = BCAT_WORKSHOP,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 170, .col_g = 140, .col_b = 90,
         .produces = RES_MALT, .produce_amt = 1,
-        .consumes = { RES_GRAIN, RES_HOPS }, .consume_amt = { 1, 1 },
+        .consumes = { RES_GRAIN, RES_HOPS, RES_COUNT }, .consume_amt = { 1, 1, 0 },
         .tick_seconds = 10.0f,
         .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
         .hud_placeable = 1
     },
     [BUILDING_BREWERY] = {
         .name = "Brewery",
-        .category = BCAT_PRODUCTION,
+        .category = BCAT_WORKSHOP,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 190, .col_g = 150, .col_b = 70,
         .produces = RES_BEER, .produce_amt = 1,
-        .consumes = { RES_MALT, RES_COUNT }, .consume_amt = { 1, 0 },
+        .consumes = { RES_MALT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
         .tick_seconds = 8.0f,
         .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
         .hud_placeable = 1
@@ -210,7 +211,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_NEEDS_COAST,
         .col_r = 130, .col_g = 120, .col_b = 160,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 40, [RES_GOLD] = 250 },
         .hud_placeable = 1
@@ -228,7 +229,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 230, .col_g = 200, .col_b = 140,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { 0 },
         .hud_placeable = 0
@@ -243,7 +244,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .placement_flags = PLACE_NEEDS_COAST,
         .col_r = 90, .col_g = 130, .col_b = 170,
         .produces = RES_COUNT, .produce_amt = 0,
-        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
         .hud_placeable = 1
@@ -255,8 +256,10 @@ const char *building_category_name(BuildingCategory c)
     /* Designated, like everything else indexed by an enum here. */
     static const char *const NAMES[BCAT_COUNT] = {
         [BCAT_NONE]           = "Other",
-        [BCAT_GATHERING]      = "Gathering",
-        [BCAT_PRODUCTION]     = "Production",
+        [BCAT_FARMING]        = "Farming",
+        [BCAT_EXTRACTION]     = "Extraction",
+        [BCAT_WORKSHOP]       = "Workshops",
+        [BCAT_FACTORY]        = "Factories",
         [BCAT_HOUSING]        = "Housing",
         [BCAT_INFRASTRUCTURE] = "Infrastructure",
         [BCAT_MARITIME]       = "Maritime"
@@ -509,4 +512,25 @@ int building_gold_equivalent_cost(BuildingType type, const Faction *f)
             total += def->cost[i] * faction_ask(f, (ResourceType)i);
 
     return total;
+}
+
+/* ---- building_missing_input -------------------------------
+ * All-or-nothing: a building only ticks when EVERY non-RES_COUNT slot
+ * has enough stock, so nothing ever half-consumes one input while
+ * short of another.
+ *
+ * Returns the first slot it cannot pay for, or -1 when it can run. A
+ * slot index rather than a bool because the caller logs which input is
+ * missing, and the alternative was that loop living in island.c where
+ * a test could not reach it with a def of its own — the seam
+ * building_place_check_def() opened for the same reason.
+ */
+int building_missing_input(const BuildingDef *def, const Stockpile *s)
+{
+    int j;
+    for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
+        if (def->consumes[j] == RES_COUNT) continue;
+        if (s->amount[def->consumes[j]] < def->consume_amt[j]) return j;
+    }
+    return -1;
 }

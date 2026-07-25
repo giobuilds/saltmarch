@@ -48,8 +48,8 @@ static void synth(HudView *v, int n, int affordable_every)
     for (i = 0; i < v->entry_count; i++) {
         HudEntry *e = &v->entries[i];
         e->type       = (uint16_t)i;
-        e->category   = (uint8_t)(BCAT_GATHERING +
-                                  (i % (BCAT_COUNT - BCAT_GATHERING)));
+        e->category   = (uint8_t)(BCAT_FARMING +
+                                  (i % (BCAT_COUNT - BCAT_FARMING)));
         e->affordable = (uint8_t)(affordable_every == 0 ||
                                   (i % affordable_every) == 0);
         e->refuse     = (uint8_t)(e->affordable ? REJ_OK : REJ_CANT_AFFORD);
@@ -82,7 +82,7 @@ static void test_fits(void)
 
         synth(&v, SIZES[s], 0);
         memset(&st, 0, sizeof(st));
-        st.hud_category = BCAT_GATHERING;
+        st.hud_category = BCAT_FARMING;
         hud_build(&list, &v, &st, SCR_W, SCR_H);
 
         bar = list.items[0].rect;
@@ -134,7 +134,7 @@ static void test_tabs(void)
 
     synth(&v, 20, 0);
     memset(&st, 0, sizeof(st));
-    st.hud_category = BCAT_GATHERING;
+    st.hud_category = BCAT_FARMING;
     hud_build(&list, &v, &st, SCR_W, SCR_H);
 
     tabs = count_group(&list, UI_GROUP_CATEGORY);
@@ -154,7 +154,7 @@ static void test_tabs(void)
             if (ui_id_group(w->id) != UI_GROUP_BUILDING) continue;
             for (j = 0; j < v.entry_count; j++)
                 if (v.entries[j].type == ui_id_value(w->id) &&
-                    v.entries[j].category != BCAT_GATHERING) wrong++;
+                    v.entries[j].category != BCAT_FARMING) wrong++;
         }
         CHECK(wrong == 0, "no slot from another category leaks in");
     }
@@ -196,7 +196,7 @@ static void test_greyed_not_hidden(void)
     HudHit  hit;
 
     memset(&st, 0, sizeof(st));
-    st.hud_category = BCAT_GATHERING;
+    st.hud_category = BCAT_FARMING;
 
     synth(&v, 20, 0);                 /* everything affordable */
     hud_build(&all, &v, &st, SCR_W, SCR_H);
@@ -270,7 +270,7 @@ static void test_hits(void)
 
     synth(&v, 20, 0);
     memset(&st, 0, sizeof(st));
-    st.hud_category = BCAT_GATHERING;
+    st.hud_category = BCAT_FARMING;
     hud_build(&list, &v, &st, SCR_W, SCR_H);
 
     for (i = 1; i < list.count; i++) {
@@ -348,7 +348,7 @@ static void test_real_defs(void)
     {
         int rich_muted = 0, poor_muted = 0, rich_n, poor_n;
 
-        st.hud_category = BCAT_GATHERING;
+        st.hud_category = BCAT_FARMING;
         hud_build(&list, &v, &st, SCR_W, SCR_H);
         rich_n = count_group(&list, UI_GROUP_BUILDING);
         for (i = 1; i < list.count; i++)

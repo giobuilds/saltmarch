@@ -49,19 +49,93 @@
     ((uint32_t)(NEEDS_INTERVAL * SIM_TICKS_PER_SEC))
 #define GOLD_PER_RESIDENT    2     /* gold generated per resident   */
 
-/* Most goods any single population tier needs at once (Farmers need
- * 2 today; raise if a future tier needs more). */
-#define MAX_TIER_GOODS 3
+/* Gold to walk the first tier's upgrade edge. Lives here rather than
+ * in game.h since SUPPLY_CHAIN Phase 2: the price of an edge belongs
+ * beside the edge, and each tier now carries its own in
+ * TierDef.upgrade_gold. */
+#define TIER_UPGRADE_COST_GOLD 300
+
+/* Most goods any single population tier needs at once. Raised from 3
+ * in SUPPLY_CHAIN Phase 2: Artisans and Investors both list five. */
+#define MAX_TIER_GOODS 5
 
 /* One population tier's need-list, keyed by the house BuildingType
  * that represents it. RES_COUNT in a needs[] slot means "unused" —
  * same sentinel convention as BuildingDef.consumes[]. Defined here
  * (not just in population.c) in case a future file needs to inspect
- * a tier's requirements directly (e.g. a UI showing "needs Beer"). */
+ * a tier's requirements directly (e.g. a UI showing "needs Beer").
+ *
+ * ---- the upgrade edge (SUPPLY_CHAIN Phase 2) ----
+ * `next_tier` is what this house upgrades INTO, or BUILDING_NONE for a
+ * tier with nowhere to go. That makes the tier model a graph rather
+ * than a ladder, which is what the plan's three house lines need:
+ * Marshfolk → Artisans, Wrights → Engineers, Merchants → Investors are
+ * three edges in this table, not three branches in code. The Academy's
+ * "any house → Scholars" is a fourth.
+ *
+ * `upgrade_gold` is what that edge costs, per tier rather than one
+ * global constant, since a Merchant house is not priced like a
+ * cottage.
+ *
+ * `requires_building` is a building the island must have, active and
+ * connected, before the edge can be walked — BUILDING_NONE for "no
+ * prerequisite". It exists for the Academy (Phase 8) and is otherwise
+ * unused today; the rule is written now so Phase 8 adds a table row
+ * rather than a special case. */
 typedef struct {
     BuildingType house_type;
     ResourceType needs[MAX_TIER_GOODS];
+    BuildingType next_tier;
+    int          upgrade_gold;
+    BuildingType requires_building;
 } TierDef;
+
+/* The tier a house type belongs to, or NULL if it is not residential.
+ * Exposed (rather than kept static in population.c) so the confirm
+ * popup can show a tier's needs without keeping a second copy of the
+ * table — the drift that would follow is exactly what UI_PLAN
+ * decision 3 exists to prevent. */
+const TierDef *tier_def_for(BuildingType type);
+
+/* What `from` must have alongside it before it can upgrade, or
+ * BUILDING_NONE. The caller looks the building up in its own world —
+ * the sim in GameState, the UI in its snapshot — because that lookup
+ * is the one part of the rule that genuinely differs between them. */
+BuildingType tier_upgrade_requires(BuildingType from);
+
+/* May a house of type `from` upgrade, given this island's stock and
+ * whether tier_upgrade_requires()'s building is present?
+ *
+ * THE shared rule (UI_PLAN decision 3): sim_upgrade_house calls it to
+ * decide, and the confirm popup calls it to predict, so the checklist
+ * a player reads and the verdict they get cannot disagree. Returns
+ * REJ_OK and writes *out_to when the upgrade may proceed; otherwise a
+ * reason and BUILDING_NONE.
+ *
+ *   REJ_UNAVAILABLE    – not a house, or nowhere to upgrade to
+ *   REJ_NEEDS_BUILDING – the prerequisite is missing
+ *   REJ_NEEDS_GOODS    – the next tier's needs are not all in stock
+ *   REJ_CANT_AFFORD    – not enough Gold
+ *
+ * Needs are checked for PRESENCE, not consumed: they are what the tier
+ * will want every needs tick from then on, so requiring them is
+ * asking "can you keep this neighbourhood supplied", not charging a
+ * one-off price. */
+RejectReason tier_upgrade_check(BuildingType from,
+                                const int stock[RES_COUNT],
+                                int prereq_present,
+                                BuildingType *out_to);
+
+/* The same rule against tiers the caller supplies, with
+ * tier_upgrade_check() as the table-driven wrapper over it. The seam
+ * exists for the same reason building_place_check_def()'s does: the
+ * table has two tiers today and the rule has to be provable at five
+ * needs and with a prerequisite building, neither of which exists
+ * until Phases 4 and 8. */
+RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
+                                    const int stock[RES_COUNT],
+                                    int prereq_present,
+                                    BuildingType *out_to);
 
 /* ---- Per-house population data ------------------------- */
 typedef struct {

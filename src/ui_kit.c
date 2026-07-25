@@ -326,6 +326,8 @@ const char *ui_reject_text(RejectReason reason)
         [REJ_NEEDS_FERTILE]        = "Soil isn't fertile",
         [REJ_NEEDS_CROP]           = "Wrong soil for this crop",
         [REJ_NEEDS_DEPOSIT]        = "Nothing to work here",
+        [REJ_NEEDS_GOODS]          = "Can't supply them yet",
+        [REJ_NEEDS_BUILDING]       = "Needs a building you don't have",
         [REJ_NEEDS_COAST]          = "Needs water alongside",
         [REJ_NEEDS_FOREST]         = "Needs forest alongside",
         [REJ_OCCUPIED]             = "Something is already here",

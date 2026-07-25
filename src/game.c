@@ -1366,18 +1366,46 @@ void game_demolish_building(GameState *gs, int idx)
 }
 
 /* ---- sim_upgrade_house / game_upgrade_house ------------------ */
+/* Is an active, road-connected building of `type` standing on this
+ * island? The prerequisite side of the upgrade rule — the one part
+ * tier_upgrade_check() cannot answer for itself, because the sim looks
+ * it up in Island and the UI looks it up in a snapshot. Connected, not
+ * merely placed: an Academy nobody can reach teaches nobody. */
+int island_has_building(const Island *isl, BuildingType type)
+{
+    int i;
+
+    if (type == BUILDING_NONE) return 1;   /* nothing required */
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == type &&
+            isl->buildings[i].connected)
+            return 1;
+    return 0;
+}
+
 static RejectReason sim_upgrade_house(GameState *gs, int island, int idx)
 {
-    Island *isl = &gs->islands[island];
+    Island       *isl = &gs->islands[island];
+    BuildingType  from, to;
+    RejectReason  why;
+    const TierDef *tier;
 
     if (idx < 0 || idx >= isl->building_count) return REJ_UNAVAILABLE;
     if (!isl->buildings[idx].active) return REJ_UNAVAILABLE;
-    if (isl->buildings[idx].type != BUILDING_HOUSE) return REJ_UNAVAILABLE;
-    if (isl->stockpile.amount[RES_GOLD] < TIER_UPGRADE_COST_GOLD)
-        return REJ_CANT_AFFORD;
 
-    stockpile_add(&isl->stockpile, RES_GOLD, -TIER_UPGRADE_COST_GOLD);
-    isl->buildings[idx].type = BUILDING_HOUSE_WORKER;
+    from = isl->buildings[idx].type;
+    tier = tier_def_for(from);
+    if (!tier) return REJ_UNAVAILABLE;   /* not a house at all */
+
+    why = tier_upgrade_check(from, isl->stockpile.amount,
+                             island_has_building(isl,
+                                 tier_upgrade_requires(from)),
+                             &to);
+    if (why != REJ_OK) return why;
+
+    stockpile_add(&isl->stockpile, RES_GOLD, -tier->upgrade_gold);
+    isl->buildings[idx].type = to;
     return REJ_OK;
 }
 

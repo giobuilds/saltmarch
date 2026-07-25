@@ -110,16 +110,64 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
         break;
     }
 
-    case CONFIRM_UPGRADE:
-        snprintf(out->title, sizeof(out->title), "Upgrade to Worker's House");
+    case CONFIRM_UPGRADE: {
+        int            idx  = cs->cmd.b;
+        BuildingType   from = BUILDING_NONE, to = BUILDING_NONE;
+        const TierDef *tier, *next;
+        RejectReason   why;
+        int            k, prereq_type, prereq_present;
+
+        if (idx >= 0 && idx < isl->building_count)
+            from = (BuildingType)isl->buildings[idx].type;
+
+        tier        = tier_def_for(from);
+        prereq_type = (int)tier_upgrade_requires(from);
+        prereq_present = snapshot_has_building(isl,
+                                               (BuildingType)prereq_type);
+
+        why  = snapshot_upgrade_check(isl, idx, &to);
+        next = tier_def_for(to != BUILDING_NONE
+                            ? to
+                            : (tier ? tier->next_tier : BUILDING_NONE));
+
+        snprintf(out->title, sizeof(out->title), "Upgrade to %s",
+                 next ? BUILDING_DEFS[next->house_type].name : "nothing");
         snprintf(out->lines[out->line_count++], CONFIRM_LINE_LEN,
-                 "Workers need Beer as well as food.");
+                 "They will want all of this, every time:");
+
+        /* One row per good the tier being entered will need. This is
+         * the whole point of the popup — the upgrade is not a price,
+         * it is a question about whether you can keep supplying them. */
+        if (next) {
+            for (k = 0; k < MAX_TIER_GOODS; k++) {
+                if (next->needs[k] == RES_COUNT) continue;
+                snprintf(out->needs[out->need_count].label,
+                         sizeof(out->needs[0].label), "%s",
+                         RESOURCE_NAMES[next->needs[k]]);
+                out->needs[out->need_count].met =
+                    (uint8_t)(isl->stock[next->needs[k]] > 0);
+                out->need_count++;
+            }
+        }
+        if (prereq_type != BUILDING_NONE && !prereq_present &&
+            out->need_count < MAX_TIER_GOODS) {
+            snprintf(out->needs[out->need_count].label,
+                     sizeof(out->needs[0].label), "%s",
+                     BUILDING_DEFS[prereq_type].name);
+            out->needs[out->need_count].met = 0;
+            out->need_count++;
+        }
+
+        out->refusal = (int32_t)why;
         snprintf(out->options[0].label, sizeof(out->options[0].label),
-                 "Pay %d Gold", TIER_UPGRADE_COST_GOLD);
-        out->options[0].affordable =
-            (uint8_t)(isl->stock[RES_GOLD] >= TIER_UPGRADE_COST_GOLD);
+                 "Pay %d Gold", tier ? tier->upgrade_gold : 0);
+        /* Affordability is the SHARED rule's verdict, not a separate
+         * gold check: the button a player can press and the command
+         * sim_apply will accept are decided by one function. */
+        out->options[0].affordable = (uint8_t)(why == REJ_OK);
         out->option_count = 1;
         break;
+    }
 
     case CONFIRM_SHIP:
         snprintf(out->title, sizeof(out->title), "Lay down a ship");
@@ -151,6 +199,7 @@ static float wanted_height(const ConfirmView *v)
 {
     return CONFIRM_MARGIN * 2.0f + CONFIRM_TITLE_H +
            (float)v->line_count * CONFIRM_LINE_H +
+           (float)v->need_count * CONFIRM_NEED_H +
            (float)v->option_count * (CONFIRM_OPTION_H + 20.0f) +
            CONFIRM_BTN_H + 12.0f;
 }
@@ -176,6 +225,19 @@ void confirm_build(UiList *out, const ConfirmView *view,
     (void)ui_row(&l, CONFIRM_TITLE_H);
     for (i = 0; i < view->line_count; i++)
         (void)ui_row(&l, CONFIRM_LINE_H);
+
+    /* The needs checklist. Pushed as widgets rather than drawn from
+     * the view directly so the drawer reads its rects from the same
+     * list as everything else — UI_W_HEADER keeps them out of the
+     * hit-test, which is what "label only" means here: a good you are
+     * missing is information, not a button. */
+    for (i = 0; i < view->need_count; i++) {
+        UiRect r = ui_row(&l, CONFIRM_NEED_H);
+        ui_list_push(out, ui_id(UI_GROUP_NONE, (uint16_t)i), r,
+                     view->needs[i].label, view->needs[i].met,
+                     (uint8_t)(UI_W_HEADER |
+                               (view->needs[i].met ? 0u : UI_W_MUTED)));
+    }
 
     /* One row per option: the offer, with the command it submits drawn
      * under it. Options are selectable when there are two; with one

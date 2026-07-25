@@ -35,6 +35,7 @@ void confirm_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     const SDL_Color DIM     = { 135, 128, 112, 255 };
     const SDL_Color PREVIEW = { 120, 150, 160, 255 };
     const SDL_Color DANGER  = { 240, 140, 120, 255 };
+    const SDL_Color HAVE    = { 140, 205, 140, 255 };
     UiRect          panel;
     float           y;
     int             i;
@@ -78,6 +79,20 @@ void confirm_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                                                (float)mouse_y);
         int             selected = (w->flags & UI_W_SELECTED) != 0;
         int             muted    = (w->flags & UI_W_MUTED) != 0;
+
+        /* A needs row: a tick or a cross, then the good. Never a
+         * button — the flag that keeps it out of the hit-test is the
+         * same one that says so here. */
+        if (w->flags & UI_W_HEADER) {
+            int met = w->value;
+            font_draw_text(renderer, FONT_SMALL, met ? "+" : "-",
+                           (int)(w->rect.x + 10.0f), (int)(w->rect.y + 2.0f),
+                           met ? HAVE : DANGER);
+            font_draw_text(renderer, FONT_SMALL, w->label,
+                           (int)(w->rect.x + 26.0f), (int)(w->rect.y + 2.0f),
+                           met ? TEXT : DIM);
+            continue;
+        }
 
         /* Payment options carry the command they would submit. */
         if (ui_id_group(w->id) == UI_GROUP_RESOURCE) {

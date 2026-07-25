@@ -56,7 +56,7 @@ static void island_tick_buildings(Island *isl)
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
-        int                can_run = 1;
+        int                can_run;
         uint32_t           period;
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
@@ -74,16 +74,13 @@ static void island_tick_buildings(Island *isl)
         if (b->timer < period) continue;
         b->timer = 0;
 
-        for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
-            if (def->consumes[j] == RES_COUNT) continue;
-            if (isl->stockpile.amount[def->consumes[j]] < def->consume_amt[j]) {
-                sim_log("[%s] %s idle: needs %d %s", isl->name, def->name,
-                    def->consume_amt[j], RESOURCE_NAMES[def->consumes[j]]);
-                can_run = 0;
-                break;
-            }
+        can_run = building_missing_input(def, &isl->stockpile);
+        if (can_run >= 0) {
+            sim_log("[%s] %s idle: needs %d %s", isl->name, def->name,
+                def->consume_amt[can_run],
+                RESOURCE_NAMES[def->consumes[can_run]]);
+            continue;
         }
-        if (!can_run) continue;
 
         for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
             if (def->consumes[j] == RES_COUNT) continue;

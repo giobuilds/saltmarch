@@ -47,6 +47,23 @@ typedef struct {
     int32_t  option_count;
     int32_t  chosen;
 
+    /* The needs checklist (SUPPLY_CHAIN Phase 2). A house upgrades
+     * when it can be supplied, so the popup lists the tier being
+     * entered and marks each good present or missing. Empty for every
+     * other confirmation.
+     *
+     * Built from tier_upgrade_check()'s own table, and the accept
+     * button is enabled by that same function — the checklist is a
+     * rendering of the rule, not a second opinion about it. */
+    struct {
+        char    label[24];
+        uint8_t met;
+    } needs[MAX_TIER_GOODS];
+    int32_t  need_count;
+    /* Why the upgrade is refused, for the line under the list.
+     * REJ_OK when it is not. */
+    int32_t  refusal;
+
     uint64_t apply_tick;        /* when the sim would act on it        */
     uint8_t  destructive;       /* colour the accept button as a risk  */
     uint8_t  hue_r, hue_g, hue_b;
@@ -62,6 +79,7 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap);
 #define CONFIRM_TITLE_H   38.0f
 #define CONFIRM_LINE_H    22.0f
 #define CONFIRM_OPTION_H  34.0f
+#define CONFIRM_NEED_H    20.0f
 #define CONFIRM_BTN_H     36.0f
 
 void confirm_build(UiList *out, const ConfirmView *view,
