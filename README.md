@@ -78,7 +78,6 @@ saltmarch/
 │   ├── inventory_ui.c/h       Drawing for the stores overlay and vitals
 │   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
-│   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)
 │   ├── confirm_view.c/h       The one confirmation: options + command preview
 │   ├── confirm_ui.c/h         Drawing for it
 │   ├── feed.c/h               Shared voyage feed (ghost multiplayer)

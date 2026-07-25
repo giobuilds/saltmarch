@@ -104,6 +104,53 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
     }
 }
 
+void exchange_view_escrow(ExchangeView *out, const UiSnapshot *snap,
+                          int island)
+{
+    const UiIsland  *isl;
+    ResourceCategory cat;
+    int              r;
+
+    memset(out, 0, sizeof(*out));
+    out->kind = EXCHANGE_OFFER;
+
+    if (island < 0 || island >= MAX_ISLANDS) {
+        copy_str(out->title, sizeof(out->title), "Harbour");
+        return;
+    }
+    isl = &snap->islands[island];
+
+    snprintf(out->title, sizeof(out->title), "Harbour — %s", isl->name);
+    island_hue(island, &out->hue_r, &out->hue_g, &out->hue_b);
+
+    out->your_gold       = isl->stock[RES_GOLD];
+    out->their_gold      = EXCHANGE_INFINITE;   /* a quay has no purse */
+    out->capacity        = isl->capacity;
+    out->nonce           = isl->escrow_nonce;
+    out->docking_allowed = isl->docking_allowed;
+
+    /* Every good, Gold included: a visitor pays for cargo by leaving
+     * coin on the quay, so Gold is a line item here in a way it never
+     * is on the marketplace screen. */
+    for (cat = RCAT_RAW; cat < RCAT_COUNT; cat++)
+    for (r = 0; r < RES_COUNT && out->row_count < EXCHANGE_MAX_ROWS; r++) {
+        ExchangeRow *row;
+
+        if (RESOURCE_CATEGORIES[r] != cat) continue;
+
+        row = &out->rows[out->row_count++];
+        row->ident    = (uint16_t)r;
+        row->category = (uint8_t)RESOURCE_CATEGORIES[r];
+        copy_str(row->name, sizeof(row->name), RESOURCE_NAMES[r]);
+        row->yours    = isl->stock[r];
+        row->theirs   = isl->escrow[r];      /* what is on the quay */
+        row->bid      = 0;
+        row->ask      = 0;
+        row->refuse   = (uint8_t)(row->theirs > 0 ? REJ_OK : REJ_NO_STOCK);
+        row->hist_count = 0;
+    }
+}
+
 /* ---- geometry --------------------------------------------- */
 
 /* The height this view would like, before any clamping. Measuring
@@ -208,6 +255,31 @@ void exchange_build(UiList *out, const ExchangeView *view,
         ui_list_push(out, exchange_row_id(row->ident), rr, row->name,
                      (int32_t)row->ident, UI_W_HEADER);
 
+        /* The one place the two kinds diverge, as decision 4 allows:
+         * a quotes screen offers six quantities to buy and sell, an
+         * offer screen offers "take what is here" and "stage ten". If
+         * this ever grows into per-column branching, the unification
+         * has failed and the widget should be split. */
+        if (view->kind == EXCHANGE_OFFER) {
+            UiRect take = ui_col_from_right(rr, EXCHANGE_BTN_W,
+                                            EXCHANGE_BTN_GAP, 1);
+            UiRect put  = ui_col_from_right(rr, EXCHANGE_BTN_W,
+                                            EXCHANGE_BTN_GAP, 0);
+            take.y += (EXCHANGE_ROW_H - 26.0f) * 0.5f;  take.h = 26.0f;
+            put.y  += (EXCHANGE_ROW_H - 26.0f) * 0.5f;  put.h  = 26.0f;
+
+            ui_list_push(out, ui_id(UI_GROUP_SELL, row->ident), take,
+                         "Take", -1, 0);
+            if (row->theirs <= 0)
+                ui_list_disable_last(out, REJ_NO_STOCK);
+
+            ui_list_push(out, ui_id(UI_GROUP_BUY, row->ident), put,
+                         "Stage 10", 10, 0);
+            if (row->yours < 10)
+                ui_list_disable_last(out, REJ_NO_STOCK);
+            continue;
+        }
+
         for (a = 0; a < EXCHANGE_ACTIONS; a++) {
             UiRect   br  = ui_col_from_right(rr, EXCHANGE_BTN_W,
                                              EXCHANGE_BTN_GAP,
@@ -253,7 +325,24 @@ void exchange_build(UiList *out, const ExchangeView *view,
         }
     }
 
-    /* ---- footer: pager on the left, Close centred -------- */
+    /* ---- footer ------------------------------------------
+     * The second permitted divergence between the two kinds: a quotes
+     * screen pages, an offer screen carries the blockade lever. */
+    if (view->kind == EXCHANGE_OFFER) {
+        UiRect footer = ui_row(&l, EXCHANGE_FOOTER_H);
+        UiRect dock   = { footer.x, footer.y + 4.0f, 210.0f, 30.0f };
+        UiRect close  = { footer.x + footer.w - 110.0f, footer.y + 4.0f,
+                          110.0f, 30.0f };
+
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_DOCKING), dock,
+                     view->docking_allowed ? "Harbour: open to ships"
+                                           : "Harbour: closed (blockade)",
+                     view->docking_allowed, 0);
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_CLOSE), close,
+                     "Close", 0, 0);
+        return;
+    }
+
     {
         UiRect footer = ui_row(&l, EXCHANGE_FOOTER_H);
         UiRect prev   = { footer.x, footer.y + 4.0f, 70.0f, 30.0f };
@@ -332,6 +421,10 @@ ExchangeHit exchange_hit(const UiList *list, const ExchangeView *view,
         case UI_ACTION_NEXT:
             hit.kind = EXCHANGE_HIT_PAGE;
             hit.page = w->value;
+            break;
+        case UI_ACTION_DOCKING:
+            hit.kind = EXCHANGE_HIT_DOCKING;
+            hit.qty  = w->value ? 0 : 1;   /* the state to switch TO */
             break;
         default:
             hit.kind = EXCHANGE_HIT_NONE;   /* the panel: absorb it    */

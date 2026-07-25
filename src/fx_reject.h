@@ -58,6 +58,7 @@ typedef struct {
     char     text[FX_TEXT_LEN];
     float    life;           /* seconds remaining; <= 0 is dead        */
     uint8_t  reason;
+    int32_t  owner_island;   /* whose colour to pulse for NOT_OWNER    */
 } FxFlash;
 
 typedef struct {

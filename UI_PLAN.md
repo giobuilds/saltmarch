@@ -1,6 +1,8 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **numbered phases complete; M-phases remain.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
+> Status: **complete.** All numbered phases and all M-phases have
+> landed. What remains is in the "explicitly out of scope" list below,
+> plus the deferrals noted per phase. Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
 > (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
 > 4 (vitals, stores, overlay arbiter), 5 (island context) and 6 (confirm
 > consolidation) have landed; everything below
@@ -533,7 +535,7 @@ The feed is out-of-process, wall-clock, and **untrusted input**:
 Ghost styling was already distinct and tooltip-only from MMO Phase 4, so
 that bullet needed nothing.
 
-### Phase M5 — with MMO Phase 5 (lockstep co-op)
+### Phase M5 — with MMO Phase 5 (lockstep co-op) — **DONE**
 - `exchange_view_offer()` + Accept/Reject footer for harbor escrow; the
   docking-permission toggle on the island panel.
 - Escrow offers are nonce-stamped; the accept Command references the
@@ -545,6 +547,33 @@ that bullet needed nothing.
   `REJ_NOT_OWNER` renders as an owner-coloured border pulse at the
   clicked tile — privacy-by-validation taught through the rejection
   channel, visible only to the prober.
+
+*As built:*
+- `exchange_view_escrow()` replaces escrow_ui.c entirely: the harbour is
+  the marketplace screen with a different counterparty. The two kinds
+  diverge in exactly the two places decision 4 permits — the action
+  cluster (take/stage rather than six quantities) and the footer (the
+  blockade lever rather than a pager). If a third divergence ever
+  appears, the widget should be split; the test asserts today's two.
+  Gold is a row here and never on the marketplace, because leaving coin
+  on a quay is how a visitor pays.
+- Offers are nonce-stamped. `island_escrow_nonce()` lives in the sim and
+  the snapshot carries it, so there is one implementation rather than a
+  UI copy that could disagree. A stale stamp is refused with
+  `REJ_OFFER_CHANGED`; an unstamped command (zero) still applies, which
+  is what replayed and scripted logs carry.
+- The ship, escrow and route mutators now return real reasons — the gap
+  left open at M1. A blockade and a missing harbour both say
+  "Harbour closed to you"; an empty quay and a full warehouse are told
+  apart.
+- `REJ_NOT_OWNER` draws an island-coloured diamond outline at the tile
+  as well as the words, fading with the flash.
+
+Deferred: the confirm layer's "offer changed — re-review" invalidation,
+which would grey an open popup's Accept when the state it references
+moves. The nonce makes that a display concern rather than a correctness
+one now — the command is refused either way — so it can wait for a
+phase that is looking at the confirm layer anyway.
 
 ---
 

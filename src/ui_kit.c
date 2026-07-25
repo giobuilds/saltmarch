@@ -335,6 +335,7 @@ const char *ui_reject_text(RejectReason reason)
         [REJ_PRICE_MOVED]          = "Price moved",
         [REJ_NOT_OWNER]            = "Not your island",
         [REJ_ESCROW_REFUSED]       = "Harbour closed to you",
+        [REJ_OFFER_CHANGED]        = "The quay changed — look again",
         [REJ_UNAVAILABLE]          = "Not possible right now"
     };
 

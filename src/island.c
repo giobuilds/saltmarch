@@ -152,3 +152,17 @@ void island_recompute_storage_capacity(Island *isl)
     stockpile_set_capacity(&isl->stockpile,
         BASE_STORAGE_CAP + warehouses * WAREHOUSE_STORAGE_BONUS);
 }
+
+uint32_t island_escrow_nonce(const Island *isl)
+{
+    uint32_t h = 2166136261u;
+    int      r;
+
+    for (r = 0; r < RES_COUNT; r++) {
+        h ^= (uint32_t)isl->escrow[r];
+        h *= 16777619u;
+    }
+    h ^= (uint32_t)isl->docking_allowed;
+    h *= 16777619u;
+    return h ? h : 1u;
+}

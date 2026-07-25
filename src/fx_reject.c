@@ -47,7 +47,8 @@ void fx_reject_expect(FxReject *fx, uint32_t seq, FxAnchor anchor)
     fx->pending_count++;
 }
 
-static void raise_flash(FxReject *fx, FxAnchor anchor, RejectReason reason)
+static void raise_flash(FxReject *fx, FxAnchor anchor, RejectReason reason,
+                        int island)
 {
     FxFlash *f;
     int      i;
@@ -60,9 +61,10 @@ static void raise_flash(FxReject *fx, FxAnchor anchor, RejectReason reason)
 
     f = &fx->flashes[fx->flash_count++];
     memset(f, 0, sizeof(*f));
-    f->anchor = anchor;
-    f->life   = FX_FLASH_SECONDS;
-    f->reason = (uint8_t)reason;
+    f->anchor       = anchor;
+    f->life         = FX_FLASH_SECONDS;
+    f->reason       = (uint8_t)reason;
+    f->owner_island = island;
     {
         const char *t = ui_reject_text(reason);
         size_t      n = strlen(t);
@@ -91,7 +93,8 @@ int fx_reject_drain(FxReject *fx, GameState *gs)
 
             if (r->reason != REJ_OK)
                 raised += (raise_flash(fx, fx->pending[j].anchor,
-                                       (RejectReason)r->reason), 1);
+                                       (RejectReason)r->reason,
+                                       gs->current_island), 1);
 
             /* Answered either way: remove it. A success needs no flash
              * — the world changing IS the feedback. */

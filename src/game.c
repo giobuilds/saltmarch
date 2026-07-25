@@ -1206,26 +1206,32 @@ static int island_has_active_harbor(const Island *isl)
     return 0;
 }
 
-static int sim_ship_transfer(GameState *gs, int ship_idx, ResourceType res,
-                             int qty, int island, uint32_t player)
+static RejectReason sim_ship_transfer(GameState *gs, int ship_idx,
+                                      ResourceType res, int qty, int island,
+                                      uint32_t player)
 {
     Ship   *sh;
     Island *isl;
 
-    if (ship_idx < 0 || ship_idx >= gs->ship_count) return 0;
-    if (res < 0 || res >= RES_COUNT) return 0;
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return REJ_UNAVAILABLE;
+    if (res < 0 || res >= RES_COUNT) return REJ_UNAVAILABLE;
     sh = &gs->ships[ship_idx];
-    if (!sh->active) return 0;
-    if (sh->at_island != island) return 0;
+    if (!sh->active) return REJ_UNAVAILABLE;
+    if (sh->at_island != island) return REJ_UNAVAILABLE;
     isl = &gs->islands[island];
 
     if (isl->owner == player)
-        return ship_transfer_at(sh, isl, res, qty) != 0;
+        return ship_transfer_at(sh, isl, res, qty) != 0 ? REJ_OK
+                                                        : REJ_NO_STOCK;
 
-    /* Foreign dock: escrow only, and only with permission + a harbor. */
-    if (!isl->docking_allowed) return 0;
-    if (!island_has_active_harbor(isl)) return 0;
-    return ship_transfer_escrow(sh, isl, res, qty) != 0;
+    /* Foreign dock: escrow only, and only with permission + a harbor.
+     * These two are the ones a player most needs explained (UI_PLAN M5)
+     * — a blockade and a missing harbour look identical from a ship's
+     * deck, and both used to be a button that did nothing. */
+    if (!isl->docking_allowed)          return REJ_ESCROW_REFUSED;
+    if (!island_has_active_harbor(isl)) return REJ_ESCROW_REFUSED;
+    return ship_transfer_escrow(sh, isl, res, qty) != 0 ? REJ_OK
+                                                        : REJ_NO_STOCK;
 }
 
 void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty)
@@ -1424,61 +1430,90 @@ int game_grant_start(GameState *gs, int island_idx)
  * and, for goods, to storage headroom — the escrow holds overflow
  * rather than destroying it, same rule as unloading a ship). Ownership
  * is enforced centrally in sim_apply. */
-static int sim_escrow_put(GameState *gs, int island, ResourceType res, int qty)
+static RejectReason sim_escrow_put(GameState *gs, int island,
+                                   ResourceType res, int qty, uint32_t nonce)
 {
     Island *isl = &gs->islands[island];
 
-    if (res < 0 || res >= RES_COUNT) return 0;
+    if (res < 0 || res >= RES_COUNT) return REJ_UNAVAILABLE;
+    if (nonce != 0 && nonce != island_escrow_nonce(isl))
+        return REJ_OFFER_CHANGED;
     if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
-    if (qty <= 0) return 0;
+    if (qty <= 0) return REJ_NO_STOCK;
 
     stockpile_add(&isl->stockpile, res, -qty);
     isl->escrow[res] += qty;
-    return 1;
+    return REJ_OK;
 }
 
-static int sim_escrow_take(GameState *gs, int island, ResourceType res, int qty)
+static RejectReason sim_escrow_take(GameState *gs, int island,
+                                    ResourceType res, int qty,
+                                    uint32_t nonce)
 {
-    Island *isl = &gs->islands[island];
+    Island *isl     = &gs->islands[island];
+    int     in_hold = 0;
 
-    if (res < 0 || res >= RES_COUNT) return 0;
-    if (qty > isl->escrow[res]) qty = isl->escrow[res];
+    if (res < 0 || res >= RES_COUNT) return REJ_UNAVAILABLE;
+    if (nonce != 0 && nonce != island_escrow_nonce(isl))
+        return REJ_OFFER_CHANGED;
+
+    in_hold = isl->escrow[res];
+    if (qty > in_hold) qty = in_hold;
     if (res != RES_GOLD) {
         int headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
         if (headroom < 0) headroom = 0;
         if (qty > headroom) qty = headroom;
     }
-    if (qty <= 0) return 0;
+    if (qty <= 0) {
+        /* Empty quay and full warehouse are different problems: one
+         * waits for a ship, the other for a Warehouse. */
+        if (in_hold <= 0) return REJ_NO_STOCK;
+        return REJ_NO_STORAGE;
+    }
 
     isl->escrow[res] -= qty;
     stockpile_add(&isl->stockpile, res, qty);
-    return 1;
+    return REJ_OK;
 }
 
-static int sim_set_docking(GameState *gs, int island, int allow)
+static RejectReason sim_set_docking(GameState *gs, int island, int allow)
 {
     gs->islands[island].docking_allowed = allow ? 1 : 0;
-    return 1;
+    return REJ_OK;
 }
 
-int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty)
+int game_escrow_put_nonce(GameState *gs, int island_idx, ResourceType res,
+                          int qty, uint32_t nonce)
 {
     Command c = {0};
     c.kind = CMD_ESCROW_PUT;
     c.a    = island_idx;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = (int32_t)nonce;
     return command_submit(gs, &c);
 }
 
-int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty)
+int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty)
+{
+    return game_escrow_put_nonce(gs, island_idx, res, qty, 0u);
+}
+
+int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
+                           int qty, uint32_t nonce)
 {
     Command c = {0};
     c.kind = CMD_ESCROW_TAKE;
     c.a    = island_idx;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = (int32_t)nonce;
     return command_submit(gs, &c);
+}
+
+int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty)
+{
+    return game_escrow_take_nonce(gs, island_idx, res, qty, 0u);
 }
 
 int game_set_docking(GameState *gs, int island_idx, int allow)
@@ -1549,7 +1584,7 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         if (c->d < 0 || c->d >= MAX_ISLANDS) return REJ_UNAVAILABLE;
         return sim_ship_transfer(gs, c->a, (ResourceType)c->b, c->c, c->d,
-                                 c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
+                                 c->player_id);
     case CMD_SHIP_DEPART:
         if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_ship_depart(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
@@ -1568,13 +1603,15 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         return sim_grant_start(gs, c->a, c->player_id) ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_ESCROW_PUT:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_escrow_put(gs, c->a, (ResourceType)c->b, c->c) ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_escrow_put(gs, c->a, (ResourceType)c->b, c->c,
+                              (uint32_t)c->d);
     case CMD_ESCROW_TAKE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c) ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c,
+                               (uint32_t)c->d);
     case CMD_SET_DOCKING:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_set_docking(gs, c->a, c->b) ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_set_docking(gs, c->a, c->b);
     default:
         return REJ_UNAVAILABLE;
     }

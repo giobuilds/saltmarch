@@ -97,4 +97,12 @@ void island_update(Island *isl);
  * a Warehouse built on one island would raise another's caps. */
 void island_recompute_storage_capacity(Island *isl);
 
+/* A stamp over the harbour quay's contents and its docking flag
+ * (UI_PLAN M5). The escrow panel shows a state; the command it emits
+ * carries this back; sim_apply refuses if the quay has changed since —
+ * a visitor's ship can dock and take goods between the frame you read
+ * and the button you press. Never zero, so zero can mean "unstamped"
+ * on the wire (a replayed or scripted command). */
+uint32_t island_escrow_nonce(const Island *isl);
+
 #endif /* ISLAND_H */
