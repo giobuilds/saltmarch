@@ -157,16 +157,18 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
         .hud_placeable = 1
     },
-    /* Production chains, Phase 1 (Beer). Hop Farm needs FERTILE_HOP
-     * specifically (map.h), finally giving that dormant fertility bit
-     * a consumer. Malthouse is the multi-input building: both Grain
-     * and Hops must be in stock for it to tick at all (all-or-nothing,
-     * see game_tick_buildings, game.c). */
+    /* Production chains, Phase 1 (Beer). Hop Farm names FERTILE_HOP in
+     * needs_fertility (map.h) — it was the first building to want a
+     * specific crop and, until SUPPLY_CHAIN Phase 1, the reason there
+     * was a whole placement flag for that one crop. Malthouse is the
+     * multi-input building: both Grain and Hops must be in stock for it
+     * to tick at all (all-or-nothing, see game_tick_buildings, game.c). */
     [BUILDING_HOP_FARM] = {
         .name = "Hop Farm",
         .category = BCAT_GATHERING,
         .tile_w = 1, .tile_h = 1,
-        .placement_flags = PLACE_NEEDS_HOP_FERTILE,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_HOP,
         .col_r = 90, .col_g = 150, .col_b = 60,
         .produces = RES_HOPS, .produce_amt = 1,
         .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
@@ -283,6 +285,34 @@ static int tile_is_occupied(const Building buildings[], int count,
 }
 
 /* =========================================================
+ * Helper: does the footprint have an adjacent tile carrying `dep`?
+ * Same cardinal-neighbour sweep as footprint_has_adjacent below, but
+ * asking about what is IN the tile rather than what it is — for a
+ * building that works a deposit it cannot stand on (pearl beds in
+ * shallow water). Kept separate rather than generalised into one
+ * predicate-taking sweep: two four-line loops read better than one
+ * loop plus a callback, at this size.
+ * ========================================================= */
+static int footprint_has_adjacent_deposit(const Map *map,
+                                          int row, int col,
+                                          int fw, int fh,
+                                          uint8_t dep)
+{
+    static const int dr[4] = { -1, 1,  0, 0 };
+    static const int dc[4] = {  0, 0,  1,-1 };
+
+    int r, c, d;
+    for (r = row; r < row + fh; r++)
+        for (c = col; c < col + fw; c++)
+            for (d = 0; d < 4; d++) {
+                const Tile *nb = map_get_tile(
+                    (Map *)map, r + dr[d], c + dc[d]);
+                if (nb && nb->deposit == dep) return 1;
+            }
+    return 0;
+}
+
+/* =========================================================
  * Helper: does the footprint have an adjacent tile of type t?
  * Checks all four cardinal neighbours of every footprint tile.
  * ========================================================= */
@@ -315,7 +345,13 @@ RejectReason building_place_check(const Map *map,
                                   BuildingType type,
                                   int row, int col)
 {
-    const BuildingDef *def = &BUILDING_DEFS[type];
+    return building_place_check_def(map, &BUILDING_DEFS[type], row, col);
+}
+
+RejectReason building_place_check_def(const Map *map,
+                                      const BuildingDef *def,
+                                      int row, int col)
+{
     int r, c;
 
     /* --- Pass 1: bounds --------------------------------- */
@@ -334,20 +370,24 @@ RejectReason building_place_check(const Map *map,
                 return REJ_NOT_BUILDABLE;
             }
 
-            /* Fertility check for farms */
+            /* Fertility check for farms: does this soil grow anything? */
             if (def->placement_flags & PLACE_NEEDS_FERTILE) {
                 if (t->fertility == FERTILE_NONE) {
                     return REJ_NEEDS_FERTILE;
                 }
             }
 
-            /* Hop Farm needs FERTILE_HOP specifically, not just any
-             * fertility bit — separate from PLACE_NEEDS_FERTILE above
-             * so Farm's existing (loose) check is untouched. */
-            if (def->placement_flags & PLACE_NEEDS_HOP_FERTILE) {
-                if (!(t->fertility & FERTILE_HOP)) {
-                    return REJ_NEEDS_HOP_FERTILE;
-                }
+            /* ...and does it grow THIS? Separate from the loose check
+             * above so Farm's "any fertile ground" behaviour is
+             * untouched by a def naming a crop. */
+            if (def->needs_fertility &&
+                (t->fertility & def->needs_fertility) != def->needs_fertility) {
+                return REJ_NEEDS_CROP;
+            }
+
+            if (def->needs_deposit != DEPOSIT_NONE &&
+                t->deposit != def->needs_deposit) {
+                return REJ_NEEDS_DEPOSIT;
             }
 
             /* Occupied check — pass NULL for buildings when
@@ -370,6 +410,19 @@ RejectReason building_place_check(const Map *map,
                                     def->tile_w, def->tile_h,
                                     TILE_FOREST)) {
             return REJ_NEEDS_FOREST;
+        }
+    }
+
+    /* The deposit you work from beside rather than stand on. Same
+     * refusal as the under-footprint case: "nothing to work here" is
+     * the same sentence either way, and the player knows which
+     * building they are holding — the argument that collapsed fourteen
+     * crops into one REJ_NEEDS_CROP. */
+    if (def->needs_adjacent_deposit != DEPOSIT_NONE) {
+        if (!footprint_has_adjacent_deposit(map, row, col,
+                                            def->tile_w, def->tile_h,
+                                            def->needs_adjacent_deposit)) {
+            return REJ_NEEDS_DEPOSIT;
         }
     }
 

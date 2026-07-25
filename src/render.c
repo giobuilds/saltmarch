@@ -31,6 +31,19 @@ static const SDL_Color TILE_DARK[TILE_TYPE_COUNT] = {
     { 185, 165, 100, 255 },
 };
 
+/* Seam markers (SUPPLY_CHAIN Phase 1). Designated by Deposit, for the
+ * RES_COL reason recorded in ui_kit.c: a positional table indexed by a
+ * growing enum has already misaligned once in this codebase. */
+static const SDL_Color DEPOSIT_COLOURS[DEPOSIT_COUNT] = {
+    [DEPOSIT_NONE]     = {   0,   0,   0,   0 },
+    [DEPOSIT_IRON]     = { 150,  75,  55, 255 },
+    [DEPOSIT_COAL]     = {  35,  35,  40, 255 },
+    [DEPOSIT_CLAY]     = { 190, 110,  70, 255 },
+    [DEPOSIT_SAND]     = { 240, 225, 170, 255 },
+    [DEPOSIT_GOLD_ORE] = { 235, 195,  60, 255 },
+    [DEPOSIT_PEARLS]   = { 245, 235, 240, 255 },
+};
+
 /* =========================================================
  * Coordinate conversion
  * ========================================================= */
@@ -156,8 +169,84 @@ void render_map(SDL_Renderer *renderer,
             render_draw_diamond(renderer, sx, sy, cam->zoom,
                          TILE_COLOURS[t->type],
                          TILE_DARK[t->type]);
+
+            /* SUPPLY_CHAIN Phase 1: a small centred diamond where
+             * something can be dug up. Deliberately a marker rather
+             * than a recolour of the tile — a seam is a thing ON the
+             * ground, and the tile still has to read as the grass or
+             * beach it is when you are looking for somewhere to put a
+             * farm. Drawn at 40% scale, which is small enough to
+             * ignore and large enough to spot at min zoom. */
+            if (t->deposit != DEPOSIT_NONE) {
+                const float f  = 0.4f;
+                SDL_Color   dc = DEPOSIT_COLOURS[t->deposit];
+                render_draw_diamond(renderer,
+                                    sx + tw * (1.0f - f) * 0.5f,
+                                    sy + th * (1.0f - f) * 0.5f,
+                                    cam->zoom * f, dc, dc);
+            }
         }
     }
+}
+
+/* ---- render_deposit_label ------------------------------
+ * The hovered tile's seam, named, in a small box sitting just above
+ * the marker. Anchored to the TILE rather than to the cursor: a label
+ * that follows the mouse says "the pointer is here", and the question
+ * being answered is "what is under that patch of ground" — so it holds
+ * still over the thing it names while the cursor moves inside the
+ * diamond.
+ *
+ * ui_tooltip_rect does the placement, exactly as the HUD's tooltip
+ * does, which is what keeps a label near the top or the edge of the
+ * window from being drawn off it (UI_PLAN M1's clipping fix — a tip
+ * merely centred on its anchor hangs off the screen). */
+void render_deposit_label(SDL_Renderer *renderer, const Map *map,
+                          const Camera *cam, int row, int col,
+                          int screen_w, int screen_h)
+{
+    const Tile *t;
+    const char *label;
+    UiRect      screen, box;
+    SDL_FRect   f;
+    SDL_Color   fg  = { 230, 215, 180, 255 };
+    float       sx, sy, tw, th, pad = 8.0f;
+    int         w = 0, h = 0;
+
+    if (row < 0 || col < 0 || row >= map->rows || col >= map->cols) return;
+
+    t = &map->tiles[row][col];
+    if (t->deposit == DEPOSIT_NONE) return;
+
+    label = deposit_label((Deposit)t->deposit);
+    if (!label[0]) return;
+
+    /* Measuring to size a box nothing hit-tests is the allowed use of
+     * font metrics (ui_kit.h); measuring to place something clickable
+     * is the banned one, and this is not that. */
+    if (!font_measure_text(FONT_SMALL, label, &w, &h)) { w = 100; h = 14; }
+
+    iso_to_screen((float)row, (float)col, cam, &sx, &sy);
+    tw = (float)TILE_W * cam->zoom;
+    th = (float)h + 6.0f;
+
+    screen.x = 0.0f; screen.y = 0.0f;
+    screen.w = (float)screen_w; screen.h = (float)screen_h;
+
+    /* sy is the top of the tile's bounding box, which is its top
+     * vertex — the point the label should sit above. */
+    box = ui_tooltip_rect(sx + tw * 0.5f, sy,
+                          (float)w + pad * 2.0f, th, screen);
+
+    f.x = box.x; f.y = box.y; f.w = box.w; f.h = box.h;
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 50, 42, 28, 240);
+    SDL_RenderFillRect(renderer, &f);
+    SDL_SetRenderDrawColor(renderer, 140, 120, 70, 255);
+    SDL_RenderRect(renderer, &f);
+
+    font_draw_text(renderer, FONT_SMALL, label,
+                   (int)(box.x + pad), (int)(box.y + 3.0f), fg);
 }
 
 /* ---- render_hovered_tile ------------------------------- */

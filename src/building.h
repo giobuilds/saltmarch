@@ -81,10 +81,10 @@ typedef enum {
     PLACE_NEEDS_COAST     = 1 << 0,   /* adjacent water required  */
     PLACE_NEEDS_FOREST    = 1 << 1,   /* adjacent forest required */
     PLACE_NEEDS_FERTILE   = 1 << 2,   /* any fertility bit set    */
-    /* Specifically FERTILE_HOP, not just "any fertility" — kept
-     * separate from PLACE_NEEDS_FERTILE above so Farm's existing
-     * (loose) behavior is untouched by adding this. */
-    PLACE_NEEDS_HOP_FERTILE = 1 << 3,
+    /* PLACE_NEEDS_HOP_FERTILE lived here. It existed only because
+     * there was no way for a def to name the crop it wanted; there is
+     * now (needs_fertility below), and a flag per crop would have
+     * meant fourteen of them. */
 } PlacementFlags;
 
 /* Production inputs a building can consume per tick. 2 covers every
@@ -123,6 +123,33 @@ typedef struct {
     int           tile_w;          /* footprint width  in tiles */
     int           tile_h;          /* footprint height in tiles */
     PlacementFlags placement_flags;
+
+    /* Terrain this type needs under EVERY tile of its footprint, on
+     * top of placement_flags (SUPPLY_CHAIN Phase 1):
+     *
+     * needs_fertility – a mask of Fertility bits; the tile must have
+     *                   all of them. 0 means "no crop requirement".
+     *                   Distinct from PLACE_NEEDS_FERTILE, which asks
+     *                   only that the soil grow *something*.
+     * needs_deposit   – a Deposit every tile must hold. DEPOSIT_NONE
+     *                   means "no mineral requirement".
+     * needs_adjacent_deposit
+     *                 – a Deposit at least one tile ALONGSIDE the
+     *                   footprint must hold. For the deposit you work
+     *                   rather than stand on: pearl beds lie in
+     *                   shallow water, where nothing can be built, so
+     *                   the station stands on the shore beside them.
+     *                   Same shape as PLACE_NEEDS_COAST, which is the
+     *                   Fisher's Hut standing on land next to the sea
+     *                   it fishes.
+     *
+     * Fields rather than flags because the answer is which crop, not
+     * whether: a Potato Field and a Hop Farm differ by one constant
+     * here and by nothing in the validator. */
+    uint32_t      needs_fertility;
+    uint8_t       needs_deposit;
+    uint8_t       needs_adjacent_deposit;
+
     /* Colour for the placeholder rectangle (R, G, B) */
     unsigned char col_r, col_g, col_b;
 
@@ -213,6 +240,20 @@ typedef struct {
 RejectReason building_place_check(const Map *map,
                                   BuildingType type,
                                   int row, int col);
+
+/* The same check against an arbitrary def rather than a table row.
+ * building_place_check() is a one-line wrapper over this.
+ *
+ * Split out in SUPPLY_CHAIN Phase 1 so the terrain rules can be tested
+ * against a def written by the test, instead of only against whatever
+ * buildings happen to exist. Phase 1 adds terrain and no content, so
+ * without this seam the crop and deposit rules would have had to wait
+ * for a building to want them before anything could prove they work —
+ * and the def table is about to quadruple, which is exactly when you
+ * want the rules pinned down independently of it. */
+RejectReason building_place_check_def(const Map *map,
+                                      const BuildingDef *def,
+                                      int row, int col);
 
 /* The boolean form, for the many call sites that only branch on it.
  * Deliberately kept rather than making everyone write

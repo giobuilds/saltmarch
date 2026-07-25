@@ -130,7 +130,13 @@ typedef enum {
     REJ_OUT_OF_BOUNDS,        /* footprint leaves the map               */
     REJ_NOT_BUILDABLE,        /* water, rock, or otherwise unbuildable   */
     REJ_NEEDS_FERTILE,        /* farm on infertile soil                 */
-    REJ_NEEDS_HOP_FERTILE,    /* hop farm off hop-fertile soil          */
+    /* Was REJ_NEEDS_HOP_FERTILE. Generalised with the crop bitmask
+     * (SUPPLY_CHAIN Phase 1): one reason covers all fourteen crops,
+     * because "this soil won't grow that" is the same sentence
+     * whichever crop it is, and the player already knows which
+     * building they are holding. */
+    REJ_NEEDS_CROP,           /* wrong crop for this soil               */
+    REJ_NEEDS_DEPOSIT,        /* no such mineral under or beside it     */
     REJ_NEEDS_COAST,          /* no adjacent water                      */
     REJ_NEEDS_FOREST,         /* no adjacent forest                     */
     REJ_OCCUPIED,             /* another building is already there      */
