@@ -383,6 +383,52 @@ static void test_scripted_clicks(void)
           "the page turn changed which good the clicks referred to");
 }
 
+/* ---- 6. category grouping (UI_PLAN Phase 2) -------------- */
+static void test_grouping(void)
+{
+    ExchangeView v;
+    UiSnapshot   snap;
+    int          i, ordered = 1, seen_gold = 0;
+
+    /* A real market view, not a synthetic one: this is the path the
+     * game takes, and the assertion is about the resource table. */
+    memset(&snap, 0, sizeof(snap));
+    snap.islands[0].settled  = 1;
+    snap.islands[0].capacity = 200;
+    for (i = 0; i < RES_COUNT; i++) {
+        snap.islands[0].stock[i]         = 10;
+        snap.counterparty_stock[i]       = 10;
+        snap.bid[i]                      = 2;
+        snap.ask[i]                      = 4;
+    }
+    snap.counterparty_gold = 500;
+
+    exchange_view_market(&v, &snap, 0);
+
+    CHECK(v.row_count == (int)RES_GOLD,
+          "every tradeable good gets a row, and Gold does not");
+
+    for (i = 1; i < v.row_count; i++)
+        if (v.rows[i].category < v.rows[i - 1].category) ordered = 0;
+    CHECK(ordered, "rows are grouped by category, raw goods first");
+
+    for (i = 0; i < v.row_count; i++)
+        if (v.rows[i].ident == (uint16_t)RES_GOLD) seen_gold = 1;
+    CHECK(!seen_gold, "Gold is the medium, never a row of its own");
+
+    /* Within a category, enum order is preserved — a player who has
+     * learned where Wood sits should not find it moved. */
+    {
+        int wood = -1, fish = -1;
+        for (i = 0; i < v.row_count; i++) {
+            if (v.rows[i].ident == (uint16_t)RES_WOOD) wood = i;
+            if (v.rows[i].ident == (uint16_t)RES_FISH) fish = i;
+        }
+        CHECK(wood >= 0 && fish > wood,
+              "inside a category, goods keep their familiar order");
+    }
+}
+
 int main(void)
 {
     printf("== exchange screen (no SDL linked) ==\n");
@@ -391,6 +437,7 @@ int main(void)
     test_hits();
     test_refusals();
     test_scripted_clicks();
+    test_grouping();
 
     if (failures == 0) { printf("\nPASSED\n"); return 0; }
     printf("\nFAILED (%d)\n", failures);

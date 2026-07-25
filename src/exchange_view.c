@@ -42,7 +42,8 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
                           int island)
 {
     const UiIsland *isl;
-    int             r;
+    int              r;
+    ResourceCategory cat;
 
     memset(out, 0, sizeof(*out));
     out->kind = EXCHANGE_QUOTES;
@@ -65,11 +66,21 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
     /* Gold is deliberately not a row: it is the medium, not a good.
      * RES_GOLD sits last in the enum precisely so this loop bound stays
      * correct as goods are added — the same property the old
-     * TRADE_SELLABLE_COUNT relied on, and which it got wrong once. */
+     * TRADE_SELLABLE_COUNT relied on, and which it got wrong once.
+     *
+     * Two passes, one per category, rather than a sort: it is the same
+     * result with no comparator to get wrong, and it keeps enum order
+     * inside a category (so Wood stays above Fish for a player who has
+     * learned where they are). */
+    for (cat = RCAT_RAW; cat < RCAT_COUNT; cat++)
     for (r = 0; r < (int)RES_GOLD && out->row_count < EXCHANGE_MAX_ROWS; r++) {
-        ExchangeRow *row = &out->rows[out->row_count++];
+        ExchangeRow *row;
 
-        row->ident  = (uint16_t)r;
+        if (RESOURCE_CATEGORIES[r] != cat) continue;
+
+        row = &out->rows[out->row_count++];
+        row->ident    = (uint16_t)r;
+        row->category = (uint8_t)RESOURCE_CATEGORIES[r];
         copy_str(row->name, sizeof(row->name), RESOURCE_NAMES[r]);
         row->yours  = isl->stock[r];
         row->theirs = snap->counterparty_stock[r];

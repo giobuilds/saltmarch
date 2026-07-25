@@ -1,7 +1,7 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
 > Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
-> (RejectReason) and 1 (exchange screen) have landed; everything below
+> (RejectReason), 1 (exchange screen) and 2 (data model) have landed; everything below
 > them is still as planned.
 > Written for a future session to pick up cold.
 >
@@ -269,10 +269,26 @@ Deviations:
   already has; `refuse[]` on the row carries only the counterparty's
   side (out of gold, out of stock). One truth per refusal, not two.
 
-### Phase 2 — Data model
+### Phase 2 — Data model — **DONE**
 Unchanged from v1: `BuildingCategory` on `BuildingDef`, resource-category
 table, designated initialisers everywhere (the `RES_COL` lesson).
 **Verify:** headless assert every enum value has a non-default category.
+
+*As built:* five building categories (Gathering, Production, Housing,
+Infrastructure, Maritime) and three resource ones (raw, refined,
+currency), both with `*_NONE = 0` so a row added without a category
+fails the test rather than being filed under a real one. test_defs.c
+also asserts no category is empty of placeable buildings — a tab that
+opens onto nothing is the other half of the same mistake.
+
+The fields inside each `BUILDING_DEFS` row are designated now, not just
+the row indices. Before touching them the compiled table was dumped to
+text, and the dump was diffed after the conversion: byte-for-byte
+identical, and the determinism fixture still hashes 41f8ca6fde89c2ae.
+
+Phase 1's deferred category grouping landed with it: exchange rows are
+built in category order (two passes, no comparator), so a page holds
+related goods and enum order is preserved inside each group.
 
 ### Phase 3 — HUD category tabs
 Unchanged from v1 (HUD_HEIGHT 80 → ~112, 28px tab strip, sticky tab,

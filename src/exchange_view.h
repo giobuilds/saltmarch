@@ -51,6 +51,7 @@ typedef enum {
 
 typedef struct {
     uint16_t ident;                    /* ResourceType — the identity  */
+    uint8_t  category;                 /* ResourceCategory, for grouping*/
     char     name[EXCHANGE_NAME_LEN];
     int32_t  yours;                    /* your stock                   */
     int32_t  theirs;                   /* theirs (EXCHANGE_INFINITE ok)*/

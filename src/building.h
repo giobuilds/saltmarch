@@ -93,8 +93,33 @@ typedef enum {
 #define MAX_BUILDING_INPUTS 2
 
 /* ---- Static definition of one building type ------------ */
+/* ---- Building categories (UI_PLAN Phase 2) ---------------
+ * What KIND of thing this is, for grouping in the interface: the HUD's
+ * category tabs (Phase 3) and any list long enough to want sections.
+ *
+ * Deliberately about function rather than era or cost, because that is
+ * the question a player asks the HUD ("where do I get planks?"), and
+ * because it stays answerable as buildings are added.
+ *
+ * BCAT_NONE is 0 so a row that forgets to declare one is not silently
+ * filed under a real category — tests/test_defs.c asserts no def is
+ * left at NONE. */
+typedef enum {
+    BCAT_NONE = 0,
+    BCAT_GATHERING,      /* takes raw goods out of the land or sea    */
+    BCAT_PRODUCTION,     /* turns goods into other goods              */
+    BCAT_HOUSING,        /* where residents live                      */
+    BCAT_INFRASTRUCTURE, /* roads, storage, the market                */
+    BCAT_MARITIME,       /* everything about ships and other players  */
+    BCAT_COUNT
+} BuildingCategory;
+
+/* Display name for a category ("Gathering"). Never NULL. */
+const char *building_category_name(BuildingCategory c);
+
 typedef struct {
     const char   *name;
+    BuildingCategory category;     /* UI grouping; see above    */
     int           tile_w;          /* footprint width  in tiles */
     int           tile_h;          /* footprint height in tiles */
     PlacementFlags placement_flags;

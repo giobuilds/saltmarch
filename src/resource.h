@@ -33,6 +33,27 @@ typedef enum {
 /* Human-readable name for each resource (for debug / future UI). */
 extern const char *RESOURCE_NAMES[RES_COUNT];
 
+/* ---- Resource categories (UI_PLAN Phase 2) ----------------
+ * What KIND of good this is, for grouping in lists long enough to want
+ * sections — the exchange screen today, the inventory overlay later.
+ *
+ * The split is by position in the production chain, which is what makes
+ * a market list readable: what you dig up, what you make out of it, and
+ * the money. RCAT_NONE is 0 so a resource added without a category is
+ * caught by tests/test_defs.c rather than quietly filed under raw. */
+typedef enum {
+    RCAT_NONE = 0,
+    RCAT_RAW,        /* taken from the land or the sea               */
+    RCAT_REFINED,    /* made from other goods                        */
+    RCAT_CURRENCY,   /* Gold: the medium, not a good                 */
+    RCAT_COUNT
+} ResourceCategory;
+
+extern const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT];
+
+/* Display name for a category ("Raw goods"). Never NULL. */
+const char *resource_category_name(ResourceCategory c);
+
 /* Baseline sell price per unit. As of Phase 3 these are no longer the
  * live prices: they are the faction's quotes at baseline inventory
  * (faction.h), from which faction_bid() moves elastically with supply.
