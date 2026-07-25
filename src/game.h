@@ -36,6 +36,7 @@
 #include "ship.h"
 #include "command.h"
 #include "faction.h"
+#include "intent.h"
 
 /* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 1000
@@ -224,6 +225,15 @@ typedef struct GameState {
      * they apply (UI_PLAN M1). Neither is world state: the sequence is
      * per-machine and the ring is drained by the UI. Not hashed, not
      * saved. */
+    /* The recorded input stream (UI_PLAN M1). Written beside the
+     * command log by game_save, replayed by the CI UI harness, ignored
+     * by the sim entirely — a world is still a pure function of (seed,
+     * commands). Recording is opt-in: only a client that calls
+     * intent_record() produces any. */
+    Intent   *intent_log;
+    int       intent_count;
+    int       intent_cap;
+
     uint32_t  cmd_seq_next;
     uint32_t  cmd_seq_last;   /* what the most recent submit stamped —
                                * how the UI learns which sequence to
@@ -360,6 +370,17 @@ int  game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
+
+/* Append one recorded click. Grows by doubling like the command log;
+ * returns 1 on success, 0 on OOM (a dropped intent costs a test case,
+ * never correctness). */
+int  intent_record(GameState *gs, const Intent *in);
+
+/* Replace the intent log wholesale — how game_load installs what it
+ * read. Returns 1 on success, 0 on OOM. */
+int  intent_log_set(GameState *gs, const Intent *ins, int n);
+
+void intent_log_free(GameState *gs);
 
 /* ---- the overlay arbiter (UI_PLAN Phase 4) -----------------
  * Which overlay is on top, or UI_OVERLAY_NONE. Every "is anything open?"

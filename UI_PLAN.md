@@ -412,7 +412,7 @@ Deferred: the preview shows the earliest tick a command can apply, not
 the exact one — under lockstep the host adds its delay and the client
 cannot know it. Stated as "or later" rather than guessed at.
 
-### Phase M1 — with MMO Phase 1 (command funnel) — **runtime half DONE**
+### Phase M1 — with MMO Phase 1 (command funnel) — **DONE**
 - UI wrappers emit Commands via `command_submit()`; pending ring
   (`{seq, anchor}`), rejection drain, `fx_reject.c` flash-at-anchor.
   **Done.** `Command` gained a client-local `seq` (save v7, net proto 3);
@@ -427,17 +427,34 @@ cannot know it. Stated as "or later" rather than guessed at.
   not yet marked.
 - **INTENT lines in the `.smlog`**: mouse x/y, clicks/wheel/keys, and the
   exact `sim_tick_no` the frame's snapshot was taken at, interleaved with
-  CMD lines.
-- **CI UI replay**: the replay harness re-simulates to each intent's tick,
-  takes the snapshot, drives the real `*_build` + `*_hit_test` with the
-  evolving UiState, and asserts (a) the emitted Command is byte-identical
-  to the next CMD line, (b) every rect lies inside 1920x1080. This is a
-  full click-through UI regression suite on three OSes, in an environment
-  with no xdotool. v1 built the purity; MMO_PLAN built the log; together
-  they are this.
-- Golden UiList diffs: serialise each frame's `UiList` (id, rect, label)
-  to canonical text, diff against committed goldens — pixel-free visual
-  regression for the "Prev button moved off-page at 27 goods" class.
+  CMD lines. **Done** — a second binary section (save v8) rather than
+  text lines, carrying tick, position, the view state (page, tab,
+  overlay) and the hovered tile, plus the `seq` of whatever command the
+  click produced. The hovered tile is recorded because it comes from the
+  camera, and the camera never enters the log.
+- **CI UI replay**: **done**, running on all three platforms
+  (`--record-ui` then `--replay --verify-ui`). The fixture's trades are
+  performed by hit-testing the real exchange screen, so what is recorded
+  is a genuine (frame, position) pair. On replay the harness rebuilds
+  each frame's snapshot at its recorded tick, runs the real builders and
+  hit-tests, and checks both that every widget is on screen and that the
+  click still emits the command the log holds.
+
+  Verified to actually fail: making rows 10px taller makes two of the
+  four recorded clicks hit nothing, and the run exits 1. An earlier
+  version of the check passed that silently — a click that hits nothing
+  produced no expected command, and "no expectation" compared equal to
+  everything.
+
+  Limited to the exchange screen for now. Map clicks and the confirm
+  popup route through main.c's cascade, which is SDL-side; widening the
+  harness means extracting that cascade into a pure function, which is
+  its own piece of work and not a side effect of writing this one.
+- Golden UiList diffs: `--dump-ui FILE` writes the canonical text
+  (id, rect, flags, reason, value, label per widget, per recorded
+  click). Not yet committed as goldens or diffed in CI — the geometry
+  assertions cover the same class today, and a golden file is only worth
+  having once the layout has stopped moving every phase.
 
 ### Phase M3 — with MMO Phase 3 (elastic market)
 - `exchange_view_faction()`; refusal rendering (greyed cells + reason,

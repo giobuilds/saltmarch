@@ -69,6 +69,18 @@ Headless, with no display and no SDL runtime involved:
 ./build/saltmarch_replay --replay fixture.smlog
 ```
 
+A session's clicks can be recorded and replayed through the real UI:
+
+```bash
+./build/saltmarch_replay --record-ui ui.smlog --seed 777
+./build/saltmarch_replay --replay ui.smlog --verify-ui
+```
+
+Each recorded click carries the sim tick its frame was drawn from, so the
+harness rebuilds exactly the screen the player saw, hit-tests the same
+position, and checks that the same command falls out. `--dump-ui FILE`
+writes the widget lists as text for eyeballing or diffing.
+
 `--replay` rebuilds the world twice from (seed + command log) and compares
 state hashes, so a non-zero exit means the simulation went
 nondeterministic. `--expect-hash <hex>` additionally pins the result to a

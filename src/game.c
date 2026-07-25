@@ -186,6 +186,9 @@ GameState *game_init(void)
      * but relies on the pointer/cap being valid. */
     gs->cmd_log     = NULL;
     gs->cmd_count   = 0;
+    gs->intent_log  = NULL;
+    gs->intent_count = 0;
+    gs->intent_cap   = 0;
     gs->cmd_cap     = 0;
     gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
@@ -212,6 +215,7 @@ void game_free(GameState *gs)
 {
     if (!gs) return;
     command_log_free(gs);
+    intent_log_free(gs);
     free(gs);
 }
 
@@ -258,6 +262,7 @@ typedef struct {
     int32_t  current_island;
     uint64_t sim_tick_no;
     int32_t  cmd_count;
+    int32_t  intent_count;   /* v8: the recorded input stream */
 } SaveHeader;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
@@ -270,8 +275,13 @@ typedef struct {
  * this file writes is a different size. The field is ignored by the
  * sim — a v6 log would replay to the same world — but the bytes no
  * longer line up, and silently misreading a log is exactly what a
- * version number is for. */
-#define SAVE_VERSION 7u
+ * version number is for.
+ *
+ * v8 (UI_PLAN M1): the file gained a second section — the recorded
+ * intent stream, appended after the commands. A v7 log describes the
+ * same world; it simply has no clicks recorded, so the UI harness has
+ * nothing to replay. */
+#define SAVE_VERSION 8u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -282,7 +292,8 @@ int game_save(const GameState *gs, const char *path)
 {
     FILE         *f = fopen(path, "wb");
     SaveHeader    hdr;
-    size_t        log_bytes = sizeof(Command) * (size_t)gs->cmd_count;
+    size_t        log_bytes    = sizeof(Command) * (size_t)gs->cmd_count;
+    size_t        intent_bytes = sizeof(Intent) * (size_t)gs->intent_count;
     int           ok;
 
     if (!f) {
@@ -304,10 +315,13 @@ int game_save(const GameState *gs, const char *path)
     hdr.current_island = gs->current_island;
     hdr.sim_tick_no    = gs->sim_tick_no;
     hdr.cmd_count      = gs->cmd_count;
+    hdr.intent_count   = gs->intent_count;
 
     ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
       && (log_bytes == 0 ||
-          fwrite(gs->cmd_log, log_bytes, 1, f) == 1);
+          fwrite(gs->cmd_log, log_bytes, 1, f) == 1)
+      && (intent_bytes == 0 ||
+          fwrite(gs->intent_log, intent_bytes, 1, f) == 1);
 
     /* fclose can fail where fwrite succeeded (a full disk only surfaces
      * at flush), so a save is not saved until the close says so. */
@@ -318,9 +332,10 @@ int game_save(const GameState *gs, const char *path)
         return 0;
     }
 
-    sim_log("Game saved to %s (seed %u, tick %llu, %d commands)",
+    sim_log("Game saved to %s (seed %u, tick %llu, %d commands, %d intents)",
             path, gs->world_seed,
-            (unsigned long long)gs->sim_tick_no, gs->cmd_count);
+            (unsigned long long)gs->sim_tick_no, gs->cmd_count,
+            gs->intent_count);
     return 1;
 }
 
@@ -376,13 +391,14 @@ int game_load(GameState *gs, const char *path)
         free(buf);
         return 0;
     }
-    if (hdr.cmd_count < 0 ||
+    if (hdr.cmd_count < 0 || hdr.intent_count < 0 ||
         hdr.current_island < 0 || hdr.current_island >= MAX_ISLANDS) {
         sim_log("game_load: %s has an invalid header", path);
         free(buf);
         return 0;
     }
-    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count;
+    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count
+                       + sizeof(Intent)  * (size_t)hdr.intent_count;
     if (need > size) {
         sim_log("game_load: %s is truncated", path);
         free(buf);
@@ -399,6 +415,19 @@ int game_load(GameState *gs, const char *path)
         free(buf);
         return 0;
     }
+    /* The intents are cargo: they describe how the world was reached,
+     * not what it is, so a failure to install them is worth a line in
+     * the log and nothing more. */
+    if (hdr.intent_count > 0) {
+        const Intent *ins = (const Intent *)(buf + sizeof(hdr) +
+                                sizeof(Command) * (size_t)hdr.cmd_count);
+        if (!intent_log_set(gs, ins, hdr.intent_count))
+            sim_log("game_load: could not install %d intents",
+                    hdr.intent_count);
+    } else {
+        gs->intent_count = 0;
+    }
+
     free(buf);
 
     game_set_current_island(gs, hdr.current_island);

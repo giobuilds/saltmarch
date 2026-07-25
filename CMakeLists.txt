@@ -97,6 +97,7 @@ add_library(saltmarch_ui STATIC
     src/island_bar.c
     src/confirm_view.c
     src/fx_reject.c
+    src/replay_ui.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 
@@ -122,8 +123,11 @@ add_executable(saltmarch ${SALTMARCH_CLIENT_SOURCES})
 # The CLI half of the headless twin: loads a .smlog, replays it, prints
 # the hash, exits 0/1. This is the determinism harness CI runs, and it
 # links no SDL at all.
+# Links the UI library as well as the sim: since UI_PLAN M1 this tool
+# also replays a session's recorded clicks through the real overlay
+# builders and hit-tests (see replay_ui.c). Still no SDL.
 add_executable(saltmarch_replay src/replay_main.c)
-target_link_libraries(saltmarch_replay PRIVATE saltmarch_sim)
+target_link_libraries(saltmarch_replay PRIVATE saltmarch_ui saltmarch_sim)
 
 # The persistent server: the sim, the transport, a clock and a
 # checkpoint file. No SDL, no window, no assets -- it runs anywhere a

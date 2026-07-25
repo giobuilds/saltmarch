@@ -188,3 +188,48 @@ void command_log_free(GameState *gs)
     gs->cmd_cap     = 0;
     gs->cmd_applied = 0;
 }
+
+/* ---- the recorded input stream (UI_PLAN M1) ---------------- */
+
+int intent_record(GameState *gs, const Intent *in)
+{
+    if (gs->intent_count == gs->intent_cap) {
+        int     ncap = gs->intent_cap ? gs->intent_cap * 2 : 64;
+        Intent *n    = (Intent *)realloc(gs->intent_log,
+                                         (size_t)ncap * sizeof(Intent));
+        if (!n) {
+            /* Unlike the command log, losing one of these breaks
+             * nothing: the world is still a pure function of the
+             * commands. It costs a test case, so say so and move on. */
+            sim_log("intent_record: out of memory at %d intents",
+                    gs->intent_count);
+            return 0;
+        }
+        gs->intent_log = n;
+        gs->intent_cap = ncap;
+    }
+    gs->intent_log[gs->intent_count++] = *in;
+    return 1;
+}
+
+int intent_log_set(GameState *gs, const Intent *ins, int n)
+{
+    if (n > gs->intent_cap) {
+        Intent *g = (Intent *)realloc(gs->intent_log,
+                                      (size_t)n * sizeof(Intent));
+        if (!g) return 0;
+        gs->intent_log = g;
+        gs->intent_cap = n;
+    }
+    if (n > 0) memcpy(gs->intent_log, ins, (size_t)n * sizeof(Intent));
+    gs->intent_count = n;
+    return 1;
+}
+
+void intent_log_free(GameState *gs)
+{
+    free(gs->intent_log);
+    gs->intent_log   = NULL;
+    gs->intent_count = 0;
+    gs->intent_cap   = 0;
+}

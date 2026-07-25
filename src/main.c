@@ -19,6 +19,7 @@
 #include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
 #include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
 #include "fx_reject.h"     /* UI_PLAN M1: what happened to my click */
+#include "intent.h"        /* UI_PLAN M1: recording the input stream */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -54,6 +55,12 @@ typedef struct {
     ConfirmView   confirm;
     UiList        confirm_list;
     FxReject      fx;
+
+    /* The intent being assembled this frame (UI_PLAN M1), and the
+     * command sequence before the click was handled — the difference is
+     * how we learn what the click produced. */
+    Intent        intent;
+    uint32_t      intent_seq_before;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -137,6 +144,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->confirm,       0, sizeof(app->confirm));
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
     fx_reject_init(&app->fx);
+    SDL_memset(&app->intent, 0, sizeof(app->intent));
+    app->intent_seq_before = 0;
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -311,6 +320,24 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->input.inventory_toggle) {
         gs->inventory_open = !gs->inventory_open;
         app->ui.inventory_page = 0;
+    }
+
+    /* UI_PLAN M1: remember the state this frame was drawn in, so a
+     * click recorded below carries the screen the player was actually
+     * looking at. Captured BEFORE the click is handled — afterwards the
+     * overlay may have opened, closed or paged. */
+    {
+        app->intent.tick              = app->snap.tick;
+        app->intent.x                 = gs->input.logical_x;
+        app->intent.y                 = gs->input.logical_y;
+        app->intent.ui.overlay        = (uint8_t)game_topmost_overlay(gs);
+        app->intent.ui.hud_category   = (uint8_t)app->ui.hud_category;
+        app->intent.ui.exchange_page  = (uint16_t)app->ui.exchange_page;
+        app->intent.ui.inventory_page = (uint16_t)app->ui.inventory_page;
+        app->intent.ui.hovered_row    = (int16_t)gs->hovered_row;
+        app->intent.ui.hovered_col    = (int16_t)gs->hovered_col;
+        app->intent.ui.current_island = (int16_t)gs->current_island;
+        app->intent_seq_before        = gs->cmd_seq_last;
     }
 
     /* --- Handle clicks ---------------------------------- */
@@ -633,6 +660,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 }
             }
         }
+    }
+
+    /* One record per click, stamped with whichever command it produced
+     * (zero if it produced none — a tab, a page turn, a click on open
+     * water). The pair is what lets CI assert that replaying this click
+     * against this frame emits this command. */
+    if (gs->input.left_click || gs->input.right_click) {
+        app->intent.kind = (uint8_t)(gs->input.left_click ? INTENT_LEFT_CLICK
+                                                          : INTENT_RIGHT_CLICK);
+        app->intent.seq  = (gs->cmd_seq_last != app->intent_seq_before)
+                           ? gs->cmd_seq_last : 0u;
+        intent_record(gs, &app->intent);
     }
 
     /* Right click closes the topmost overlay, else deselects. The
