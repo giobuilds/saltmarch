@@ -275,6 +275,24 @@ const char *deposit_name(Deposit d)
     return NAMES[d];
 }
 
+const char *deposit_label(Deposit d)
+{
+    /* Written out rather than composed as "%s deposit": a seam of clay
+     * and a bed of pearls are not the same kind of thing, and the two
+     * words that say so are cheaper than a rule with exceptions. */
+    static const char *const LABELS[DEPOSIT_COUNT] = {
+        [DEPOSIT_NONE]     = "",
+        [DEPOSIT_IRON]     = "Iron deposit",
+        [DEPOSIT_COAL]     = "Coal deposit",
+        [DEPOSIT_CLAY]     = "Clay deposit",
+        [DEPOSIT_SAND]     = "Sand deposit",
+        [DEPOSIT_GOLD_ORE] = "Gold ore deposit",
+        [DEPOSIT_PEARLS]   = "Pearl beds"
+    };
+    if (d < 0 || d >= DEPOSIT_COUNT || !LABELS[d]) return "";
+    return LABELS[d];
+}
+
 static TileType height_to_type(float h, MapProfile p)
 {
     const ProfileParams *pp = &PROFILE_PARAMS[p];
@@ -404,9 +422,11 @@ static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
         return t->type == TILE_GRASS &&
                t->elevation >= lo + (span * 4) / 5;
     case DEPOSIT_CLAY:
-        /* River-bottom country: the low ground, and the beach. */
-        return t->type == TILE_SAND ||
-               (t->type == TILE_GRASS && t->elevation <= lo + span / 3);
+        /* River-bottom country: the low ground, inland. Deliberately
+         * NOT the beach — the beach is where sand comes from, and
+         * letting clay take beach tiles first would have it competing
+         * for the one terrain sand has. */
+        return t->type == TILE_GRASS && t->elevation <= lo + span / 3;
     case DEPOSIT_SAND:
         return t->type == TILE_SAND;
     case DEPOSIT_PEARLS:
@@ -422,9 +442,18 @@ static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
  * clustering wherever the scan happened to start. */
 static void scatter_deposits(Map *map, MapProfile p)
 {
+    /* Most-constrained first, not enum order. Pearls want beach with
+     * water alongside and sand wants any beach at all, so scattering
+     * sand first would let it eat the only tiles pearls can use. The
+     * same argument orders gold above iron and coal. */
+    static const Deposit ORDER[] = {
+        DEPOSIT_PEARLS, DEPOSIT_GOLD_ORE, DEPOSIT_IRON,
+        DEPOSIT_COAL,   DEPOSIT_CLAY,     DEPOSIT_SAND
+    };
     static uint16_t cand[MAP_ROWS * MAP_COLS];
     const ProfileParams *pp = &PROFILE_PARAMS[p];
-    int lo = 255, hi = 0, r, c, d;
+    int lo = 255, hi = 0, r, c;
+    size_t k;
 
     for (r = 0; r < MAP_ROWS; r++)
         for (c = 0; c < MAP_COLS; c++)
@@ -435,8 +464,9 @@ static void scatter_deposits(Map *map, MapProfile p)
             }
     if (lo > hi) { lo = 0; hi = 0; }   /* no grass at all */
 
-    for (d = 1; d < DEPOSIT_COUNT; d++) {
-        int      n = 0, want = pp->deposits[d], i;
+    for (k = 0; k < sizeof(ORDER) / sizeof(ORDER[0]); k++) {
+        Deposit  d    = ORDER[k];
+        int      n    = 0, want = pp->deposits[d], i;
         uint32_t rng;
 
         if (want <= 0) continue;
@@ -444,7 +474,7 @@ static void scatter_deposits(Map *map, MapProfile p)
         for (r = 0; r < MAP_ROWS; r++)
             for (c = 0; c < MAP_COLS; c++)
                 if (map->tiles[r][c].deposit == DEPOSIT_NONE &&
-                    deposit_site_ok(map, r, c, (Deposit)d, lo, hi))
+                    deposit_site_ok(map, r, c, d, lo, hi))
                     cand[n++] = (uint16_t)(r * MAP_COLS + c);
 
         /* Fisher-Yates over the candidates, driven by a hash chain so

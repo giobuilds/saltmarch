@@ -279,9 +279,22 @@ them; there is an assertion that they are patches and not speckle, and
 it fails if the patch size goes to 1.
 
 **Deposits are drawn**, as a 40%-scale diamond in the tile centre
-(`DEPOSIT_COLOURS`, render.c). Not in the plan, but Phase 1 would
-otherwise ship nothing a human could see, and the terrain it adds is
-exactly the kind that wants checking by eye. Never seen rendered.
+(`DEPOSIT_COLOURS`, render.c), and hovering one names it in a small box
+just above — `render_deposit_label()`, anchored to the *tile* rather
+than the cursor, because the question is what is under that ground
+rather than where the pointer is. Placement goes through
+`ui_tooltip_rect()` like the HUD's tooltip, so a seam near the top or
+edge of the window is not drawn off it. Not in the plan, but Phase 1
+would otherwise ship nothing a human could see, and the terrain it adds
+is exactly the kind that wants checking by eye. Never seen rendered.
+
+**Each mineral has its own ground, and the beach belongs to sand.**
+Clay is inland low ground only; it was originally allowed on beach
+too, which had it competing for the one terrain sand has. Deposits
+also scatter most-constrained-first rather than in enum order — pearls
+want beach *with water alongside* and sand wants any beach, so sand
+going first could have eaten the only tiles pearls can use. Asserted
+over four profiles and five seeds.
 
 ## Phase 2 — the structural limits
 

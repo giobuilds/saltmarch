@@ -83,6 +83,11 @@ typedef enum {
  * reads as "" so a caller can print it unconditionally. */
 const char *deposit_name(Deposit d);
 
+/* The hover label ("Iron deposit"). Same contract: never NULL, "" for
+ * DEPOSIT_NONE. Separate from deposit_name() because a list of goods
+ * wants the noun and a label on the ground wants the phrase. */
+const char *deposit_label(Deposit d);
+
 /* ---- Island terrain profiles ----------------------------
  * Which flavour of island a Map represents. Stored in Map (and in
  * Island, and in the save file) from the island refactor onward so

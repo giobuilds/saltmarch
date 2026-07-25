@@ -823,6 +823,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     render_hovered_tile(app->r, &isl->camera,
                         gs->hovered_row, gs->hovered_col);
 
+    render_deposit_label(app->r, &isl->map, &isl->camera,
+                         gs->hovered_row, gs->hovered_col,
+                         SCREEN_W, SCREEN_H);
+
     /* Phase 4: resource stockpile panel */
     render_resources(app->r, &isl->stockpile);
 

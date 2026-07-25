@@ -21,6 +21,13 @@ void render_hovered_tile(SDL_Renderer *renderer,
                          const Camera *cam,
                          int row, int col);
 
+/* Names the seam under the hovered tile ("Iron deposit"), in a box
+ * anchored above the tile — not above the cursor. Draws nothing if the
+ * tile has no deposit, so it can be called unconditionally. */
+void render_deposit_label(SDL_Renderer *renderer, const Map *map,
+                          const Camera *cam, int row, int col,
+                          int screen_w, int screen_h);
+
 void render_buildings(SDL_Renderer *renderer,
                       const Building buildings[], int count,
                       const Camera *cam);

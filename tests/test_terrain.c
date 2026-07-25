@@ -273,7 +273,79 @@ static void test_placement_rules(void)
     }
 }
 
-/* ---- 4. generation is still a pure function of the seed ---- */
+/* ---- 4. where each mineral is found ------------------------ */
+
+static void test_deposit_terrain(void)
+{
+    static const uint32_t SEEDS[] = { 1u, 4242u, 777u, 12345u, 99991u };
+    Map    map;
+    size_t s;
+    int    p, clay_on_beach = 0, sand_off_beach = 0, pearls_dry = 0;
+    int    overlaps = 0;
+
+    printf("--- where the minerals are ---\n");
+
+    for (s = 0; s < sizeof(SEEDS) / sizeof(SEEDS[0]); s++)
+        for (p = 0; p < PROFILE_COUNT; p++) {
+            int r, c;
+            /* Per map, not across maps: "hill country" is defined by
+             * this island's own elevation range, so a highland's clay
+             * legitimately sits above a flat temperate island's iron. */
+            int lowest_iron = 256, highest_clay = -1;
+
+            map_init(&map, SEEDS[s], (MapProfile)p);
+            for (r = 0; r < map.rows; r++)
+                for (c = 0; c < map.cols; c++) {
+                    const Tile *t = &map.tiles[r][c];
+                    int beach = t->type == TILE_SAND;
+
+                    if (t->deposit == DEPOSIT_CLAY && beach) clay_on_beach++;
+                    if (t->deposit == DEPOSIT_SAND && !beach) sand_off_beach++;
+                    if (t->deposit == DEPOSIT_PEARLS) {
+                        int d, wet = 0;
+                        static const int dr[4] = { -1, 1, 0, 0 };
+                        static const int dc[4] = { 0, 0, 1, -1 };
+                        for (d = 0; d < 4; d++) {
+                            int nr = r + dr[d], nc = c + dc[d];
+                            if (nr < 0 || nr >= map.rows ||
+                                nc < 0 || nc >= map.cols) continue;
+                            if (map.tiles[nr][nc].type == TILE_WATER) wet = 1;
+                        }
+                        if (!beach || !wet) pearls_dry++;
+                    }
+                    if (t->deposit == DEPOSIT_IRON &&
+                        t->elevation < lowest_iron)
+                        lowest_iron = t->elevation;
+                    if (t->deposit == DEPOSIT_CLAY &&
+                        t->elevation > highest_clay)
+                        highest_clay = t->elevation;
+                }
+
+            if (lowest_iron <= highest_clay) overlaps++;
+        }
+
+    CHECK(sand_off_beach == 0, "sand is found on the beach and nowhere else");
+    CHECK(clay_on_beach == 0,
+          "clay stays inland, so it never competes for beach with sand");
+    CHECK(pearls_dry == 0, "pearl beds are beach with water alongside");
+    CHECK(overlaps == 0,
+          "on every island, iron is hill country and clay the low ground");
+
+    /* Every deposit has something to say when hovered — an unnamed
+     * seam would draw an empty box over the tile. */
+    {
+        int d, named = 0;
+        for (d = 1; d < DEPOSIT_COUNT; d++)
+            if (deposit_label((Deposit)d)[0] &&
+                deposit_name((Deposit)d)[0]) named++;
+        CHECK(named == DEPOSIT_COUNT - 1, "every deposit has a hover label");
+        CHECK(deposit_label(DEPOSIT_NONE)[0] == '\0' &&
+              deposit_label((Deposit)999)[0] == '\0',
+              "nothing and nonsense both label as empty");
+    }
+}
+
+/* ---- 5. generation is still a pure function of the seed ---- */
 
 static void test_determinism(void)
 {
@@ -298,6 +370,7 @@ int main(void)
     test_profiles();
     test_crop_patches();
     test_placement_rules();
+    test_deposit_terrain();
     test_determinism();
 
     if (failures) {
