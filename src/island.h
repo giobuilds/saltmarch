@@ -38,6 +38,16 @@
 
 #define ISLAND_NAME_LEN 16
 
+/* ---- charter terms ----------------------------------------
+ * Deliberately gentle: a working colony pays for itself many times
+ * over, so upkeep is a reason to keep an island productive rather than
+ * a countdown. An island left completely idle takes about ten minutes
+ * of world time to lapse. */
+#define CHARTER_BID_GOLD        150   /* paid to the faction to claim  */
+#define CHARTER_UPKEEP_GOLD      25   /* per payment                   */
+#define CHARTER_UPKEEP_TICKS   1200   /* two minutes of world time     */
+#define CHARTER_GRACE_PAYMENTS    3   /* missed payments before lapse  */
+
 typedef struct {
     Map        map;
     Camera     camera;          /* per-island, so returning to an island
@@ -68,6 +78,24 @@ typedef struct {
      * replayed, mutated only through commands. */
     uint32_t   owner;
     int        docking_allowed;
+
+    /* ---- the port charter (MMO_PLAN later phases) ----------
+     * An island is not owned outright: it is HELD, under a charter
+     * bought from the faction and kept current by an upkeep payment
+     * every CHARTER_UPKEEP_TICKS. Miss CHARTER_GRACE_PAYMENTS of them
+     * and the charter lapses — the island is relisted, unowned and
+     * dormant, its buildings still standing for whoever charters it
+     * next.
+     *
+     * This is what gives a persistent world a way to hand islands to
+     * new players without an administrator: an abandoned colony
+     * eventually becomes available again on its own. It is also the
+     * first gold SINK the economy has had — until now gold only ever
+     * moved between the player and the faction.
+     *
+     * All three are sim state: hashed, replayed, integer. */
+    uint32_t   charter_timer;    /* ticks toward the next payment     */
+    int32_t    charter_arrears;  /* consecutive payments missed       */
     int32_t    escrow[RES_COUNT];
 } Island;
 

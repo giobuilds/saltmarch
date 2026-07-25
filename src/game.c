@@ -455,6 +455,44 @@ int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
     return 1;
 }
 
+/* ---- charters (MMO_PLAN later phases) ----------------------
+ * One island's upkeep, once per tick. An island that cannot pay
+ * accrues arrears; enough of them and the charter lapses, which
+ * relists the island: unowned and dormant, buildings intact, ready for
+ * the next charter. That is how a persistent world hands islands to
+ * new players without anyone administering it. */
+static void sim_charter_tick(GameState *gs, int island)
+{
+    Island *isl = &gs->islands[island];
+
+    if (!isl->settled || isl->owner == PLAYER_NONE) return;
+
+    if (++isl->charter_timer < CHARTER_UPKEEP_TICKS) return;
+    isl->charter_timer = 0;
+
+    if (isl->stockpile.amount[RES_GOLD] >= CHARTER_UPKEEP_GOLD) {
+        stockpile_add(&isl->stockpile, RES_GOLD, -CHARTER_UPKEEP_GOLD);
+        gs->faction.gold += CHARTER_UPKEEP_GOLD;
+        isl->charter_arrears = 0;
+        return;
+    }
+
+    isl->charter_arrears++;
+    sim_log("[%s] charter payment missed (%d of %d)", isl->name,
+            isl->charter_arrears, CHARTER_GRACE_PAYMENTS);
+
+    if (isl->charter_arrears < CHARTER_GRACE_PAYMENTS) return;
+
+    /* Lapsed. The buildings stay standing — an abandoned colony is a
+     * better prize than bare ground, and a ruin with a road network
+     * tells a story the map otherwise cannot. */
+    sim_log("[%s] CHARTER LAPSED — the island is relisted", isl->name);
+    isl->settled         = 0;
+    isl->owner           = PLAYER_NONE;
+    isl->charter_arrears = 0;
+    isl->charter_timer   = 0;
+}
+
 /* ---- sim_run_one_tick -----------------------------------
  * The heartbeat. See the header-comment contract in game.h. Command
  * application happens first and before any island updates, so a command
@@ -496,10 +534,16 @@ void sim_run_one_tick(GameState *gs)
     ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
                  gs->sim_tick_no);
 
-    /* 4. The market drifts back toward baseline (price recovery). */
+    /* 4. Charters fall due (MMO_PLAN later phases). Before the market
+     * tick so an island that just paid its upkeep is priced against the
+     * same faction gold every other trade this tick saw. */
+    for (i = 0; i < MAX_ISLANDS; i++)
+        sim_charter_tick(gs, i);
+
+    /* 5. The market drifts back toward baseline (price recovery). */
     faction_tick(&gs->faction);
 
-    /* 5. Advance the world clock. */
+    /* 6. Advance the world clock. */
     gs->sim_tick_no++;
 }
 
@@ -543,6 +587,8 @@ uint64_t sim_hash(const GameState *gs)
         const Island *isl = &gs->islands[i];
 
         fnv_bytes(&h, &isl->settled, sizeof(isl->settled));
+        fnv_bytes(&h, &isl->charter_timer, sizeof(isl->charter_timer));
+        fnv_bytes(&h, &isl->charter_arrears, sizeof(isl->charter_arrears));
         fnv_bytes(&h, isl->stockpile.amount, sizeof(isl->stockpile.amount));
         fnv_bytes(&h, &isl->stockpile.capacity, sizeof(isl->stockpile.capacity));
         /* Phase 5: ownership and the harbor airlock are world state. */
@@ -1295,21 +1341,33 @@ static int sim_colonise(GameState *gs, int ship_idx, int island_idx,
     if (!sh->active) return 0;
     if (sh->at_island != island_idx) return 0;     /* must be there   */
     if (isl->settled) return 0;                    /* already claimed */
+    if (isl->owner != PLAYER_NONE && isl->owner != player) return 0;
     if (sh->cargo[RES_GOLD] < COLONY_FOUNDING_GOLD) return 0;
 
-    /* The grant physically leaves the hold and becomes the colony's
-     * treasury — without it the new island could not pay for so much
-     * as a road, since every cost is denominated in its own Gold. */
+    /* The founding gold leaves the hold and splits two ways: the
+     * charter bid goes to the faction (the plan's "a bid paid TO the
+     * faction" — and the economy's first real gold sink), the rest
+     * becomes the colony's treasury. Without that remainder the new
+     * island could not pay for so much as a road, since every cost is
+     * denominated in its own Gold. */
     sh->cargo[RES_GOLD] -= COLONY_FOUNDING_GOLD;
+    gs->faction.gold    += CHARTER_BID_GOLD;
 
+    /* A relisted island keeps whatever its last holder built; only the
+     * treasury is fresh. Ruins with a road network are a better prize
+     * than bare ground, and it gives an abandoned colony a history. */
     stockpile_init(&isl->stockpile);
-    stockpile_add(&isl->stockpile, RES_GOLD, COLONY_FOUNDING_GOLD);
-    isl->settled = 1;
-    isl->owner   = player;
+    stockpile_add(&isl->stockpile, RES_GOLD,
+                  COLONY_FOUNDING_GOLD - CHARTER_BID_GOLD);
+    isl->settled         = 1;
+    isl->owner           = player;
+    isl->charter_timer   = 0;
+    isl->charter_arrears = 0;
     camera_init(&isl->camera, SCREEN_W, SCREEN_H, MAP_COLS, MAP_ROWS);
 
-    sim_log("Colony founded on %s with %d Gold (player %u)",
-            isl->name, COLONY_FOUNDING_GOLD, player);
+    sim_log("Charter bought on %s: %d Gold to the faction, %d Gold "
+            "treasury (player %u)", isl->name, CHARTER_BID_GOLD,
+            COLONY_FOUNDING_GOLD - CHARTER_BID_GOLD, player);
     return 1;
 }
 

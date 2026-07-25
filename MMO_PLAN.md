@@ -345,9 +345,16 @@ Carbon.
 
 ## Later phases (design-complete, do not start until 1–6 are green)
 
-- **Port charters:** `COLONY_FOUNDING_GOLD` becomes a bid paid TO the
-  faction; charter upkeep is a tick-driven gold drain; lapse relists the
-  island. New players join by bidding on lapsed charters.
+- **Port charters — DONE.** `COLONY_FOUNDING_GOLD` splits: `CHARTER_BID_GOLD`
+  (150) goes to the faction — the economy's first real gold sink — and the
+  rest becomes the colony's treasury, because an island that cannot pay for
+  a road is stranded. Upkeep is `CHARTER_UPKEEP_GOLD` every
+  `CHARTER_UPKEEP_TICKS`, also to the faction; `CHARTER_GRACE_PAYMENTS`
+  missed and the charter lapses. A lapsed island relists unowned and
+  dormant **with its buildings still standing** — a ruin with a road
+  network is a better prize than bare ground, and it gives an abandoned
+  colony a history. Charter state is hashed and replayed like everything
+  else.
 - **Loss mechanics, then insurance:** first NPC piracy events on voyages
   (deterministic, seeded from `(voyage_id, event_id)` so the feed stays a
   dumb log), then per-lane premium EMA of insured losses; the premium
