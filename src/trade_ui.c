@@ -76,6 +76,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     UiRect          panel;
     int             i;
     char            buf[64];
+    RejectReason    hover_reason = REJ_OK;
 
     if (list->count == 0) return;
 
@@ -227,13 +228,30 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            (int)(w->rect.y + 5.0f),
                            disabled ? DIM : TEXT);
 
-            /* Hovering a refused button says why, at the button. Same
-             * vocabulary the sim rejects with (UI_PLAN decision 3). */
+            /* Hovering a refused button says why. Noted here, drawn
+             * after the loop: a later row's buttons would otherwise
+             * paint over it. */
             if (disabled && hover && w->reason != (uint8_t)REJ_OK)
-                font_draw_text(renderer, FONT_SMALL,
-                               ui_reject_text((RejectReason)w->reason),
-                               (int)(w->rect.x - 180.0f),
-                               (int)(w->rect.y + 5.0f), WARN);
+                hover_reason = (RejectReason)w->reason;
         }
+    }
+
+    /* The refusal, just above the cursor — where the eye already is,
+     * rather than off at the widget it belongs to.
+     *
+     * Kept on screen by budgeting a fixed box rather than measuring the
+     * string: layout may not consult font metrics (ui_kit.h's hard
+     * rule), so the clamp assumes the widest reason in the table. */
+    if (hover_reason != REJ_OK) {
+        const float TIP_W = 200.0f, TIP_H = 18.0f;
+        float       tx = (float)mouse_x + 12.0f;
+        float       ty = (float)mouse_y - (TIP_H + 6.0f);
+
+        if (tx + TIP_W > (float)screen_w) tx = (float)screen_w - TIP_W;
+        if (tx < 0.0f)                    tx = 0.0f;
+        if (ty < 0.0f)                    ty = (float)mouse_y + 20.0f;
+
+        font_draw_text(renderer, FONT_SMALL, ui_reject_text(hover_reason),
+                       (int)tx, (int)ty, WARN);
     }
 }
