@@ -11,18 +11,81 @@
  * with zero other state to migrate. RES_COUNT in a needs[] slot means
  * "unused" — same sentinel convention as BuildingDef.consumes[]. */
 static const TierDef TIER_DEFS[] = {
-    { BUILDING_HOUSE,        { RES_FISH, RES_GRAIN, RES_COUNT } },
-    { BUILDING_HOUSE_WORKER, { RES_FISH, RES_GRAIN, RES_BEER  } },
+    { BUILDING_HOUSE,
+      { RES_FISH, RES_GRAIN, RES_COUNT, RES_COUNT, RES_COUNT },
+      BUILDING_HOUSE_WORKER, TIER_UPGRADE_COST_GOLD, BUILDING_NONE },
+    { BUILDING_HOUSE_WORKER,
+      { RES_FISH, RES_GRAIN, RES_BEER, RES_COUNT, RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
 
-static const TierDef *tier_def_for(BuildingType type)
+const TierDef *tier_def_for(BuildingType type)
 {
     int i;
     for (i = 0; i < TIER_DEF_COUNT; i++)
         if (TIER_DEFS[i].house_type == type)
             return &TIER_DEFS[i];
     return NULL;   /* not a house type pop_update recognizes */
+}
+
+BuildingType tier_upgrade_requires(BuildingType from)
+{
+    const TierDef *tier = tier_def_for(from);
+    const TierDef *next;
+
+    if (!tier || tier->next_tier == BUILDING_NONE) return BUILDING_NONE;
+
+    /* The prerequisite belongs to the tier being entered, not the one
+     * being left: it is the Academy that makes Scholars possible, and
+     * a Marsh Cottage is not waiting on anything to become Artisans. */
+    next = tier_def_for(tier->next_tier);
+    return next ? next->requires_building : BUILDING_NONE;
+}
+
+RejectReason tier_upgrade_check(BuildingType from,
+                                const int stock[RES_COUNT],
+                                int prereq_present,
+                                BuildingType *out_to)
+{
+    const TierDef *tier = tier_def_for(from);
+
+    if (out_to) *out_to = BUILDING_NONE;
+    if (!tier) return REJ_UNAVAILABLE;
+
+    return tier_upgrade_check_def(tier,
+                                  tier_def_for(tier->next_tier),
+                                  stock, prereq_present, out_to);
+}
+
+RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
+                                    const int stock[RES_COUNT],
+                                    int prereq_present,
+                                    BuildingType *out_to)
+{
+    int k;
+
+    if (out_to) *out_to = BUILDING_NONE;
+
+    if (!tier || tier->next_tier == BUILDING_NONE) return REJ_UNAVAILABLE;
+    if (!next) return REJ_UNAVAILABLE;   /* an edge to nowhere */
+
+    if (next->requires_building != BUILDING_NONE && !prereq_present)
+        return REJ_NEEDS_BUILDING;
+
+    /* Every good the tier being ENTERED will want, present on the
+     * island. Checked before Gold so the message a player sees names
+     * the thing they have to go and build, not the money they happen
+     * to be short of as well. */
+    for (k = 0; k < MAX_TIER_GOODS; k++) {
+        if (next->needs[k] == RES_COUNT) continue;
+        if (stock[next->needs[k]] <= 0) return REJ_NEEDS_GOODS;
+    }
+
+    if (stock[RES_GOLD] < tier->upgrade_gold) return REJ_CANT_AFFORD;
+
+    if (out_to) *out_to = tier->next_tier;
+    return REJ_OK;
 }
 
 int pop_is_house_type(BuildingType type)

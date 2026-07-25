@@ -148,7 +148,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     fx_reject_init(&app->fx);
     SDL_memset(&app->intent, 0, sizeof(app->intent));
     app->intent_seq_before = 0;
-    app->ui.hud_category = BCAT_GATHERING;
+    app->ui.hud_category = BCAT_FARMING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
      * Cosmetic identity only — the sim's player_id comes from the co-op

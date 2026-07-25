@@ -87,10 +87,15 @@ typedef enum {
      * meant fourteen of them. */
 } PlacementFlags;
 
-/* Production inputs a building can consume per tick. 2 covers every
- * chain currently planned (nothing needs 3 simultaneous raw inputs);
- * raise if a future chain genuinely needs more. */
-#define MAX_BUILDING_INPUTS 2
+/* Production inputs a building can consume per tick. Raised from 2 in
+ * SUPPLY_CHAIN Phase 2: the Watchmaker's takes Gold Ore + Glass +
+ * Springs and the Gramophone Works takes Planks + Brass + Shellac.
+ *
+ * NOTE for anyone adding a def: RES_WOOD is 0, so a `consumes` slot
+ * left out of an initialiser reads as Wood rather than as "unused".
+ * Write all MAX_BUILDING_INPUTS slots explicitly; tests/test_defs.c
+ * asserts every unused one is RES_COUNT. */
+#define MAX_BUILDING_INPUTS 3
 
 /* ---- Static definition of one building type ------------ */
 /* ---- Building categories (UI_PLAN Phase 2) ---------------
@@ -104,10 +109,18 @@ typedef enum {
  * BCAT_NONE is 0 so a row that forgets to declare one is not silently
  * filed under a real category — tests/test_defs.c asserts no def is
  * left at NONE. */
+/* Widened from five to seven in SUPPLY_CHAIN Phase 2, before the
+ * content that needs it arrives. Gathering split into what you grow
+ * and what you dig, Production into what a workshop makes and what a
+ * factory does — at roughly 21 slots per tab and ~60 buildings coming,
+ * five categories would have overflowed and the split would have had
+ * to happen mid-content, renumbering tabs a player had learned. */
 typedef enum {
     BCAT_NONE = 0,
-    BCAT_GATHERING,      /* takes raw goods out of the land or sea    */
-    BCAT_PRODUCTION,     /* turns goods into other goods              */
+    BCAT_FARMING,        /* grown or caught: fields, pastures, boats  */
+    BCAT_EXTRACTION,     /* dug or felled: mines, pits, the forest    */
+    BCAT_WORKSHOP,       /* one artisan's worth of processing         */
+    BCAT_FACTORY,        /* heavy industry: furnaces, machine shops   */
     BCAT_HOUSING,        /* where residents live                      */
     BCAT_INFRASTRUCTURE, /* roads, storage, the market                */
     BCAT_MARITIME,       /* everything about ships and other players  */
@@ -263,6 +276,17 @@ RejectReason building_place_check_def(const Map *map,
 int building_can_place(const Map *map,
                        BuildingType type,
                        int row, int col);
+
+/* The first input slot `def` cannot pay for out of `s`, or -1 when it
+ * can run. All-or-nothing: a building ticks only when every
+ * non-RES_COUNT slot has enough, so nothing half-consumes one input
+ * while short of another.
+ *
+ * Lives here rather than inside island_tick_buildings() so a test can
+ * drive it with a def of its own — MAX_BUILDING_INPUTS went to 3 in
+ * SUPPLY_CHAIN Phase 2 and no building uses the third slot until
+ * Phase 6, which would otherwise leave the widening unproven. */
+int building_missing_input(const BuildingDef *def, const Stockpile *s);
 
 /* Returns 1 if `s` holds enough of every resource in
  * BUILDING_DEFS[type].cost[] to afford placing it. Deliberately

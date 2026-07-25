@@ -71,6 +71,23 @@ typedef struct {
     int32_t    building_count;
 } UiIsland;
 
+/* The snapshot-side twin of island_has_building() (island.h): is an
+ * active, road-connected building of `type` on this island?
+ * BUILDING_NONE answers 1.
+ *
+ * Two copies of a six-line predicate, deliberately — the sim reads
+ * Island and the UI reads UiIsland, and threading one function through
+ * both would mean handing UI code a GameState, which is the thing this
+ * whole header exists to prevent. tests/test_confirm.c asserts the two
+ * agree over a real world, which is the safeguard that matters. */
+int snapshot_has_building(const UiIsland *isl, BuildingType type);
+
+/* The tier-upgrade rule as the UI sees it: reads the house at `idx`,
+ * looks up its own prerequisite, and returns tier_upgrade_check()'s
+ * verdict. One call so no overlay reassembles the arguments itself. */
+RejectReason snapshot_upgrade_check(const UiIsland *isl, int idx,
+                                    BuildingType *out_to);
+
 typedef struct {
     uint8_t  active;
     int32_t  at_island;          /* -1 while at sea                    */

@@ -592,19 +592,20 @@ void game_buy_resource_limit(GameState *gs, ResourceType res, int qty,
  * or already inactive. */
 void game_demolish_building(GameState *gs, int idx);
 
-/* Gold cost to upgrade a Farmers' House (BUILDING_HOUSE) to a
- * Workers' House (BUILDING_HOUSE_WORKER) via game_upgrade_house(). */
-#define TIER_UPGRADE_COST_GOLD 300
+/* TIER_UPGRADE_COST_GOLD moved to population.h in SUPPLY_CHAIN Phase 2:
+ * with the tier model a graph, the price of an edge belongs beside the
+ * edge, in TierDef.upgrade_gold, and the constant is now only the
+ * first tier's value rather than every tier's. */
 
-/* Upgrades buildings[idx] from BUILDING_HOUSE to BUILDING_HOUSE_WORKER:
- * checks Gold affordability, deducts TIER_UPGRADE_COST_GOLD, then
- * mutates the building's type in place. Nothing else needs to change
+/* Walks buildings[idx] along its tier's upgrade edge (TierDef.next_tier,
+ * population.h) after tier_upgrade_check() agrees: deducts the tier's
+ * Gold, then mutates the building's type in place. Nothing else needs to change
  * — PopData's residents/happy/timer stay exactly as they were (same
  * array index), agents' home_idx references stay valid (the home
  * didn't move), and pop_update()/connectivity/rendering/worker-
  * assignment all already look up BUILDING_DEFS live by the (now
  * different) type. No-op if idx is out of range, inactive, not a
- * BUILDING_HOUSE, or Gold is insufficient. */
+ * house, or tier_upgrade_check() refuses. */
 void game_upgrade_house(GameState *gs, int idx);
 
 /* Gold cost of laying down a new ship at a Shipyard. */

@@ -307,7 +307,7 @@ to the sea it fishes. `REJ_NEEDS_DEPOSIT` covers both the under-foot
 and the alongside case — one sentence, since the player knows which
 building they are holding.
 
-## Phase 2 — the structural limits
+## Phase 2 — the structural limits — **DONE**
 
 **Goal:** the ceilings the content will hit, raised before it hits
 them. No new content.
@@ -340,6 +340,36 @@ them. No new content.
 phase adds no state); synthetic tests for a 3-input building and a
 5-need tier; test_hud's 40-building case re-run against the new
 category set.
+
+### As built
+
+`tests/test_tier.c`, 43 assertions. The fixture hash held at
+`42affc4b13c29881` as predicted — this phase adds no world state.
+
+**Two seams, for the same reason Phase 1 needed one.** Nothing uses a
+third input until Phase 6 and no tier lists five goods until Phase 4,
+so both widenings would have shipped unproven. `building_missing_input()`
+lifts the all-or-nothing input check out of `island_tick_buildings()`,
+and `tier_upgrade_check_def()` takes tiers the caller supplies with the
+table-driven `tier_upgrade_check()` as a wrapper. The tests write their
+own defs and tiers — including one gated behind a building, which is
+the Academy's rule proven four phases before the Academy.
+
+**`RES_WOOD` is 0, which made widening `consumes[]` a live hazard**: a
+slot omitted from an initialiser reads as Wood, not as "unused". Every
+row was rewritten to state all three slots, and a test now fails on any
+def naming a resource in a slot it consumes nothing of.
+
+**The prerequisite lookup is two functions, deliberately.**
+`island_has_building()` reads `Island`, `snapshot_has_building()` reads
+`UiIsland`, and threading one through both would mean handing UI code a
+`GameState` — the thing the snapshot exists to prevent. A test asserts
+the two agree across every building type on a real world.
+
+**Factories is an empty category** until Phase 4's foundries. The HUD
+already gives an empty category no tab; test_defs now asserts that
+*exactly* the categories known to be empty are, so filling it without
+updating that list fails rather than passes quietly.
 
 ## Phase 3 — the two northern base tiers
 

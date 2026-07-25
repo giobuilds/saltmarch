@@ -109,3 +109,46 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
     out->counterparty_gold = gs->faction.gold;
     out->confirm           = gs->confirm;
 }
+
+/* ---- reading a snapshot ------------------------------------
+ * The two queries an overlay needs that are not a plain field read.
+ * Both live here rather than in the overlay that first wanted them,
+ * so a second overlay asking the same question gets the same answer.
+ */
+
+int snapshot_has_building(const UiIsland *isl, BuildingType type)
+{
+    int i;
+
+    if (type == BUILDING_NONE) return 1;   /* nothing required */
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == (int16_t)type &&
+            isl->buildings[i].connected)
+            return 1;
+    return 0;
+}
+
+RejectReason snapshot_upgrade_check(const UiIsland *isl, int idx,
+                                    BuildingType *out_to)
+{
+    BuildingType from;
+    int          stock[RES_COUNT], r;
+
+    if (out_to) *out_to = BUILDING_NONE;
+    if (idx < 0 || idx >= isl->building_count) return REJ_UNAVAILABLE;
+    if (!isl->buildings[idx].active) return REJ_UNAVAILABLE;
+
+    from = (BuildingType)isl->buildings[idx].type;
+
+    /* Copied rather than cast: the snapshot stores int32_t and the
+     * shared rule takes int. They are the same type on every platform
+     * this builds for, which is exactly the kind of thing that stops
+     * being true quietly. */
+    for (r = 0; r < RES_COUNT; r++) stock[r] = (int)isl->stock[r];
+
+    return tier_upgrade_check(from, stock,
+                              snapshot_has_building(isl,
+                                  tier_upgrade_requires(from)),
+                              out_to);
+}
