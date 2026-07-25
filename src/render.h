@@ -4,6 +4,9 @@
 #include <SDL3/SDL.h>
 #include "map.h"
 #include "camera.h"
+#include "fx_reject.h"
+
+struct GameState;
 #include "building.h"
 #include "resource.h"
 #include "population.h"   /* Phase 5 */
@@ -46,6 +49,22 @@ void render_agents(SDL_Renderer *renderer,
  * world-map overlay can draw island nodes with the same primitive
  * instead of carrying a second copy of the geometry. Size is
  * TILE_W x TILE_H scaled by `zoom`. */
+/* ---- pending and rejected (UI_PLAN M1) --------------------
+ * Commands apply at tick boundaries, and several ticks later under
+ * lockstep. Rather than hiding that, both halves are drawn:
+ *
+ *   render_pending_placements  — buildings that have been ordered but
+ *       not yet applied, as translucent outlines that harden into real
+ *       buildings when the tick lands. A stalled co-op session shows a
+ *       growing pile of these instead of silently eating clicks.
+ *   render_reject_flashes      — the short-lived "why not" messages
+ *       fx_reject.c raised, at the tile or widget that emitted them. */
+void render_pending_placements(SDL_Renderer *renderer, const Camera *cam,
+                               const struct GameState *gs);
+
+void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
+                           const FxReject *fx);
+
 void render_draw_diamond(SDL_Renderer *renderer,
                          float bx, float by, float zoom,
                          SDL_Color top_col, SDL_Color bot_col);

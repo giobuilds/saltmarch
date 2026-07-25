@@ -294,9 +294,11 @@ ExchangeHit exchange_hit(const UiList *list, const UiState *st,
     hit.res  = -1;
     hit.qty  = 0;
     hit.page = st ? st->exchange_page : 0;
+    memset(&hit.rect, 0, sizeof(hit.rect));
 
     w = ui_list_hit(list, x, y);
     if (!w) return hit;
+    hit.rect = w->rect;
 
     switch (ui_id_group(w->id)) {
     case UI_GROUP_SELL:

@@ -18,6 +18,7 @@
 #include "escrow_ui.h" /* MMO Phase 5: harbor escrow panel */
 #include "inventory_ui.h"  /* UI_PLAN Phase 4: stores + vitals */
 #include "confirm_ui.h"    /* UI_PLAN Phase 6: the one confirmation */
+#include "fx_reject.h"     /* UI_PLAN M1: what happened to my click */
 #include "client.h"   /* MMO Phase 6: the client half of the frame */
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
@@ -52,6 +53,7 @@ typedef struct {
     UiList        island_list;
     ConfirmView   confirm;
     UiList        confirm_list;
+    FxReject      fx;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -134,6 +136,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->island_list,   0, sizeof(app->island_list));
     SDL_memset(&app->confirm,       0, sizeof(app->confirm));
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
+    fx_reject_init(&app->fx);
     app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
@@ -233,6 +236,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     /* UI_PLAN Phase 0: take the picture the UI will work from. After
      * the tick loop, so every overlay in this frame sees one tick and
      * none of them can observe the world mid-tick. */
+    /* UI_PLAN M1: collect what the ticks just did to the commands this
+     * client submitted, and age the flashes they raised. Before the
+     * snapshot, so a rejection is visible on the same frame the world
+     * failed to change. */
+    fx_reject_drain(&app->fx, gs);
+    fx_reject_update(&app->fx, gs->delta_time);
+
     ui_snapshot_build(&app->snap, gs);
 
     /* The half of the health readings the sim cannot know: how stale
@@ -406,9 +416,23 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             case CONFIRM_HIT_CHOOSE:
                 game_confirm_choose(gs, ch.option);
                 break;
-            case CONFIRM_HIT_ACCEPT:
-                game_confirm_accept(gs);
+            case CONFIRM_HIT_ACCEPT: {
+                /* Remember where this came from, so a rejection lands
+                 * on the tile the player clicked rather than in a
+                 * corner (UI_PLAN M1). */
+                Command  pending = gs->confirm.chosen ? gs->confirm.alt
+                                                      : gs->confirm.cmd;
+                FxAnchor anchor;
+
+                if (pending.kind == CMD_PLACE_BUILDING)
+                    anchor = fx_anchor_tile(pending.b, pending.c);
+                else
+                    anchor = fx_anchor_rect(app->confirm_list.items[0].rect);
+
+                if (game_confirm_accept(gs))
+                    fx_reject_expect(&app->fx, gs->cmd_seq_last, anchor);
                 break;
+            }
             case CONFIRM_HIT_CANCEL:
             case CONFIRM_HIT_OUTSIDE:
                 game_confirm_cancel(gs);
@@ -444,6 +468,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 if (qty < 0)
                     qty = app->snap.islands[gs->current_island].stock[hit.res];
                 game_sell_resource(gs, (ResourceType)hit.res, qty);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(hit.rect));
                 break;
             }
             case EXCHANGE_HIT_BUY:
@@ -451,6 +477,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                  * itself, since it needs both storage headroom and
                  * Gold on hand to know what "max" means. */
                 game_buy_resource(gs, (ResourceType)hit.res, hit.qty);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(hit.rect));
                 break;
             case EXCHANGE_HIT_PAGE:
                 app->ui.exchange_page = hit.page;
@@ -591,7 +619,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      * drag check), and a per-tile confirmation would
                      * make that gesture unusable. A single click
                      * behaves the same way a 1-tile drag does. */
-                    game_try_place_road(gs, gs->hovered_row, gs->hovered_col);
+                    if (game_try_place_road(gs, gs->hovered_row,
+                                            gs->hovered_col))
+                        fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                         fx_anchor_tile(gs->hovered_row,
+                                                        gs->hovered_col));
                 } else if (gs->selected_building != BUILDING_NONE &&
                           gs->hovered_row >= 0 &&
                           building_can_place(&isl->map, gs->selected_building,
@@ -655,6 +687,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->input.logical_x + 18, gs->input.logical_y + 18, warn);
         }
     }
+
+    /* Ordered but not yet applied (UI_PLAN M1). */
+    render_pending_placements(app->r, &isl->camera, gs);
 
     render_hovered_tile(app->r, &isl->camera,
                         gs->hovered_row, gs->hovered_col);
@@ -789,6 +824,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
         font_draw_text(app->r, FONT_NORMAL, msg, SCREEN_W / 2 - 300, 8, col);
     }
+
+    /* Flashes last: they answer a click and must not be painted over
+     * by the overlay the click came from. */
+    render_reject_flashes(app->r, &isl->camera, &app->fx);
 
     SDL_RenderPresent(app->r);
     return SDL_APP_CONTINUE;

@@ -128,12 +128,21 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
+    /* Stamp the sequence before routing, so a command handed to a co-op
+     * host carries it there and back and the UI recognises its own
+     * (UI_PLAN M1). Sequences start at 1: zero means "not ours". */
+    if (stamped.seq == 0) {
+        if (gs->cmd_seq_next == 0) gs->cmd_seq_next = 1;
+        stamped.seq = gs->cmd_seq_next++;
+    }
+    gs->cmd_seq_last = stamped.seq;
+
     /* In a co-op session the submission is routed through the host's
      * ordering authority instead of the local log (host: stamp + log +
      * broadcast; guest: send upstream and wait for it to come back
      * stamped). Offline, or if the session declines, fall through to
      * local stamping. */
-    if (gs->net && gs->net_submit && gs->net_submit(gs->net, gs, c))
+    if (gs->net && gs->net_submit && gs->net_submit(gs->net, gs, &stamped))
         return 1;
 
     /* Stamp for the next tick to run (sim_tick_no) and with the local

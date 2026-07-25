@@ -383,3 +383,86 @@ void render_agents(SDL_Renderer *renderer,
         SDL_RenderFillRect(renderer, &dot);
     }
 }
+
+/* ---- pending placements (UI_PLAN M1) ----------------------
+ * The command log's tail — everything submitted but not yet applied —
+ * read straight rather than mirrored into a second list. There is only
+ * one queue, and this draws it. */
+void render_pending_placements(SDL_Renderer *renderer, const Camera *cam,
+                               const struct GameState *gs)
+{
+    int i;
+
+    for (i = gs->cmd_applied; i < gs->cmd_count; i++) {
+        const Command *c = &gs->cmd_log[i];
+        BuildingType   type;
+        int            row, col, r2, c2;
+        const BuildingDef *def;
+
+        if (c->kind == CMD_PLACE_BUILDING) {
+            type = (BuildingType)(c->d / 2);
+        } else if (c->kind == CMD_PLACE_ROAD) {
+            type = BUILDING_ROAD;
+        } else {
+            continue;
+        }
+
+        /* Only this island's, and only this player's: a co-op partner's
+         * pending orders are their business. */
+        if (c->a != gs->current_island) continue;
+        if (c->player_id != gs->local_player_id) continue;
+        if (type <= BUILDING_NONE || type >= BUILDING_TYPE_COUNT) continue;
+
+        row = c->b;
+        col = c->c;
+        def = &BUILDING_DEFS[type];
+
+        for (r2 = row; r2 < row + def->tile_h; r2++)
+            for (c2 = col; c2 < col + def->tile_w; c2++) {
+                float sx, sy;
+                SDL_Color top  = { def->col_r, def->col_g, def->col_b, 110 };
+                SDL_Color side = { (Uint8)(def->col_r / 2),
+                                   (Uint8)(def->col_g / 2),
+                                   (Uint8)(def->col_b / 2), 110 };
+                iso_to_screen((float)r2, (float)c2, cam, &sx, &sy);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                render_draw_diamond(renderer, sx, sy, cam->zoom, top, side);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            }
+    }
+}
+
+/* ---- rejection flashes ------------------------------------ */
+void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
+                           const FxReject *fx)
+{
+    int i;
+
+    for (i = 0; i < fx->flash_count; i++) {
+        const FxFlash *f     = &fx->flashes[i];
+        float          alpha = f->life / FX_FLASH_SECONDS;
+        float          x = 0.0f, y = 0.0f;
+        SDL_Color      col;
+
+        if (alpha > 1.0f) alpha = 1.0f;
+        if (alpha < 0.0f) alpha = 0.0f;
+
+        if (f->anchor.kind == FX_ANCHOR_TILE) {
+            iso_to_screen((float)f->anchor.row, (float)f->anchor.col,
+                          cam, &x, &y);
+            /* Rise as it fades: motion is what catches the eye on a
+             * screen where nothing else is moving. */
+            y -= (1.0f - alpha) * 20.0f;
+        } else if (f->anchor.kind == FX_ANCHOR_SCREEN) {
+            x = f->anchor.rect.x + f->anchor.rect.w * 0.5f;
+            y = f->anchor.rect.y - (1.0f - alpha) * 20.0f;
+        } else {
+            continue;
+        }
+
+        col.r = 240; col.g = 120; col.b = 105;
+        col.a = (Uint8)(alpha * 255.0f);
+        font_draw_text(renderer, FONT_SMALL, f->text,
+                       (int)(x - 40.0f), (int)(y - 28.0f), col);
+    }
+}

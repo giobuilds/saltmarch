@@ -69,6 +69,26 @@ typedef struct {
     int         chosen;   /* 0 = cmd, 1 = alt                          */
 } ConfirmState;
 
+/* ---- what happened to my command (UI_PLAN M1) --------------
+ * Every command applied at a tick boundary leaves one of these behind.
+ * The UI drains them each frame and matches them against its pending
+ * ring by (player_id, seq); anything it does not recognise — a replayed
+ * command, another player's — has no pending entry and is silently
+ * dropped, which is how feedback stays local without special-casing.
+ *
+ * A small ring: results older than a few frames are of no use to
+ * anybody, and dropping the oldest is better than growing forever. */
+#define SIM_RESULT_RING 32
+
+typedef struct {
+    uint32_t     seq;
+    uint32_t     player_id;
+    uint64_t     tick;
+    CommandKind  kind;
+    RejectReason reason;
+} SimResult;
+
+
 /* Tagged (rather than an anonymous typedef) so the net hooks below can
  * name the type from inside the struct that owns them. */
 typedef struct GameState {
@@ -200,6 +220,17 @@ typedef struct GameState {
     uint64_t  sim_acc_ns;   /* real-time accumulator feeding the tick
                              * loop — the ONLY wall clock the sim sees    */
 
+    /* Client-local command sequence, and the results of commands as
+     * they apply (UI_PLAN M1). Neither is world state: the sequence is
+     * per-machine and the ring is drained by the UI. Not hashed, not
+     * saved. */
+    uint32_t  cmd_seq_next;
+    uint32_t  cmd_seq_last;   /* what the most recent submit stamped —
+                               * how the UI learns which sequence to
+                               * expect an answer for                  */
+    SimResult results[SIM_RESULT_RING];
+    int       result_count;
+
     /* The NPC market counterparty (Phase 3). World sim state: hashed,
      * mutated only in sim_apply (trades) and sim_run_one_tick
      * (reversion). One faction serves every island's marketplace. */
@@ -265,6 +296,20 @@ typedef struct GameState {
  * doubling the log). */
 int  command_submit(GameState *gs, const Command *c);
 int  sim_apply(GameState *gs, const Command *c);
+
+/* The same dispatch, reporting WHY rather than just whether (UI_PLAN
+ * decision 3). sim_apply() is the boolean form, kept because REJ_OK is
+ * 0 and mechanically converting its call sites would have inverted
+ * every one of them.
+ *
+ * There is deliberately no second validator: the reasons come from the
+ * mutators themselves, so the message a player sees is the reason the
+ * sim refused rather than a client-side guess that can drift. */
+RejectReason sim_apply_reason(GameState *gs, const Command *c);
+
+/* Copy out (and clear) everything recorded since the last drain.
+ * Returns how many were written, at most `max`. */
+int sim_results_drain(GameState *gs, SimResult *out, int max);
 
 /* Advance the world by exactly one fixed tick: apply every command
  * stamped for this tick (in log order), run each settled island's full

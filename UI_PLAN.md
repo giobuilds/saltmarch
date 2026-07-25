@@ -412,11 +412,19 @@ Deferred: the preview shows the earliest tick a command can apply, not
 the exact one — under lockstep the host adds its delay and the client
 cannot know it. Stated as "or later" rather than guessed at.
 
-### Phase M1 — with MMO Phase 1 (command funnel)
+### Phase M1 — with MMO Phase 1 (command funnel) — **runtime half DONE**
 - UI wrappers emit Commands via `command_submit()`; pending ring
   (`{seq, anchor}`), rejection drain, `fx_reject.c` flash-at-anchor.
+  **Done.** `Command` gained a client-local `seq` (save v7, net proto 3);
+  `sim_apply_reason()` reports why, with `sim_apply()` kept as the
+  boolean form because REJ_OK is 0. The reasons come from the mutators
+  themselves — no second validator, per the dual-validation risk. Ship,
+  escrow and route commands still answer `REJ_UNAVAILABLE`; converting
+  those bodies belongs with M5, which is the phase that renders them.
 - Pending-vs-confirmed queued rendering (decision 5) for placements and
-  trades.
+  trades. **Placements done** — drawn straight from the log's unapplied
+  tail, so there is one queue rather than a mirror of it. Trade rows are
+  not yet marked.
 - **INTENT lines in the `.smlog`**: mouse x/y, clicks/wheel/keys, and the
   exact `sim_tick_no` the frame's snapshot was taken at, interleaved with
   CMD lines.

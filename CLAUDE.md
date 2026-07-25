@@ -83,6 +83,7 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
 - `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
 - `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
+- `fx_reject.c/h` — correlates submitted commands with their results by `{player_id, seq}` and raises a flash at the tile/widget that emitted a rejected one
 - `confirm_view.c/h` + `confirm_ui.c/h` — the single confirmation popup; it stores the `Command` it will submit and renders it (`command_describe`)
 - `vitals.c/h` — the alert strip's rules, including the sim's own health (F9 result, tick backlog, feed age)
 - `inventory_view.c/h` + `inventory_ui.c/h` — the stores overlay (`I`)

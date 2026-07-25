@@ -76,6 +76,17 @@ typedef enum {
 typedef struct {
     uint64_t    tick;       /* sim tick at which this command applies    */
     uint32_t    player_id;  /* 0 for now; becomes identity in Phase 5    */
+    /* Client-local sequence number, stamped by command_submit on the
+     * machine that authored this command (UI_PLAN M1). It exists so the
+     * UI can recognise its OWN command coming back — applied a tick
+     * later, or several ticks later through a co-op host — and say what
+     * happened to it at the widget or tile that emitted it.
+     *
+     * Meaningless across clients: two players' sequences both start at
+     * 1, so a match is only a match when player_id is yours too.
+     * Ignored by the sim entirely; it is not part of what a command
+     * DOES, which is why replay is unaffected by it. */
+    uint32_t    seq;
     CommandKind kind;
     int32_t     a, b, c, d; /* payload, meaning per kind (see above)     */
 } Command;

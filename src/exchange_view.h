@@ -146,6 +146,8 @@ typedef struct {
     int             res;
     int             qty;     /* < 0 means "all"/"max", as before      */
     int             page;
+    UiRect          rect;    /* the widget hit — where to flash a
+                              * rejection (UI_PLAN M1)                */
 } ExchangeHit;
 
 /* Decode a click against the list that was drawn. */

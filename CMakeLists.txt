@@ -96,6 +96,7 @@ add_library(saltmarch_ui STATIC
     src/inventory_view.c
     src/island_bar.c
     src/confirm_view.c
+    src/fx_reject.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 
