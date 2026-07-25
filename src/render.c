@@ -31,6 +31,19 @@ static const SDL_Color TILE_DARK[TILE_TYPE_COUNT] = {
     { 185, 165, 100, 255 },
 };
 
+/* Seam markers (SUPPLY_CHAIN Phase 1). Designated by Deposit, for the
+ * RES_COL reason recorded in ui_kit.c: a positional table indexed by a
+ * growing enum has already misaligned once in this codebase. */
+static const SDL_Color DEPOSIT_COLOURS[DEPOSIT_COUNT] = {
+    [DEPOSIT_NONE]     = {   0,   0,   0,   0 },
+    [DEPOSIT_IRON]     = { 150,  75,  55, 255 },
+    [DEPOSIT_COAL]     = {  35,  35,  40, 255 },
+    [DEPOSIT_CLAY]     = { 190, 110,  70, 255 },
+    [DEPOSIT_SAND]     = { 240, 225, 170, 255 },
+    [DEPOSIT_GOLD_ORE] = { 235, 195,  60, 255 },
+    [DEPOSIT_PEARLS]   = { 245, 235, 240, 255 },
+};
+
 /* =========================================================
  * Coordinate conversion
  * ========================================================= */
@@ -156,6 +169,22 @@ void render_map(SDL_Renderer *renderer,
             render_draw_diamond(renderer, sx, sy, cam->zoom,
                          TILE_COLOURS[t->type],
                          TILE_DARK[t->type]);
+
+            /* SUPPLY_CHAIN Phase 1: a small centred diamond where
+             * something can be dug up. Deliberately a marker rather
+             * than a recolour of the tile — a seam is a thing ON the
+             * ground, and the tile still has to read as the grass or
+             * beach it is when you are looking for somewhere to put a
+             * farm. Drawn at 40% scale, which is small enough to
+             * ignore and large enough to spot at min zoom. */
+            if (t->deposit != DEPOSIT_NONE) {
+                const float f  = 0.4f;
+                SDL_Color   dc = DEPOSIT_COLOURS[t->deposit];
+                render_draw_diamond(renderer,
+                                    sx + tw * (1.0f - f) * 0.5f,
+                                    sy + th * (1.0f - f) * 0.5f,
+                                    cam->zoom * f, dc, dc);
+            }
         }
     }
 }

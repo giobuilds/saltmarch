@@ -219,7 +219,7 @@ been a merchant's first.
 
 ---
 
-## Phase 1 — the terrain the chains need
+## Phase 1 — the terrain the chains need — **DONE**
 
 **Goal:** the map can say "there is clay here" and "this soil grows
 potatoes". No new goods yet.
@@ -250,6 +250,38 @@ yields the crops and deposits its intended chains need, and that a
 deposit-requiring building is refused with `REJ_NEEDS_DEPOSIT` on bare
 grass. Fixture hash changes once, deliberately: tile metadata is
 hashed through building placement validity.
+
+### As built
+
+`tests/test_terrain.c`, 34 assertions across four profiles and five
+seeds. Four things came out differently from the plan above.
+
+**The fixture hash did not change.** The plan expected it to, and it
+would have if the new passes had drawn from `lcg_next()` — every
+island's shape depends on that draw order, so consuming from it would
+have silently reshaped every map in every existing save. Instead crops
+and deposits hash `(seed, coordinates)` and run *after* the heightmap
+loop: inserted rather than interleaved. Terrain is byte-identical,
+`42affc4b13c29881` still holds, and old logs replay.
+
+**`building_place_check_def()`**, taking a def instead of a table row,
+with `building_place_check()` as a one-line wrapper over it. Phase 1
+ships no building that wants a deposit — that is the point of the
+phase — so without this seam the deposit rule could not have been
+proven until something wanted it. The test writes its own defs. Worth
+keeping as the table grows past sixty rows.
+
+**Pasture is not exclusive with the other crops.** Every grass tile
+carries `FERTILE_PASTURE` on top of its grain-or-hop bit, so grazing
+and arable compete for the same ground. Secondary crops come one per
+8×8 patch rather than one per tile, so a district can be planned around
+them; there is an assertion that they are patches and not speckle, and
+it fails if the patch size goes to 1.
+
+**Deposits are drawn**, as a 40%-scale diamond in the tile centre
+(`DEPOSIT_COLOURS`, render.c). Not in the plan, but Phase 1 would
+otherwise ship nothing a human could see, and the terrain it adds is
+exactly the kind that wants checking by eye. Never seen rendered.
 
 ## Phase 2 — the structural limits
 

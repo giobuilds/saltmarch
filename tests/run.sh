@@ -64,6 +64,7 @@ for src in "$root"/tests/test_*.c; do
         test_intercept) link_objs="";       link_sdl="" ;;
         test_ghost_faction) link_objs="";   link_sdl="" ;;
         test_scrub)    link_objs="$uilib";  link_sdl="" ;;
+        test_terrain)  link_objs="";        link_sdl="" ;;
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;
     esac
 

@@ -207,25 +207,73 @@ static float island_mask(int row, int col)
  * min_* are the requirements map_init()'s retry loop enforces, so a
  * Highland is never generated without the hops that are its entire
  * reason to exist, and the starting island is always playable. */
+/* `crops` is the palette of SECONDARY crops the profile's fertile
+ * grass can carry — grain and hops are assigned by elevation as
+ * before, and each fertile tile then draws exactly one bit from this
+ * palette. One per tile, not a random subset, because a tile that grew
+ * everything would make the choice of where to put a field
+ * uninteresting; patches of a single crop are what force layout
+ * decisions. A palette of 0 means "grain and hops only".
+ *
+ * `deposits[]` is how many tiles of each mineral to scatter, indexed by
+ * Deposit. These are minimums the retry loop enforces, same as min_hop:
+ * an island whose whole reason to exist is iron must actually have
+ * iron.
+ *
+ * Southern crops appear in no palette here — the profiles that grow
+ * them do not exist yet (Phase 5). */
 typedef struct {
-    float water_max, sand_max, grass_max;
-    int   hop_elev_min;
-    int   min_hop, min_grain, min_forest;
+    float    water_max, sand_max, grass_max;
+    int      hop_elev_min;
+    int      min_hop, min_grain, min_forest;
+    uint32_t crops;
+    int      deposits[DEPOSIT_COUNT];
 } ProfileParams;
 
 static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
     /* Home: broad farmland and some woods, but NO hops — the reason
-     * the player has to go looking for another island. */
-    [PROFILE_TEMPERATE] = { 0.30f, 0.40f, 0.72f, 256,   0, 120,  8 },
+     * the player has to go looking for another island. Clay and sand
+     * for bricks and glass; a little iron, but not enough to build an
+     * industry on. */
+    [PROFILE_TEMPERATE] = { 0.30f, 0.40f, 0.72f, 256,   0, 120,  8,
+        FERTILE_POTATO | FERTILE_FLOWERS,
+        { [DEPOSIT_CLAY] = 14, [DEPOSIT_SAND] = 10, [DEPOSIT_IRON] = 6,
+          [DEPOSIT_COAL] = 4 } },
     /* Highland: hop country. Grass sits high and splits into hop
      * above the cutoff / grain below, so grain is genuinely scarce —
-     * a Malthouse here starves without imported Grain. */
-    [PROFILE_HIGHLAND]  = { 0.30f, 0.38f, 0.60f, 103,  20,   8,  0 },
+     * a Malthouse here starves without imported Grain. It is also
+     * where the metal is: iron, coal and the only gold worth mining. */
+    [PROFILE_HIGHLAND]  = { 0.30f, 0.38f, 0.60f, 103,  20,   8,  0,
+        FERTILE_POTATO | FERTILE_GRAPES,
+        { [DEPOSIT_IRON] = 18, [DEPOSIT_COAL] = 12, [DEPOSIT_GOLD_ORE] = 5,
+          [DEPOSIT_CLAY] = 4 } },
     /* Woodland: timber. Forest starts lower, squeezing farmland. */
-    [PROFILE_WOODLAND]  = { 0.30f, 0.40f, 0.62f, 256,   0,  20, 60 },
-    /* Atoll: a wide beach ring and little else. Fish and not much. */
-    [PROFILE_ATOLL]     = { 0.30f, 0.50f, 0.80f, 256,   0,   0,  0 },
+    [PROFILE_WOODLAND]  = { 0.30f, 0.40f, 0.62f, 256,   0,  20, 60,
+        FERTILE_POTATO,
+        { [DEPOSIT_CLAY] = 10, [DEPOSIT_COAL] = 8, [DEPOSIT_IRON] = 4,
+          [DEPOSIT_SAND] = 4 } },
+    /* Atoll: a wide beach ring and little else. Fish, sand, and the
+     * only pearl beds anywhere — which is the whole argument for
+     * settling one. */
+    [PROFILE_ATOLL]     = { 0.30f, 0.50f, 0.80f, 256,   0,   0,  0,
+        0,
+        { [DEPOSIT_SAND] = 20, [DEPOSIT_PEARLS] = 10, [DEPOSIT_CLAY] = 3 } },
 };
+
+const char *deposit_name(Deposit d)
+{
+    static const char *const NAMES[DEPOSIT_COUNT] = {
+        [DEPOSIT_NONE]     = "",
+        [DEPOSIT_IRON]     = "Iron",
+        [DEPOSIT_COAL]     = "Coal",
+        [DEPOSIT_CLAY]     = "Clay",
+        [DEPOSIT_SAND]     = "Sand",
+        [DEPOSIT_GOLD_ORE] = "Gold Ore",
+        [DEPOSIT_PEARLS]   = "Pearls"
+    };
+    if (d < 0 || d >= DEPOSIT_COUNT || !NAMES[d]) return "";
+    return NAMES[d];
+}
 
 static TileType height_to_type(float h, MapProfile p)
 {
@@ -238,11 +286,18 @@ static TileType height_to_type(float h, MapProfile p)
 
 static void tile_set_metadata(Tile *t, MapProfile p)
 {
+    t->deposit = DEPOSIT_NONE;   /* the scatter pass fills these in */
+
     switch (t->type) {
     case TILE_GRASS:
         t->buildable     = 1;
         t->fertility     = (t->elevation > PROFILE_PARAMS[p].hop_elev_min)
                            ? FERTILE_HOP : FERTILE_GRAIN;
+        /* Anything grassy can be grazed. Pasture is the one crop bit
+         * that is not exclusive with the others: a field of grain and a
+         * field of sheep want the same ground, and making the player
+         * choose between them on the same tile is the point. */
+        t->fertility    |= FERTILE_PASTURE;
         break;
     case TILE_SAND:
         t->buildable     = 1;
@@ -257,6 +312,156 @@ static void tile_set_metadata(Tile *t, MapProfile p)
         t->buildable     = 0;
         t->fertility     = FERTILE_NONE;
         break;
+    }
+}
+
+/* ---- Secondary crops and deposits ------------------------
+ * Both passes run AFTER the heightmap loop and draw their randomness
+ * from a hash of (seed, coordinates) rather than from lcg_next(). That
+ * is deliberate: the terrain LCG's draw order is what every existing
+ * island's shape depends on, so a new pass that consumed from it would
+ * silently reshape every map in every save. Hashing instead means
+ * these passes are inserted, not interleaved.
+ *
+ * FNV-1a over the inputs, same mixer as sim_hash — no new constants. */
+static uint32_t coord_hash(uint32_t seed, uint32_t salt,
+                           uint32_t a, uint32_t b)
+{
+    uint32_t h = 2166136261u;
+    uint32_t words[4], i, j;
+
+    words[0] = seed; words[1] = salt; words[2] = a; words[3] = b;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++) {
+            h ^= (words[i] >> (j * 8)) & 0xffu;
+            h *= 16777619u;
+        }
+    return h;
+}
+
+/* One crop from the profile's palette per 8x8 block, so crops come in
+ * patches a player can plan a district around rather than a per-tile
+ * speckle that makes every site equivalent. */
+#define CROP_PATCH 8
+
+static void assign_crops(Map *map, MapProfile p)
+{
+    uint32_t palette = PROFILE_PARAMS[p].crops;
+    int      r, c;
+
+    if (!palette) return;
+
+    for (r = 0; r < MAP_ROWS; r++) {
+        for (c = 0; c < MAP_COLS; c++) {
+            Tile    *t = &map->tiles[r][c];
+            uint32_t bits, n, pick, i;
+
+            if (t->type != TILE_GRASS) continue;
+
+            /* Count the palette's bits, then pick the pick'th one. */
+            for (bits = palette, n = 0; bits; bits &= bits - 1) n++;
+            pick = coord_hash(map->seed, 0x63726f70u,   /* "crop" */
+                              (uint32_t)(r / CROP_PATCH),
+                              (uint32_t)(c / CROP_PATCH)) % n;
+            for (bits = palette, i = 0; bits; bits &= bits - 1, i++)
+                if (i == pick) { t->fertility |= bits & ~(bits - 1); break; }
+        }
+    }
+}
+
+static int has_adjacent_water(const Map *map, int r, int c)
+{
+    static const int dr[4] = { -1, 1,  0, 0 };
+    static const int dc[4] = {  0, 0,  1,-1 };
+    int d;
+
+    for (d = 0; d < 4; d++) {
+        int nr = r + dr[d], nc = c + dc[d];
+        if (nr < 0 || nr >= MAP_ROWS || nc < 0 || nc >= MAP_COLS) continue;
+        if (map->tiles[nr][nc].type == TILE_WATER) return 1;
+    }
+    return 0;
+}
+
+/* Is this tile a plausible site for `d`, ignoring what is already
+ * there? `hi`/`lo` are the map's own grass elevation range, so "hill
+ * country" means hilly *for this island* rather than for a global
+ * constant that a low-lying map could never reach. */
+static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
+                           int lo, int hi)
+{
+    const Tile *t = &map->tiles[r][c];
+    int span = hi - lo;
+
+    if (!t->buildable) return 0;   /* a mine has to be placeable on it */
+
+    switch (d) {
+    case DEPOSIT_IRON:
+    case DEPOSIT_COAL:
+        return t->type == TILE_GRASS &&
+               t->elevation >= lo + (span * 3) / 5;
+    case DEPOSIT_GOLD_ORE:
+        return t->type == TILE_GRASS &&
+               t->elevation >= lo + (span * 4) / 5;
+    case DEPOSIT_CLAY:
+        /* River-bottom country: the low ground, and the beach. */
+        return t->type == TILE_SAND ||
+               (t->type == TILE_GRASS && t->elevation <= lo + span / 3);
+    case DEPOSIT_SAND:
+        return t->type == TILE_SAND;
+    case DEPOSIT_PEARLS:
+        return t->type == TILE_SAND && has_adjacent_water(map, r, c);
+    default:
+        return 0;
+    }
+}
+
+/* Place up to `want` tiles of each mineral. Candidates are gathered in
+ * scan order and then shuffled, rather than accepted as they are
+ * found, so deposits are spread over the whole island instead of
+ * clustering wherever the scan happened to start. */
+static void scatter_deposits(Map *map, MapProfile p)
+{
+    static uint16_t cand[MAP_ROWS * MAP_COLS];
+    const ProfileParams *pp = &PROFILE_PARAMS[p];
+    int lo = 255, hi = 0, r, c, d;
+
+    for (r = 0; r < MAP_ROWS; r++)
+        for (c = 0; c < MAP_COLS; c++)
+            if (map->tiles[r][c].type == TILE_GRASS) {
+                int e = map->tiles[r][c].elevation;
+                if (e < lo) lo = e;
+                if (e > hi) hi = e;
+            }
+    if (lo > hi) { lo = 0; hi = 0; }   /* no grass at all */
+
+    for (d = 1; d < DEPOSIT_COUNT; d++) {
+        int      n = 0, want = pp->deposits[d], i;
+        uint32_t rng;
+
+        if (want <= 0) continue;
+
+        for (r = 0; r < MAP_ROWS; r++)
+            for (c = 0; c < MAP_COLS; c++)
+                if (map->tiles[r][c].deposit == DEPOSIT_NONE &&
+                    deposit_site_ok(map, r, c, (Deposit)d, lo, hi))
+                    cand[n++] = (uint16_t)(r * MAP_COLS + c);
+
+        /* Fisher-Yates over the candidates, driven by a hash chain so
+         * this pass never touches the terrain LCG. */
+        rng = coord_hash(map->seed, 0x64657030u + (uint32_t)d, 0, 0);
+        for (i = n - 1; i > 0; i--) {
+            uint16_t tmp;
+            int      j;
+            rng = coord_hash(rng, 0x73687566u, (uint32_t)i, 0);
+            j   = (int)(rng % (uint32_t)(i + 1));
+            tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp;
+        }
+
+        if (want > n) want = n;   /* take what the island has */
+        for (i = 0; i < want; i++)
+            map->tiles[cand[i] / MAP_COLS][cand[i] % MAP_COLS].deposit =
+                (uint8_t)d;
     }
 }
 
@@ -318,13 +523,21 @@ static void generate_once(Map *map, uint32_t seed, MapProfile profile)
             tile_set_metadata(t, profile);
         }
     }
+
+    /* Both need the finished heightmap: crops read tile type, deposits
+     * read the island's own elevation range. */
+    assign_crops(map, profile);
+    scatter_deposits(map, profile);
 }
 
 /* Does this map satisfy its profile's minimum-resource contract? */
 static int profile_satisfied(const Map *map, MapProfile p)
 {
     const ProfileParams *pp = &PROFILE_PARAMS[p];
-    int r, c, hop = 0, grain = 0, forest = 0;
+    int r, c, d, hop = 0, grain = 0, forest = 0;
+    int found[DEPOSIT_COUNT];
+
+    memset(found, 0, sizeof(found));
 
     for (r = 0; r < MAP_ROWS; r++) {
         for (c = 0; c < MAP_COLS; c++) {
@@ -332,8 +545,16 @@ static int profile_satisfied(const Map *map, MapProfile p)
             if (t->type == TILE_FOREST)        forest++;
             if (t->fertility & FERTILE_HOP)    hop++;
             if (t->fertility & FERTILE_GRAIN)  grain++;
+            if (t->deposit != DEPOSIT_NONE)    found[t->deposit]++;
         }
     }
+
+    /* Deposits join the contract for the same reason hops did: an
+     * island advertised as iron country that rolled no iron is a
+     * broken game rather than interesting scarcity, and the failure
+     * would only show up when someone tried to build the mine. */
+    for (d = 1; d < DEPOSIT_COUNT; d++)
+        if (found[d] < pp->deposits[d]) return 0;
 
     return hop    >= pp->min_hop
         && grain  >= pp->min_grain

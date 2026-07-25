@@ -351,8 +351,8 @@ static void test_placement_reasons(void)
         if (!found) printf("  skip: this map has no infertile buildable tile\n");
     }
 
-    /* Hop fertility is stricter than fertility: a tile fertile for
-     * grain but not hops must say so specifically. */
+    /* Naming a crop is stricter than asking for fertile soil: a tile
+     * fertile for grain but not hops must say so specifically. */
     {
         int rr, cc, found = 0;
         for (rr = 0; rr < map.rows && !found; rr++)
@@ -361,9 +361,8 @@ static void test_placement_reasons(void)
                 if (t->buildable && t->fertility != FERTILE_NONE &&
                     !(t->fertility & FERTILE_HOP)) {
                     CHECK(building_place_check(&map, BUILDING_HOP_FARM,
-                                               rr, cc) == REJ_NEEDS_HOP_FERTILE,
-                          "a hop farm on plain fertile soil is "
-                          "NEEDS_HOP_FERTILE");
+                                               rr, cc) == REJ_NEEDS_CROP,
+                          "a hop farm on plain fertile soil is NEEDS_CROP");
                     found = 1;
                 }
             }

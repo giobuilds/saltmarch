@@ -157,16 +157,18 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
         .hud_placeable = 1
     },
-    /* Production chains, Phase 1 (Beer). Hop Farm needs FERTILE_HOP
-     * specifically (map.h), finally giving that dormant fertility bit
-     * a consumer. Malthouse is the multi-input building: both Grain
-     * and Hops must be in stock for it to tick at all (all-or-nothing,
-     * see game_tick_buildings, game.c). */
+    /* Production chains, Phase 1 (Beer). Hop Farm names FERTILE_HOP in
+     * needs_fertility (map.h) — it was the first building to want a
+     * specific crop and, until SUPPLY_CHAIN Phase 1, the reason there
+     * was a whole placement flag for that one crop. Malthouse is the
+     * multi-input building: both Grain and Hops must be in stock for it
+     * to tick at all (all-or-nothing, see game_tick_buildings, game.c). */
     [BUILDING_HOP_FARM] = {
         .name = "Hop Farm",
         .category = BCAT_GATHERING,
         .tile_w = 1, .tile_h = 1,
-        .placement_flags = PLACE_NEEDS_HOP_FERTILE,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_HOP,
         .col_r = 90, .col_g = 150, .col_b = 60,
         .produces = RES_HOPS, .produce_amt = 1,
         .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
@@ -315,7 +317,13 @@ RejectReason building_place_check(const Map *map,
                                   BuildingType type,
                                   int row, int col)
 {
-    const BuildingDef *def = &BUILDING_DEFS[type];
+    return building_place_check_def(map, &BUILDING_DEFS[type], row, col);
+}
+
+RejectReason building_place_check_def(const Map *map,
+                                      const BuildingDef *def,
+                                      int row, int col)
+{
     int r, c;
 
     /* --- Pass 1: bounds --------------------------------- */
@@ -334,20 +342,24 @@ RejectReason building_place_check(const Map *map,
                 return REJ_NOT_BUILDABLE;
             }
 
-            /* Fertility check for farms */
+            /* Fertility check for farms: does this soil grow anything? */
             if (def->placement_flags & PLACE_NEEDS_FERTILE) {
                 if (t->fertility == FERTILE_NONE) {
                     return REJ_NEEDS_FERTILE;
                 }
             }
 
-            /* Hop Farm needs FERTILE_HOP specifically, not just any
-             * fertility bit — separate from PLACE_NEEDS_FERTILE above
-             * so Farm's existing (loose) check is untouched. */
-            if (def->placement_flags & PLACE_NEEDS_HOP_FERTILE) {
-                if (!(t->fertility & FERTILE_HOP)) {
-                    return REJ_NEEDS_HOP_FERTILE;
-                }
+            /* ...and does it grow THIS? Separate from the loose check
+             * above so Farm's "any fertile ground" behaviour is
+             * untouched by a def naming a crop. */
+            if (def->needs_fertility &&
+                (t->fertility & def->needs_fertility) != def->needs_fertility) {
+                return REJ_NEEDS_CROP;
+            }
+
+            if (def->needs_deposit != DEPOSIT_NONE &&
+                t->deposit != def->needs_deposit) {
+                return REJ_NEEDS_DEPOSIT;
             }
 
             /* Occupied check — pass NULL for buildings when
