@@ -67,13 +67,20 @@ saltmarch/
 │   ├── input.c/h              Keys, mouse, held-button drag state
 │   ├── render.c/h             Isometric projection and all world drawing
 │   ├── fonts.c/h              SDL_ttf wrapper
-│   ├── ui.c/h                 HUD bar and menu overlay
-│   ├── trade_ui.c/h           Marketplace buy/sell screen
+│   ├── ui.c/h                 HUD painting and menu overlay
+│   ├── ui_kit.c/h             Layout, widget lists, hit-testing (SDL-free)
+│   ├── ui_snapshot.c/h        The per-frame world copy the UI reads
+│   ├── exchange_view.c/h      Exchange surface: rows, pagination, hits
+│   ├── hud_view.c/h           Build bar: category tabs, slots, hit decoding
+│   ├── island_bar.c/h         ‹ Island Name › header, chevrons, per-island hue
+│   ├── vitals.c/h             Alert strip rules, including sim health
+│   ├── inventory_view.c/h     Stores overlay: rows, capacity, pagination
+│   ├── inventory_ui.c/h       Drawing for the stores overlay and vitals
+│   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
 │   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)
-│   ├── build_confirm_ui.c/h   Cost confirmation (resources or Gold)
-│   ├── demolish_confirm_ui.c/h  "Destroy this building?"
-│   ├── tier_upgrade_ui.c/h    Spend-Gold-to-confirm (upgrade, build ship)
+│   ├── confirm_view.c/h       The one confirmation: options + command preview
+│   ├── confirm_ui.c/h         Drawing for it
 │   ├── feed.c/h               Shared voyage feed (ghost multiplayer)
 │   ├── net.c/h                Lockstep protocol over TCP (its own library)
 │   └── replay_main.c          main() for the headless replay tool
@@ -308,12 +315,6 @@ The `assets/` tree no longer exists.
 
 ## Known gaps
 
-- **The trade screen is the nearest UI cliff** — it overflows the window
-  at 10 tradeable goods and there are 6. See `UI_PLAN.md`.
-- **Mouse wheel is not overlay-aware**: scrolling over an open modal
-  zooms the world behind it.
-- **`building_can_place()`'s `reason` string is never shown** — every
-  caller passes `NULL`.
 - **Marrowbay generates more farmland than its atoll flavour implies**; nothing
   depends on it, but it reads oddly.
 - Scarcity currently constrains only Hops and Wood. Fish and Grain are

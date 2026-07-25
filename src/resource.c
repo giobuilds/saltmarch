@@ -12,6 +12,31 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     [RES_GOLD]  = "Gold",
 };
 
+/* Designated, like every other table indexed by this enum — the
+ * RES_COL lesson (see building.c): a positional table here misaligned
+ * silently the moment Hops/Malt/Beer were inserted. */
+const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT] = {
+    [RES_WOOD]  = RCAT_RAW,
+    [RES_FISH]  = RCAT_RAW,
+    [RES_GRAIN] = RCAT_RAW,
+    [RES_HOPS]  = RCAT_RAW,
+    [RES_MALT]  = RCAT_REFINED,
+    [RES_BEER]  = RCAT_REFINED,
+    [RES_GOLD]  = RCAT_CURRENCY,
+};
+
+const char *resource_category_name(ResourceCategory c)
+{
+    static const char *const NAMES[RCAT_COUNT] = {
+        [RCAT_NONE]     = "Other",
+        [RCAT_RAW]      = "Raw goods",
+        [RCAT_REFINED]  = "Refined goods",
+        [RCAT_CURRENCY] = "Currency"
+    };
+    if (c < 0 || c >= RCAT_COUNT || !NAMES[c]) return "Other";
+    return NAMES[c];
+}
+
 const int SELL_PRICE[RES_COUNT] = {
     [RES_WOOD]  = 2,
     [RES_FISH]  = 3,

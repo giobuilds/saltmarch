@@ -48,6 +48,27 @@
 /* Fixed-timestep clock constants (SIM_TICK_MS, SIM_TICK_NS, ...). */
 #include "simclock.h"
 
+/* What a pending confirmation is: the command it would submit, the
+ * alternative if the action offers one, and which is selected. Kept in
+ * GameState beside the other overlay flags — client state, never
+ * hashed, never saved. */
+typedef enum {
+    CONFIRM_NONE = 0,
+    CONFIRM_BUILD,
+    CONFIRM_DEMOLISH,
+    CONFIRM_UPGRADE,
+    CONFIRM_SHIP
+} ConfirmKind;
+
+typedef struct {
+    int         open;
+    ConfirmKind kind;
+    Command     cmd;      /* what "confirm" submits                     */
+    Command     alt;      /* the other payment option; kind CMD_COUNT
+                           * when the action has only one              */
+    int         chosen;   /* 0 = cmd, 1 = alt                          */
+} ConfirmState;
+
 /* Tagged (rather than an anonymous typedef) so the net hooks below can
  * name the type from inside the struct that owns them. */
 typedef struct GameState {
@@ -81,8 +102,15 @@ typedef struct GameState {
     BuildingType selected_building;
 
     /* 1 if the current hover position is a valid placement spot
-     * for selected_building.  Used by render to colour the ghost. */
+     * for selected_building.  Used by render to colour the ghost.
+     * placement_reason is WHY not (a RejectReason; REJ_OK when valid) —
+     * the same vocabulary sim_apply rejects with, so the message under
+     * the cursor is definitionally the reason placement would fail
+     * rather than a client-side guess (UI_PLAN decision 3). Both are
+     * client-side view state: recomputed every frame from the hover,
+     * never hashed, never saved. */
     int placement_valid;
+    int placement_reason;
 
     int menu_open;  /* 1 when the cog menu overlay is open */
 
@@ -94,16 +122,21 @@ typedef struct GameState {
     int trade_open;
     int trade_building_idx;
 
-    /* Build-confirmation popup: every building except Road goes
-     * through this instead of placing instantly (Road is exempt —
-     * see game_try_place_road()'s doc comment). row/col are captured
-     * at popup-open time, NOT read from hovered_row/col at confirm
-     * time — by then the mouse has moved to the popup's buttons,
-     * which live in a totally different screen region and would
-     * resolve to an unrelated tile if hover were re-queried. */
-    int build_confirm_open;
-    int build_confirm_row, build_confirm_col;
-    int build_confirm_payment;   /* 0 = pay resources, 1 = pay Gold */
+    /* ---- the confirmation popup (UI_PLAN Phase 6) ---------
+     * One popup where there were four (build, demolish, tier upgrade,
+     * ship build). It holds the COMMAND it would submit rather than the
+     * ingredients to build one later, which is what lets it render the
+     * literal thing sim_apply will receive.
+     *
+     * That also preserves the property the build popup was careful
+     * about: the command is built when the popup OPENS, from the tile
+     * that was clicked, not re-derived at confirm time — by then the
+     * cursor is over a button in a different screen region and would
+     * resolve to an unrelated tile.
+     *
+     * `alt` is the second option where one exists (paying Gold instead
+     * of goods); its kind is CMD_COUNT when there is none. */
+    ConfirmState confirm;
 
     /* Road drag-placement: the last tile this drag already placed
      * at, so holding the button over one tile doesn't re-place every
@@ -117,17 +150,7 @@ typedef struct GameState {
      * confirmation popup below rather than destroying immediately. */
     int demolish_mode;
 
-    /* Bulldozer confirmation popup: opened instead of an immediate
-     * game_demolish_building() call when the demolish tool is active
-     * and the player clicks a building. */
-    int demolish_confirm_open;
-    int demolish_confirm_idx;
 
-    /* Tier-upgrade confirmation popup: opened when the player clicks
-     * an active, connected BUILDING_HOUSE with nothing selected and
-     * demolish_mode off. */
-    int tier_upgrade_open;
-    int tier_upgrade_idx;
 
     /* Archipelago overview overlay (world_ui.c). Unlike the other
      * overlays this one is not tied to any building, so it survives
@@ -146,14 +169,13 @@ typedef struct GameState {
      * pick-a-building-then-click-a-tile. */
     int  world_selected_ship;
 
-    /* Ship-build confirmation, opened by clicking a connected
-     * Shipyard with nothing selected. Mirrors the other confirm
-     * popups; the idx is current-island-relative like the rest. */
-    int  ship_build_open;
-    int  ship_build_idx;
 
     /* Market debug overlay toggle (F10) — cosmetic, not sim state. */
     int  faction_debug;
+
+    /* Inventory overlay (UI_PLAN Phase 4): the full goods list, paged.
+     * The corner panel shows what fits; this shows everything. */
+    int  inventory_open;
 
     /* Harbor escrow panel (Phase 5): open for the CURRENT island's
      * harbor. Owner-gated at open time; current-island-relative like
@@ -294,6 +316,32 @@ int  game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
 
+/* ---- the overlay arbiter (UI_PLAN Phase 4) -----------------
+ * Which overlay is on top, or UI_OVERLAY_NONE. Every "is anything open?"
+ * question routes through here rather than each caller re-listing the
+ * flags — that list was already wrong once: the mouse wheel zoomed the
+ * world behind an open modal because the zoom code did not consult it
+ * at all.
+ *
+ * The order below is the layering order the click cascade in main.c
+ * uses, so the two cannot disagree about what "topmost" means. */
+typedef enum {
+    UI_OVERLAY_NONE = 0,
+    UI_OVERLAY_MENU,
+    UI_OVERLAY_CONFIRM,     /* one popup, four actions (UI_PLAN Phase 6) */
+    UI_OVERLAY_TRADE,
+    UI_OVERLAY_ESCROW,
+    UI_OVERLAY_INVENTORY,
+    UI_OVERLAY_WORLD
+} GameOverlay;
+
+GameOverlay game_topmost_overlay(const GameState *gs);
+
+/* 1 if any overlay is open — the common question, asked by the camera
+ * (do not zoom), the hover logic (do not highlight tiles) and the
+ * drag-placement loop (do not lay road under a popup). */
+int game_overlay_open(const GameState *gs);
+
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:
  * current_island is always a valid index. */
@@ -353,15 +401,40 @@ int  game_load(GameState *gs, const char *path);
  * returns 1 on success, 0 otherwise (no side effects on failure). */
 int game_try_place_road(GameState *gs, int row, int col);
 
-/* Commits the pending build-confirmation popup: places
- * selected_building at build_confirm_row/col (not the live hover —
- * see GameState's doc comment on why) and deducts payment.
- * pay_with_gold selects which of the popup's two options was chosen:
- * 0 deducts the normal per-resource cost[] (as building_can_afford
- * checks), 1 deducts building_gold_equivalent_cost() in Gold only.
- * No-op (no placement, no deduction) if the chosen payment can't
- * actually be afforded. */
-void game_place_building_confirmed(GameState *gs, int pay_with_gold);
+/* Place `type` at (row, col) on the current island, paying in goods or
+ * in Gold. Builds the Command and submits it; the sim validates
+ * everything, so an unaffordable placement is a rejected command rather
+ * than a no-op here. This is the explicit form the confirm layer and
+ * the record/replay harness both use — it takes what to build rather
+ * than reading it back out of UI fields. */
+int game_place_building(GameState *gs, int row, int col,
+                        BuildingType type, int pay_with_gold);
+
+/* ---- the confirmation layer (UI_PLAN Phase 6) --------------
+ * Opening a confirmation builds the command NOW and stores it; the
+ * popup renders that command; accepting submits exactly it. Nothing is
+ * re-derived in between, which is the whole point — what you were shown
+ * and what the sim receives are the same bytes.
+ *
+ * Each opener is a no-op if the action is not currently possible (no
+ * such building, wrong type), so a stale click cannot open a popup that
+ * would submit nonsense. */
+void game_confirm_build(GameState *gs, int row, int col,
+                        BuildingType type);
+void game_confirm_demolish(GameState *gs, int building_idx);
+void game_confirm_upgrade(GameState *gs, int building_idx);
+void game_confirm_ship(GameState *gs);
+
+/* Pick between the two payment options (0 = the primary, 1 = the
+ * alternative). Ignored when the action offers only one. */
+void game_confirm_choose(GameState *gs, int which);
+
+/* Submit the chosen command and close. Returns what command_submit
+ * returned, or 0 if nothing was open. */
+int  game_confirm_accept(GameState *gs);
+
+/* Close without submitting anything. */
+void game_confirm_cancel(GameState *gs);
 
 /* Returns the buildings[] index of the active building whose
  * footprint contains (row, col), or -1 if none. Used to detect a

@@ -86,6 +86,13 @@ void feed_init(Feed *f, const char *name);
 void feed_track_departures(Feed *f, const Ship ships[], int ship_count,
                            uint64_t unix_ms);
 
+/* Seconds since the freshest voyage in the inbound feed, or -1 when
+ * there is no feed at all (no ghosts — nothing has ever been read).
+ * UI_PLAN Phase 4 shows this as an alert once it goes stale: a feed
+ * that stopped updating turns the shared ocean into a museum of
+ * hours-old ships, and the failure is otherwise silent. */
+int feed_age_seconds(const Feed *f, uint64_t now_unix_ms);
+
 /* Re-read FEED_IN_PATH and rebuild the ghost list if the poll interval
  * has elapsed (`now_ns` is SDL_GetTicksNS). Missing file = zero ghosts,
  * not an error — killing the sync script degrades gracefully. */

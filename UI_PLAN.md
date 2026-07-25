@@ -1,7 +1,18 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **planned, not started.** Written for a future session to pick up
-> cold. Nothing in here has been implemented.
+> Status: **numbered phases complete; M-phases remain.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
+> (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
+> 4 (vitals, stores, overlay arbiter), 5 (island context) and 6 (confirm
+> consolidation) have landed; everything below
+> them is still as planned.
+> Written for a future session to pick up cold.
+>
+> Note for later phases: MMO_PLAN Phases 1–6 are all shipped, so the
+> M-phases are unblocked and some of their content has already arrived
+> early. In particular the fixed price tables are already gone, so
+> Phase 1's `exchange_view_fixed()` is moot — the exchange view reads the
+> faction's live quotes from the snapshot (what the plan called
+> `exchange_view_faction()` at M3).
 >
 > Supersedes the v1 plan (in git history), which was written before
 > MMO_PLAN.md existed. The capacity measurements, the two verified bugs, and
@@ -191,7 +202,7 @@ v1 phases re-cut, plus **M-phases pinned to MMO_PLAN phases** (an M-phase
 lands with, or immediately after, its MMO counterpart — never before).
 Each remains independently shippable and verifiable.
 
-### Phase 0 — `ui_kit` + `UiSnapshot`
+### Phase 0 — `ui_kit` + `UiSnapshot` — **DONE**
 As v1 (layout cursor, `UiList`, canonical `ui_point_in`, measured-then-
 clamped geometry) with the signature decided up front:
 `*_build(UiList *, const UiSnapshot *, const UiState *)`. Define
@@ -199,7 +210,14 @@ clamped geometry) with the signature decided up front:
 **Verify:** headless `ui_row()`/`ui_split_h()` asserts; harness links UI
 `.o` files without SDL/SDL_ttf.
 
-### Phase 0.5 — RejectReason conversion (shippable today, pre-funnel)
+*As built:* the purity rule is enforced by the build system rather than
+by convention — `ui_kit.c` and `ui_snapshot.c` compile into
+`libsaltmarch_ui`, which links no SDL, and `tests/test_ui_kit.c` links
+that archive alone. `ci/sim-sdl-free.sh` covers it alongside the sim and
+the server. Widget labels are copied into the list rather than borrowed,
+since a `UiList` outlives its builder (golden diffs serialise it).
+
+### Phase 0.5 — RejectReason conversion — **DONE**
 Convert `building_can_place()`'s dead `(char *reason, size_t)` channel to a
 returned `RejectReason`; delete `set_reason()`; add the enum→string table
 in ui.c; wire it into the HUD hover tooltip. Kills v1's bug #2, fixes the
@@ -207,7 +225,18 @@ enum's home before `sim_apply` exists to adopt it.
 **Verify:** headless assert per placement-failure case returns the right
 enum; tooltip shows it in-window.
 
-### Phase 1 — Exchange screen rewrite (retires the cliff)
+*As built, with two deviations:* the enum→string table lives in
+`ui_kit.c`, not `ui.c`, so the headless test can assert every reason has
+a distinct string without linking SDL. And the reason renders **at the
+cursor** rather than in the HUD bar — the answer belongs to the tile
+being pointed at (decision 3's "localized, not a global toast"), and a
+player hunting for a legal spot reads it without looking away.
+`building_can_place()` survives as a boolean wrapper over the new
+`building_place_check()`: `REJ_OK` is 0, so converting the existing
+`if (building_can_place(...))` call sites in place would have silently
+inverted every one of them.
+
+### Phase 1 — Exchange screen rewrite — **DONE**
 The v1 trade rewrite (34px rows, `TRADE_W` → ~760, height computed then
 clamped, pagination `[Prev] 1/2 [Next]`, category grouping) built as the
 generic exchange surface: `ExchangeView` + `exchange_view_fixed()`;
@@ -219,12 +248,51 @@ today's prices with `refuse[]` all REJ_OK. Plus the miniature harness: a
 synthetic snapshot driven through build+hit_test with a scripted click
 sequence, asserting the emitted command sequence.
 
-### Phase 2 — Data model
+*As built:* panel 860 wide, one 34px row per good, columns
+swatch|name|yours|theirs|bid|ask and a right-anchored
+`[All][-10][-1][+1][+10][Max]` cluster. trade_ui.c is now only a
+drawer — it consumes the `UiList` that `exchange_build()` produced, so
+the rects that are drawn are literally the rects that are hit-tested.
+
+Deviations:
+- `exchange_view_fixed()` was skipped and `exchange_view_market()`
+  written instead: the fixed price tables died with MMO Phase 3, so
+  quotes come from the faction via the snapshot. Category grouping is
+  not implemented — it belongs with Phase 2's resource categories.
+- Rows are a list carrying their own identity rather than parallel
+  `[RES_COUNT]` arrays. That is what lets the test build a 40-row view
+  without RES_COUNT growing to 40 first — i.e. what lets the cliff be
+  *proven* gone rather than argued gone — and it is the shape an escrow
+  offer's cargo lines need at M5 anyway.
+- Direction (sell vs buy) is carried by the widget's id group, and the
+  quantity stays a plain count with `-1` meaning "as much as possible",
+  matching what `game_sell_resource`/`game_buy_resource` already accept.
+- Per-button refusals are computed in the builder from the numbers it
+  already has; `refuse[]` on the row carries only the counterparty's
+  side (out of gold, out of stock). One truth per refusal, not two.
+
+### Phase 2 — Data model — **DONE**
 Unchanged from v1: `BuildingCategory` on `BuildingDef`, resource-category
 table, designated initialisers everywhere (the `RES_COL` lesson).
 **Verify:** headless assert every enum value has a non-default category.
 
-### Phase 3 — HUD category tabs
+*As built:* five building categories (Gathering, Production, Housing,
+Infrastructure, Maritime) and three resource ones (raw, refined,
+currency), both with `*_NONE = 0` so a row added without a category
+fails the test rather than being filed under a real one. test_defs.c
+also asserts no category is empty of placeable buildings — a tab that
+opens onto nothing is the other half of the same mistake.
+
+The fields inside each `BUILDING_DEFS` row are designated now, not just
+the row indices. Before touching them the compiled table was dumped to
+text, and the dump was diffed after the conversion: byte-for-byte
+identical, and the determinism fixture still hashes 41f8ca6fde89c2ae.
+
+Phase 1's deferred category grouping landed with it: exchange rows are
+built in category order (two passes, no comparator), so a page holds
+related goods and enum order is preserved inside each group.
+
+### Phase 3 — HUD category tabs — **DONE**
 Unchanged from v1 (HUD_HEIGHT 80 → ~112, 28px tab strip, sticky tab,
 greyed-not-hidden unavailable buildings) with one upgrade: the hover
 tooltip's "why can't I build this" now calls `sim_validate()` once the
@@ -232,7 +300,31 @@ funnel exists (Phase 0.5's enum until then).
 **Verify:** as v1 (synthetic 40-entry def table, per-tab slot fit and
 hit-test).
 
-### Phase 4 — Vitals, inventory, overlay arbiter
+*As built:* `hud_view.c` (SDL-free) owns the bar's layout, tabs,
+affordability and hit decoding; `ui.c` is its drawer. The four separate
+`ui_hit_test` / `ui_cog_hit_test` / `ui_demolish_hit_test` /
+`ui_world_hit_test` entry points are gone — main.c makes one `hud_hit()`
+call against the list that was drawn, so the right-hand buttons are part
+of the same list as the slots.
+
+Two decisions worth recording:
+- **Greyed means muted, not disabled.** An unaffordable building stays
+  clickable, because the build-confirm popup can still offer to pay in
+  Gold — refusing the click would remove a real option. `UI_W_MUTED`
+  exists for exactly this distinction; `UI_W_DISABLED` remains for
+  things that genuinely cannot be done.
+- **HUD metrics moved to `hud_view.h`**, which ui.h now includes. They
+  had to leave ui.h because ui.h carries SDL and the layout that uses
+  them may not. Every existing reader of `HUD_HEIGHT` (client.c's hover
+  cutoff, ui.c) is unchanged.
+
+Deferred deliberately: the tooltip calls `building_place_check()`, not
+`sim_validate()`, which does not exist yet — the plan says the enum
+suffices until it does. A tab holding more slots than fit shows a
+"+k" marker rather than paginating; if a category ever gets that big it
+wants splitting, and saying so on screen is how that gets noticed.
+
+### Phase 4 — Vitals, inventory, overlay arbiter — **DONE**
 As v1 (rule-driven vitals strip capped at 8 rows with `+k more`; inventory
 overlay; `game_topmost_overlay()`; **fix the mouse-wheel bug**), plus: the
 vitals rule engine reserves **sim-health rows** rendered by the same
@@ -242,11 +334,47 @@ after it starts.
 **Verify:** as v1, plus a synthetic snapshot with a stalled accumulator
 asserts the health row appears.
 
-### Phase 5 — Island context
+*As built:*
+- `vitals.c` — six island rules plus four health rules, each a function
+  of the snapshot producing at most one row; ranked by severity with
+  insertion order as the deliberate tiebreak, so a row never swaps with
+  a peer because a count changed. Feed age landed early (the feed has
+  existed since MMO Phase 4) rather than waiting for M4.
+- `inventory_view.c` + `inventory_ui.c` — the stores overlay on `I`,
+  grouped by category, paged, with capacity as a bar rather than a
+  fraction. It counts goods **at sea and in escrow** as well as stored:
+  "where did my Wood go" is a question the corner panel cannot answer.
+- `game_topmost_overlay()` in game.c, with `game_overlay_open()` beside
+  it. The wheel bug was never a wheel bug — the zoom code simply never
+  asked whether anything was open. Hover highlighting and road-drag
+  now ask the same question, replacing a hand-maintained list of three
+  flags in client.c that was already missing four.
+- The speculative `UiOverlay` enum from Phase 0 was deleted rather than
+  kept in parallel: two enums naming the same thing is how they drift.
+
+Deferred: the strip is display-only. Clicking an alert to jump to the
+building it names wants a camera-focus path that does not exist yet.
+
+### Phase 5 — Island context — **DONE**
 Unchanged from v1 (`‹ Island Name ›` header, chevrons over settled islands,
 per-island hue, island name in overlay titles).
 
-### Phase 6 — Confirm consolidation → command preview
+*As built:* `island_bar.c` (SDL-free) builds the header; the drawer sits
+beside the vitals strip in inventory_ui.c. Chevron widgets carry the
+island they switch TO rather than a direction, so a click needs no
+arithmetic to interpret and cannot be misread if the settled set changed
+between frames. They step over unsettled islands — an unclaimed island
+is something you look at from the world map, not somewhere you are — and
+with only one island they are greyed rather than hidden, so the header
+does not change shape when you found your second colony.
+
+`island_hue()` is a fixed table indexed by island slot, not a hash or a
+settlement-order counter: the colour has to be the same for every client
+looking at the same world, or two players describing "the blue island"
+would mean different places. The exchange and stores overlays carry the
+hue on their view structs and draw it as a stripe down the title bar.
+
+### Phase 6 — Confirm consolidation → command preview — **DONE**
 v1's collapse of demolish/tier-upgrade/ship-build/build-confirm into one
 `confirm_ui.c`, with a new job: the popup renders the *literal Command it
 will submit* (kind, decoded payload, apply tick). The confirm layer and
@@ -254,6 +382,35 @@ the wire format become the same rendering code — screenshots become
 forensics, and the UI cannot drift from what `sim_apply` receives.
 **Verify:** hit-test results identical before/after; rendered preview
 matches the submitted Command byte-for-byte in the headless harness.
+
+*As built:* `game_confirm_build/demolish/upgrade/ship()` construct the
+Command when the popup OPENS and store it in `GameState.confirm`;
+accepting submits that struct verbatim. The preview text comes from
+`command_describe()` in command.c — decoding that lives beside the
+encoding it mirrors, so the popup cannot describe one action while
+sim_apply receives another. The test compares the rendered command with
+the one that reached the log, as bytes.
+
+Storing the command rather than the ingredients also made structural
+the property the old build popup maintained by hand: the tile is
+captured at open time, so moving the cursor to the buttons — or
+selecting a different building type — cannot change what gets built.
+There is a test for that specifically.
+
+The openers validate: a confirmation for a building that no longer
+exists never opens, instead of opening and submitting a command the sim
+would reject.
+
+Three files went away (build_confirm_ui, demolish_confirm_ui,
+tier_upgrade_ui — the last of which was already doing double duty for
+ship building), along with four popup flag sets in GameState, four
+branches in the click cascade and four in the draw order. Right-click
+dismissal now reads the layering from `game_topmost_overlay()` rather
+than repeating it as a second hand-maintained list.
+
+Deferred: the preview shows the earliest tick a command can apply, not
+the exact one — under lockstep the host adds its delay and the client
+cannot know it. Stated as "or later" rather than guessed at.
 
 ### Phase M1 — with MMO Phase 1 (command funnel)
 - UI wrappers emit Commands via `command_submit()`; pending ring

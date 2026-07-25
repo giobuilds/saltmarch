@@ -32,12 +32,8 @@
 
 #include <SDL3/SDL.h>
 #include "building.h"
-
-/* HUD dimensions */
-#define HUD_HEIGHT      80    /* pixels tall                  */
-#define HUD_SLOT_SIZE   64    /* width and height of one slot */
-#define HUD_SLOT_PAD    12    /* gap between slots            */
-#define HUD_MARGIN_LEFT 20    /* left edge inset              */
+#include "hud_view.h"   /* HUD metrics and the bar's layout/hit-test */
+#include "ui_kit.h"
 
 /* Menu overlay dimensions */
 #define MENU_W           260
@@ -48,35 +44,19 @@
 #define MENU_BTN_COUNT     4
 
 /* ---- Building HUD --------------------------------------
- * Draw the entire HUD bar.
- * selected        – currently selected BuildingType (or BUILDING_NONE)
- * mouse_x/y       – current cursor position in screen pixels
- *                   (used to highlight the hovered slot)
- * demolish_active – 1 if the demolish tool is currently active
- *                   (mutually exclusive with `selected`) */
+ * Since UI_PLAN Phase 3 the bar's layout, tabs, affordability greying
+ * and hit-testing live in hud_view.c (SDL-free, headlessly testable).
+ * What is left here is drawing: hand it the UiList that hud_build()
+ * produced and the view it was built from.
+ *
+ * Hit-testing is hud_hit() on that same list — there is deliberately no
+ * ui_hit_test/ui_cog_hit_test/... any more. Four separate hit-test
+ * functions recomputing geometry the drawer also recomputed was how a
+ * button could end up a few pixels from where it appeared. */
 void ui_draw(SDL_Renderer *renderer,
-             int screen_w, int screen_h,
-             BuildingType selected,
-             int mouse_x, int mouse_y, int menu_open,
-             int demolish_active, int world_open);
+             const UiList *list, const HudView *view,
+             int mouse_x, int mouse_y);
 
-/* Hit-test: given a screen coordinate, return the BuildingType
- * whose HUD slot contains that point, or BUILDING_NONE. */
-BuildingType ui_hit_test(int screen_w, int screen_h,
-                         int mouse_x, int mouse_y);
-
-/* Returns 1 if the cog button was clicked. */
-int          ui_cog_hit_test(int screen_w, int screen_h,
-                             int mouse_x, int mouse_y);
-
-/* Returns 1 if the demolish tool button was clicked. */
-int          ui_demolish_hit_test(int screen_w, int screen_h,
-                                  int mouse_x, int mouse_y);
-
-/* Returns 1 if the world/archipelago button was clicked. */
-int          ui_world_hit_test(int screen_w, int screen_h,
-                               int mouse_x, int mouse_y);
- 
 /* ---- Menu overlay -------------------------------------- */
  
 typedef enum {

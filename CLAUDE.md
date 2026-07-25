@@ -16,7 +16,7 @@ cmake --build build -j$(nproc)
 
 Requires `SDL3-devel` and `SDL3_ttf-devel` (Fedora package names; see BUILD.md for building SDL3 from source if not packaged).
 
-The build produces five targets: `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see SERVER.md). Verification, in the order it is cheapest to run:
+The build produces six targets (`libsaltmarch_ui.a` holds the SDL-free UI layer): `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `libsaltmarch_ui.a` (layout/hit-test kit + the UI's read-only snapshot, no SDL), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see SERVER.md). Verification, in the order it is cheapest to run:
 
 ```bash
 cmake --build build -j$(nproc)          # zero warnings is the bar
@@ -54,6 +54,8 @@ New building types are added by extending the `BuildingType` enum and adding a m
 
 **Resource flow**: `Stockpile` (resource.h) holds one `int amount[RES_COUNT]` clamped at zero, owned by `GameState`. Buildings read/write it via `stockpile_add()` during their production tick (driven by `Building.timer` vs. `BuildingDef.tick_seconds`), and houses read/write it via `pop_update()` every `NEEDS_INTERVAL` (30s) — consuming fish+grain, producing gold, growing or shrinking `residents` based on whether needs were met.
 
+**Is an overlay open?** Ask `game_topmost_overlay()` / `game_overlay_open()` (game.h), never a hand-rolled list of the `*_open` flags. That list was already wrong once — the mouse wheel zoomed the world behind open modals because the zoom code never asked.
+
 **Frame-rate independence**: all continuous movement (camera pan, production timers, population needs) is scaled by `GameState.delta_time`, computed once per frame in `game_update()` from the SDL tick delta. Don't add new per-frame increments without multiplying by `delta_time`.
 
 **Rendering fallback pattern**: `render.c` draws everything as SDL_RenderGeometry diamonds (`draw_diamond()`), colored per `TILE_COLOURS`/`BuildingDef` color fields. Sprite-based rendering existed once (README.md's "Phase 6: sprite rendering" section) and was deliberately removed; `src/sprite.c`/`src/sprite.h` are gone from the tree. Don't reintroduce sprites without checking with the user first.
@@ -79,6 +81,14 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `net.c/h` — the lockstep protocol (its own SDL-free library); `server/saltmarch_host.c` is the dedicated server over it
 - `replay.c/h` + `replay_main.c` — record/replay harness and the `saltmarch_replay` CLI
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
+- `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
+- `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
+- `confirm_view.c/h` + `confirm_ui.c/h` — the single confirmation popup; it stores the `Command` it will submit and renders it (`command_describe`)
+- `vitals.c/h` — the alert strip's rules, including the sim's own health (F9 result, tick backlog, feed age)
+- `inventory_view.c/h` + `inventory_ui.c/h` — the stores overlay (`I`)
+- `hud_view.c/h` — the build bar: category tabs, affordability, hit decoding, and the HUD metrics (`HUD_HEIGHT` et al). `ui.c` is now its drawer plus the menu overlay
+- `exchange_view.c/h` — the exchange surface (marketplace today, harbour escrow later): rows, pagination, refusals, hit decoding. `trade_ui.c` is now only its drawer
+- Overlay convention going forward: a `*_build()` in the SDL-free UI library produces a `UiList`; a `*_draw()` in the client renders that same list; hit-testing queries it. Draw and hit-test can no longer disagree about where a button is
 
 ## History / conventions
 

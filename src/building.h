@@ -21,6 +21,7 @@
 #include "map.h"      /* Tile, TileType, Fertility, MAP_* */
 #include "resource.h"
 #include "faction.h"  /* Phase 3: elastic gold-equivalent pricing */
+#include "command.h"  /* RejectReason (UI_PLAN Phase 0.5) */
 #include <stddef.h>   /* size_t */
 
 /* ---- How many buildings can be placed at once ----------
@@ -92,8 +93,33 @@ typedef enum {
 #define MAX_BUILDING_INPUTS 2
 
 /* ---- Static definition of one building type ------------ */
+/* ---- Building categories (UI_PLAN Phase 2) ---------------
+ * What KIND of thing this is, for grouping in the interface: the HUD's
+ * category tabs (Phase 3) and any list long enough to want sections.
+ *
+ * Deliberately about function rather than era or cost, because that is
+ * the question a player asks the HUD ("where do I get planks?"), and
+ * because it stays answerable as buildings are added.
+ *
+ * BCAT_NONE is 0 so a row that forgets to declare one is not silently
+ * filed under a real category — tests/test_defs.c asserts no def is
+ * left at NONE. */
+typedef enum {
+    BCAT_NONE = 0,
+    BCAT_GATHERING,      /* takes raw goods out of the land or sea    */
+    BCAT_PRODUCTION,     /* turns goods into other goods              */
+    BCAT_HOUSING,        /* where residents live                      */
+    BCAT_INFRASTRUCTURE, /* roads, storage, the market                */
+    BCAT_MARITIME,       /* everything about ships and other players  */
+    BCAT_COUNT
+} BuildingCategory;
+
+/* Display name for a category ("Gathering"). Never NULL. */
+const char *building_category_name(BuildingCategory c);
+
 typedef struct {
     const char   *name;
+    BuildingCategory category;     /* UI grouping; see above    */
     int           tile_w;          /* footprint width  in tiles */
     int           tile_h;          /* footprint height in tiles */
     PlacementFlags placement_flags;
@@ -174,15 +200,28 @@ typedef struct {
 
 /* ---- Placement validation ----------------------------- */
 
-/* Returns 1 if the building of `type` can be placed with its
- * top-left corner at (row, col) on `map`.
- * Returns 0 and sets reason[0..reason_len] to a short message
- * explaining why not (useful for a future status bar).
- * Pass NULL for reason if you don't need the message. */
+/* Why this building cannot go here — REJ_OK if it can (UI_PLAN Phase
+ * 0.5). This replaces the old (char *reason, size_t) out-parameter,
+ * which every caller in the codebase passed NULL for: the message was
+ * written, never read, and the strings could not be tested. A returned
+ * enum is checkable headlessly, survives into the sim's rejection
+ * vocabulary (command.h), and leaves the wording to the UI.
+ *
+ * Checks the map only — bounds, terrain, adjacency. Affordability
+ * (building_can_afford) and occupancy (building_place) are separate
+ * questions asked by separate callers. */
+RejectReason building_place_check(const Map *map,
+                                  BuildingType type,
+                                  int row, int col);
+
+/* The boolean form, for the many call sites that only branch on it.
+ * Deliberately kept rather than making everyone write
+ * `== REJ_OK`: REJ_OK is 0, so a mechanical conversion of
+ * `if (building_can_place(...))` to the enum would have inverted every
+ * one of those conditions silently. */
 int building_can_place(const Map *map,
                        BuildingType type,
-                       int row, int col,
-                       char *reason, size_t reason_len);
+                       int row, int col);
 
 /* Returns 1 if `s` holds enough of every resource in
  * BUILDING_DEFS[type].cost[] to afford placing it. Deliberately

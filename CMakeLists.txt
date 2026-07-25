@@ -80,6 +80,25 @@ target_include_directories(saltmarch_sim PUBLIC ${CMAKE_SOURCE_DIR}/src)
 add_library(saltmarch_net STATIC src/net.c)
 target_link_libraries(saltmarch_net PUBLIC saltmarch_sim)
 
+# The UI kit (UI_PLAN Phase 0). Layout, widget lists, hit-testing and
+# the snapshot the UI reads instead of GameState -- pure functions over
+# plain structs, linking no SDL. That is not tidiness: it is the only
+# regression net a UI can have in this project (no display, no xdotool
+# in CI), because it lets tests drive real layout and hit-test code
+# headlessly. If a layout ever reaches for a font metric or a renderer,
+# this library stops linking, and that failure IS the purity test.
+add_library(saltmarch_ui STATIC
+    src/ui_kit.c
+    src/ui_snapshot.c
+    src/exchange_view.c
+    src/hud_view.c
+    src/vitals.c
+    src/inventory_view.c
+    src/island_bar.c
+    src/confirm_view.c
+)
+target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
+
 # The client: window, input, rendering, UI overlays, and the shared feed.
 # Everything here may use SDL; nothing here may be needed by the sim.
 set(SALTMARCH_CLIENT_SOURCES
@@ -90,12 +109,11 @@ set(SALTMARCH_CLIENT_SOURCES
     src/ui.c
     src/fonts.c
     src/trade_ui.c
-    src/build_confirm_ui.c
-    src/demolish_confirm_ui.c
-    src/tier_upgrade_ui.c
     src/world_ui.c
     src/feed.c
     src/escrow_ui.c
+    src/inventory_ui.c
+    src/confirm_ui.c
 )
 
 add_executable(saltmarch ${SALTMARCH_CLIENT_SOURCES})
@@ -146,6 +164,7 @@ endif()
 
 target_link_libraries(saltmarch PRIVATE
     saltmarch_net
+    saltmarch_ui
     saltmarch_sim
     SDL3::SDL3
     SDL3_ttf::SDL3_ttf

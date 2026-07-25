@@ -45,17 +45,10 @@ void game_set_current_island(GameState *gs, int idx)
     gs->menu_open             = 0;
     gs->trade_open            = 0;
     gs->trade_building_idx    = -1;
-    gs->build_confirm_open    = 0;
-    gs->build_confirm_row     = -1;
-    gs->build_confirm_col     = -1;
-    gs->build_confirm_payment = 0;
-    gs->demolish_confirm_open = 0;
-    gs->demolish_confirm_idx  = -1;
-    gs->tier_upgrade_open     = 0;
-    gs->tier_upgrade_idx      = -1;
-    gs->ship_build_open       = 0;
-    gs->ship_build_idx        = -1;
+    gs->confirm.open          = 0;
+    gs->confirm.kind          = CONFIRM_NONE;
     gs->escrow_open           = 0;
+    gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
     gs->placement_valid       = 0;
@@ -66,6 +59,25 @@ void game_set_current_island(GameState *gs, int idx)
     /* world_open is deliberately NOT cleared here: switching islands
      * is the world map's own primary action, so closing it on switch
      * would dismiss the overlay the moment you used it. */
+}
+
+/* ---- the overlay arbiter (UI_PLAN Phase 4) ----------------- */
+GameOverlay game_topmost_overlay(const GameState *gs)
+{
+    /* Topmost first. The menu is modal over everything; the world map
+     * is the backdrop the others can open on top of. */
+    if (gs->menu_open)             return UI_OVERLAY_MENU;
+    if (gs->confirm.open)          return UI_OVERLAY_CONFIRM;
+    if (gs->trade_open)            return UI_OVERLAY_TRADE;
+    if (gs->escrow_open)           return UI_OVERLAY_ESCROW;
+    if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
+    if (gs->world_open)            return UI_OVERLAY_WORLD;
+    return UI_OVERLAY_NONE;
+}
+
+int game_overlay_open(const GameState *gs)
+{
+    return game_topmost_overlay(gs) != UI_OVERLAY_NONE;
 }
 
 /* The archipelago's fixed make-up. Island 0 is always Saltford, the
@@ -121,8 +133,6 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     memset(gs->ships, 0, sizeof(gs->ships));
     gs->ship_count          = 0;
     gs->world_selected_ship = -1;
-    gs->ship_build_open     = 0;
-    gs->ship_build_idx      = -1;
 
     stockpile_add(&cur(gs)->stockpile, RES_GOLD, STARTING_GOLD);
 
@@ -624,7 +634,7 @@ static int sim_place_road(GameState *gs, int island, int row, int col)
     const BuildingDef *def = &BUILDING_DEFS[BUILDING_ROAD];
 
     if (!isl->settled) return 0;
-    if (!building_can_place(&isl->map, BUILDING_ROAD, row, col, NULL, 0))
+    if (!building_can_place(&isl->map, BUILDING_ROAD, row, col))
         return 0;
     if (!building_can_afford(&isl->stockpile, BUILDING_ROAD))
         return 0;
@@ -684,20 +694,135 @@ static int sim_place_building(GameState *gs, int island, int row, int col,
     return 1;
 }
 
-void game_place_building_confirmed(GameState *gs, int pay_with_gold)
+/* ---- command builders --------------------------------------
+ * One place per kind where a payload is encoded. The confirm layer
+ * stores what these produce and submits exactly that, so the popup's
+ * preview and sim_apply's input cannot be different things. */
+static Command cmd_place_building(int island, int row, int col,
+                                  BuildingType type, int pay_with_gold)
 {
-    Command c = {0};
-
-    if (gs->selected_building == BUILDING_NONE) return;
-    if (gs->build_confirm_row < 0) return;
-
+    Command c;
+    memset(&c, 0, sizeof(c));
     c.kind = CMD_PLACE_BUILDING;
-    c.a    = gs->current_island;
-    c.b    = gs->build_confirm_row;
-    c.c    = gs->build_confirm_col;
+    c.a    = island;
+    c.b    = row;
+    c.c    = col;
     /* Pack type and the payment bit into one slot — see command.h. */
-    c.d    = (int32_t)((int)gs->selected_building * 2 + (pay_with_gold ? 1 : 0));
-    command_submit(gs, &c);
+    c.d    = (int32_t)((int)type * 2 + (pay_with_gold ? 1 : 0));
+    return c;
+}
+
+static Command cmd_one_building(CommandKind kind, int island, int idx)
+{
+    Command c;
+    memset(&c, 0, sizeof(c));
+    c.kind = kind;
+    c.a    = island;
+    c.b    = idx;
+    return c;
+}
+
+int game_place_building(GameState *gs, int row, int col,
+                        BuildingType type, int pay_with_gold)
+{
+    Command c;
+
+    if (type == BUILDING_NONE || row < 0 || col < 0) return 0;
+    c = cmd_place_building(gs->current_island, row, col, type, pay_with_gold);
+    return command_submit(gs, &c);
+}
+
+/* ---- the confirmation layer (UI_PLAN Phase 6) -------------- */
+
+static void confirm_set(GameState *gs, ConfirmKind kind,
+                        Command primary, Command alternative, int has_alt)
+{
+    gs->confirm.open   = 1;
+    gs->confirm.kind   = kind;
+    gs->confirm.cmd    = primary;
+    gs->confirm.alt    = alternative;
+    gs->confirm.chosen = 0;
+    if (!has_alt) gs->confirm.alt.kind = CMD_COUNT;
+}
+
+void game_confirm_build(GameState *gs, int row, int col, BuildingType type)
+{
+    Command pay_goods, pay_gold;
+
+    if (type == BUILDING_NONE || type >= BUILDING_TYPE_COUNT) return;
+    if (row < 0 || col < 0) return;
+
+    pay_goods = cmd_place_building(gs->current_island, row, col, type, 0);
+    pay_gold  = cmd_place_building(gs->current_island, row, col, type, 1);
+    confirm_set(gs, CONFIRM_BUILD, pay_goods, pay_gold, 1);
+}
+
+void game_confirm_demolish(GameState *gs, int building_idx)
+{
+    const Island *isl = &gs->islands[gs->current_island];
+    Command       none;
+
+    if (building_idx < 0 || building_idx >= isl->building_count) return;
+    if (!isl->buildings[building_idx].active) return;
+
+    memset(&none, 0, sizeof(none));
+    confirm_set(gs, CONFIRM_DEMOLISH,
+                cmd_one_building(CMD_DEMOLISH, gs->current_island,
+                                 building_idx), none, 0);
+}
+
+void game_confirm_upgrade(GameState *gs, int building_idx)
+{
+    const Island *isl = &gs->islands[gs->current_island];
+    Command       none;
+
+    if (building_idx < 0 || building_idx >= isl->building_count) return;
+    if (!isl->buildings[building_idx].active) return;
+    if (isl->buildings[building_idx].type != BUILDING_HOUSE) return;
+
+    memset(&none, 0, sizeof(none));
+    confirm_set(gs, CONFIRM_UPGRADE,
+                cmd_one_building(CMD_UPGRADE_HOUSE, gs->current_island,
+                                 building_idx), none, 0);
+}
+
+void game_confirm_ship(GameState *gs)
+{
+    Command c, none;
+
+    memset(&c, 0, sizeof(c));
+    memset(&none, 0, sizeof(none));
+    c.kind = CMD_BUILD_SHIP;
+    c.a    = gs->current_island;
+    confirm_set(gs, CONFIRM_SHIP, c, none, 0);
+}
+
+void game_confirm_choose(GameState *gs, int which)
+{
+    if (!gs->confirm.open) return;
+    if (which == 1 && gs->confirm.alt.kind == CMD_COUNT) return;
+    gs->confirm.chosen = which ? 1 : 0;
+}
+
+int game_confirm_accept(GameState *gs)
+{
+    Command c;
+
+    if (!gs->confirm.open) return 0;
+
+    c = gs->confirm.chosen ? gs->confirm.alt : gs->confirm.cmd;
+    gs->confirm.open = 0;
+    gs->confirm.kind = CONFIRM_NONE;
+
+    /* Submitted verbatim: the popup showed this struct, and this struct
+     * is what sim_apply gets. */
+    return command_submit(gs, &c);
+}
+
+void game_confirm_cancel(GameState *gs)
+{
+    gs->confirm.open = 0;
+    gs->confirm.kind = CONFIRM_NONE;
 }
 
 /* ---- game_find_building_at -------------------------------

@@ -42,8 +42,14 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
 
     /* Zoom toward cursor on mouse wheel scroll. Keeps the tile under
      * the cursor stationary while zooming — the same behaviour as
-     * Google Maps. */
-    if (gs->input.scroll_y != 0.0f) {
+     * Google Maps.
+     *
+     * Gated on no overlay being open (UI_PLAN Phase 4). Scrolling over
+     * an open modal used to zoom the world behind it, which is
+     * README's long-standing "mouse wheel is not overlay-aware" bug:
+     * the wheel handler simply never asked. game_topmost_overlay() is
+     * now the one place that question is answered. */
+    if (gs->input.scroll_y != 0.0f && !game_overlay_open(gs)) {
         float old_zoom = isl->camera.zoom;
         float new_zoom = old_zoom + gs->input.scroll_y * ZOOM_STEP;
         if (new_zoom < ZOOM_MIN) new_zoom = ZOOM_MIN;
@@ -65,7 +71,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
     gs->input.logical_x = (int)lx;
     gs->input.logical_y = (int)ly;
 
-    if (gs->input.logical_y < SCREEN_H - HUD_HEIGHT) {
+    if (gs->input.logical_y < SCREEN_H - HUD_HEIGHT && !game_overlay_open(gs)) {
         screen_to_iso(gs->input.logical_x, gs->input.logical_y,
                       &isl->camera, &gs->hovered_row, &gs->hovered_col);
         if (gs->hovered_row < 0 || gs->hovered_row >= MAP_ROWS ||
@@ -88,7 +94,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
         gs->drag_last_row = -1;
         gs->drag_last_col = -1;
     } else if (gs->selected_building == BUILDING_ROAD &&
-              !gs->build_confirm_open && !gs->menu_open && !gs->trade_open &&
+              !game_overlay_open(gs) &&
               gs->hovered_row >= 0 &&
               (gs->hovered_row != gs->drag_last_row ||
                gs->hovered_col != gs->drag_last_col)) {
@@ -102,12 +108,20 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
      * per-payment-method question the build-confirmation popup
      * resolves, so the player can always open it and see both options
      * even sitting at 0 Gold. */
-    gs->placement_valid = 0;
+    gs->placement_valid  = 0;
+    gs->placement_reason = REJ_OK;
     if (isl->settled &&
-        gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0)
-        gs->placement_valid = building_can_place(&isl->map,
-            gs->selected_building, gs->hovered_row, gs->hovered_col,
-            NULL, 0);
+        gs->selected_building != BUILDING_NONE && gs->hovered_row >= 0) {
+        RejectReason why = building_place_check(&isl->map,
+            gs->selected_building, gs->hovered_row, gs->hovered_col);
+        gs->placement_valid  = (why == REJ_OK);
+        gs->placement_reason = (int)why;
+    } else if (!isl->settled && gs->selected_building != BUILDING_NONE) {
+        /* Looking at an island you have not colonised: the ghost is
+         * red either way, but "not your island" is a more useful thing
+         * to read than silence. */
+        gs->placement_reason = (int)REJ_NOT_OWNER;
+    }
 
     /* Fixed-timestep simulation. Everything above this point is
      * cosmetic and per-frame (camera, hover, the drag-placement input);

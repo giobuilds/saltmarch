@@ -56,39 +56,74 @@
  * at its enum index no matter the order rows appear in, and
  * tests/test_defs.c asserts name<->enum agreement so a future row can't
  * regress this. */
+/* Fields inside each row are designated too (UI_PLAN Phase 2), not just
+ * the row indices. The rows were positional until this phase needed to
+ * add `category`: appending a field to BuildingDef would have been safe,
+ * but inserting one anywhere else would have silently shifted every
+ * value after it in all thirteen rows — the same class of failure as the
+ * swapped Shipyard row, one edit away. Naming the fields makes that
+ * impossible and costs nothing at runtime. */
 const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
-    /*  name            w  h  flags                  R    G    B
-     *  produces       amt  consumes[2]         amt[2]      tick   cost  hud_placeable */
     [BUILDING_FISHERS_HUT] = {
-        "Fisher's Hut", 1, 1, PLACE_NEEDS_COAST,   210, 180, 100,
-        RES_FISH,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  6.0f,
-        { [RES_GOLD] = 60 },   /* raw producer: Gold only, no bootstrap chicken-and-egg */
-        1
+        .name = "Fisher's Hut",
+        .category = BCAT_GATHERING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 210, .col_g = 180, .col_b = 100,
+        .produces = RES_FISH, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 6.0f,
+        .cost = { [RES_GOLD] = 60 },
+        .hud_placeable = 1
     },
     [BUILDING_WAREHOUSE] = {
-        "Warehouse",    2, 2, PLACE_ANY_LAND,       160, 100,  60,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,   /* no production */
-        { [RES_WOOD] = 20, [RES_GOLD] = 150 },
-        1
+        .name = "Warehouse",
+        .category = BCAT_INFRASTRUCTURE,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 160, .col_g = 100, .col_b = 60,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
+        .hud_placeable = 1
     },
     [BUILDING_FARM] = {
-        "Farm",         2, 2, PLACE_NEEDS_FERTILE,   80, 160,  50,
-        RES_GRAIN,      1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  8.0f,
-        { [RES_GOLD] = 80 },
-        1
+        .name = "Farm",
+        .category = BCAT_GATHERING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_NEEDS_FERTILE,
+        .col_r = 80, .col_g = 160, .col_b = 50,
+        .produces = RES_GRAIN, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_GOLD] = 80 },
+        .hud_placeable = 1
     },
     [BUILDING_LUMBERJACK] = {
-        "Lumberjack",   1, 1, PLACE_NEEDS_FOREST,  120,  80,  40,
-        RES_WOOD,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  5.0f,
-        { [RES_GOLD] = 60 },
-        1
+        .name = "Lumberjack",
+        .category = BCAT_GATHERING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_FOREST,
+        .col_r = 120, .col_g = 80, .col_b = 40,
+        .produces = RES_WOOD, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 5.0f,
+        .cost = { [RES_GOLD] = 60 },
+        .hud_placeable = 1
     },
     /* Phase 5: House — residents live here, generate gold when fed */
     [BUILDING_HOUSE] = {
-        "House",        1, 1, PLACE_ANY_LAND,      210, 190, 160,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,   /* pop_update handles gold, not tick system */
-        { [RES_WOOD] = 15, [RES_GOLD] = 80 },
-        1
+        .name = "House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 210, .col_g = 190, .col_b = 160,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 80 },
+        .hud_placeable = 1
     },
     /* Phase 2: Road — no production; PLACE_ANY_LAND is sufficient
      * to keep it off water/forest, since building_can_place already
@@ -96,19 +131,31 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * Free: a real road network needs many tiles, and charging per
      * tile made drag-placing one needlessly punishing. */
     [BUILDING_ROAD] = {
-        "Road",         1, 1, PLACE_ANY_LAND,      110, 105, 100,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
-        { 0 },
-        1
+        .name = "Road",
+        .category = BCAT_INFRASTRUCTURE,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 110, .col_g = 105, .col_b = 100,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { 0 },
+        .hud_placeable = 1
     },
     /* Phase 4: Marketplace — no passive production; it's a pure
      * gateway building. Clicking a placed, road-connected one opens
      * the manual trade screen (see trade_ui.c, game_sell_resource). */
     [BUILDING_MARKETPLACE] = {
-        "Marketplace",  2, 2, PLACE_ANY_LAND,      200, 140,  60,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
-        { [RES_WOOD] = 30, [RES_GOLD] = 200 },
-        1
+        .name = "Marketplace",
+        .category = BCAT_INFRASTRUCTURE,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 140, .col_b = 60,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
+        .hud_placeable = 1
     },
     /* Production chains, Phase 1 (Beer). Hop Farm needs FERTILE_HOP
      * specifically (map.h), finally giving that dormant fertility bit
@@ -116,31 +163,55 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * and Hops must be in stock for it to tick at all (all-or-nothing,
      * see game_tick_buildings, game.c). */
     [BUILDING_HOP_FARM] = {
-        "Hop Farm",     1, 1, PLACE_NEEDS_HOP_FERTILE, 90, 150, 60,
-        RES_HOPS,       1,   { RES_COUNT, RES_COUNT }, { 0, 0 },  8.0f,
-        { [RES_GOLD] = 80 },
-        1
+        .name = "Hop Farm",
+        .category = BCAT_GATHERING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_HOP_FERTILE,
+        .col_r = 90, .col_g = 150, .col_b = 60,
+        .produces = RES_HOPS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_GOLD] = 80 },
+        .hud_placeable = 1
     },
     [BUILDING_MALTHOUSE] = {
-        "Malthouse",    2, 2, PLACE_ANY_LAND,       170, 140,  90,
-        RES_MALT,       1,   { RES_GRAIN, RES_HOPS },  { 1, 1 },  10.0f,
-        { [RES_WOOD] = 20, [RES_GOLD] = 150 },
-        1
+        .name = "Malthouse",
+        .category = BCAT_PRODUCTION,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 170, .col_g = 140, .col_b = 90,
+        .produces = RES_MALT, .produce_amt = 1,
+        .consumes = { RES_GRAIN, RES_HOPS }, .consume_amt = { 1, 1 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
+        .hud_placeable = 1
     },
     [BUILDING_BREWERY] = {
-        "Brewery",      2, 2, PLACE_ANY_LAND,       190, 150,  70,
-        RES_BEER,       1,   { RES_MALT, RES_COUNT },  { 1, 0 },  8.0f,
-        { [RES_WOOD] = 20, [RES_GOLD] = 150 },
-        1
+        .name = "Brewery",
+        .category = BCAT_PRODUCTION,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 190, .col_g = 150, .col_b = 70,
+        .produces = RES_BEER, .produce_amt = 1,
+        .consumes = { RES_MALT, RES_COUNT }, .consume_amt = { 1, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 20, [RES_GOLD] = 150 },
+        .hud_placeable = 1
     },
     /* Colonisation: a Shipyard has no production of its own — like the
      * Marketplace it is a gateway you click, here to lay down a ship.
      * PLACE_NEEDS_COAST for the obvious reason. */
     [BUILDING_SHIPYARD] = {
-        "Shipyard",     2, 2, PLACE_NEEDS_COAST,    130, 120, 160,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
-        { [RES_WOOD] = 40, [RES_GOLD] = 250 },
-        1
+        .name = "Shipyard",
+        .category = BCAT_MARITIME,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 130, .col_g = 120, .col_b = 160,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_WOOD] = 40, [RES_GOLD] = 250 },
+        .hud_placeable = 1
     },
     /* Population tiers, Phase 1: Worker's House is reached only by
      * upgrading a placed BUILDING_HOUSE (game_upgrade_house, game.c),
@@ -149,21 +220,48 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * building_place() is never called for this type; the upgrade's
      * Gold cost lives in game_upgrade_house() instead. */
     [BUILDING_HOUSE_WORKER] = {
-        "Worker's House", 1, 1, PLACE_ANY_LAND,    230, 200, 140,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
-        { 0 },
-        0
+        .name = "Worker's House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 230, .col_g = 200, .col_b = 140,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { 0 },
+        .hud_placeable = 0
     },
     /* MMO Phase 5: the inter-player airlock (see building.h). No
      * production — like Marketplace/Shipyard it is a gateway you click,
      * here to open the escrow panel. */
     [BUILDING_HARBOR] = {
-        "Harbor",       2, 2, PLACE_NEEDS_COAST,     90, 130, 170,
-        RES_COUNT,      0,   { RES_COUNT, RES_COUNT }, { 0, 0 },  0.0f,
-        { [RES_WOOD] = 30, [RES_GOLD] = 200 },
-        1
+        .name = "Harbor",
+        .category = BCAT_MARITIME,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 90, .col_g = 130, .col_b = 170,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
+        .hud_placeable = 1
     },
 };
+
+const char *building_category_name(BuildingCategory c)
+{
+    /* Designated, like everything else indexed by an enum here. */
+    static const char *const NAMES[BCAT_COUNT] = {
+        [BCAT_NONE]           = "Other",
+        [BCAT_GATHERING]      = "Gathering",
+        [BCAT_PRODUCTION]     = "Production",
+        [BCAT_HOUSING]        = "Housing",
+        [BCAT_INFRASTRUCTURE] = "Infrastructure",
+        [BCAT_MARITIME]       = "Maritime"
+    };
+    if (c < 0 || c >= BCAT_COUNT || !NAMES[c]) return "Other";
+    return NAMES[c];
+}
 
 /* =========================================================
  * Helper: is tile (r,c) occupied by any placed building?
@@ -210,32 +308,12 @@ static int footprint_has_adjacent(const Map *map,
     return 0;
 }
 
-/* Report why placement failed, if the caller asked for a reason.
- *
- * Uses snprintf rather than strncpy deliberately. strncpy does NOT
- * null-terminate when the source is at least as long as the buffer, so
- * "Needs hop-fertile soil" into a 16-byte buffer would leave an
- * unterminated string for the caller to read off the end of. snprintf
- * always terminates, and is not deprecated by MSVC the way strncpy is,
- * so this fixes a latent bug and a portability warning at once.
- *
- * The bug is currently dormant only because every caller passes
- * (NULL, 0) -- the reason text has never been displayed. It stops being
- * dormant the moment anything wires it into a tooltip. */
-static void set_reason(char *reason, size_t reason_len, const char *msg)
-{
-    if (reason && reason_len > 0) {
-        snprintf(reason, reason_len, "%s", msg);
-    }
-}
-
 /* =========================================================
  * building_can_place
  * ========================================================= */
-int building_can_place(const Map *map,
-                       BuildingType type,
-                       int row, int col,
-                       char *reason, size_t reason_len)
+RejectReason building_place_check(const Map *map,
+                                  BuildingType type,
+                                  int row, int col)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
     int r, c;
@@ -244,8 +322,7 @@ int building_can_place(const Map *map,
     if (row < 0 || col < 0 ||
         row + def->tile_h > map->rows ||
         col + def->tile_w > map->cols) {
-        set_reason(reason, reason_len, "Out of bounds");
-        return 0;
+        return REJ_OUT_OF_BOUNDS;
     }
 
     /* --- Pass 2: per-tile checks ------------------------ */
@@ -254,15 +331,13 @@ int building_can_place(const Map *map,
             const Tile *t = map_get_tile((Map *)map, r, c);
 
             if (!t || !t->buildable) {
-                set_reason(reason, reason_len, "Tile not buildable");
-                return 0;
+                return REJ_NOT_BUILDABLE;
             }
 
             /* Fertility check for farms */
             if (def->placement_flags & PLACE_NEEDS_FERTILE) {
                 if (t->fertility == FERTILE_NONE) {
-                    set_reason(reason, reason_len, "Soil not fertile");
-                    return 0;
+                    return REJ_NEEDS_FERTILE;
                 }
             }
 
@@ -271,8 +346,7 @@ int building_can_place(const Map *map,
              * so Farm's existing (loose) check is untouched. */
             if (def->placement_flags & PLACE_NEEDS_HOP_FERTILE) {
                 if (!(t->fertility & FERTILE_HOP)) {
-                    set_reason(reason, reason_len, "Needs hop-fertile soil");
-                    return 0;
+                    return REJ_NEEDS_HOP_FERTILE;
                 }
             }
 
@@ -287,8 +361,7 @@ int building_can_place(const Map *map,
         if (!footprint_has_adjacent(map, row, col,
                                     def->tile_w, def->tile_h,
                                     TILE_WATER)) {
-            set_reason(reason, reason_len, "Needs water nearby");
-            return 0;
+            return REJ_NEEDS_COAST;
         }
     }
 
@@ -296,12 +369,16 @@ int building_can_place(const Map *map,
         if (!footprint_has_adjacent(map, row, col,
                                     def->tile_w, def->tile_h,
                                     TILE_FOREST)) {
-            set_reason(reason, reason_len, "Needs forest nearby");
-            return 0;
+            return REJ_NEEDS_FOREST;
         }
     }
 
-    return 1;   /* all checks passed */
+    return REJ_OK;   /* all checks passed */
+}
+
+int building_can_place(const Map *map, BuildingType type, int row, int col)
+{
+    return building_place_check(map, type, row, col) == REJ_OK;
 }
 
 /* =========================================================
@@ -323,7 +400,7 @@ int building_place(Building buildings[], int *count,
                     return -1;
     }
 
-    if (!building_can_place(map, type, row, col, NULL, 0))
+    if (!building_can_place(map, type, row, col))
         return -1;
 
     /* Reuse a demolished building's slot before appending — without

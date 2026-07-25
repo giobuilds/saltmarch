@@ -1,221 +1,263 @@
-/*  trade_ui.c  --  Marketplace manual trade screen  (Phase 4,
- *  extended with buying)  */
+/*  trade_ui.c  --  Painting the exchange screen (UI_PLAN Phase 1)
+ *
+ *  Consumes the UiList that exchange_build() produced. Nothing here
+ *  decides where anything goes; if a rect looks wrong, the bug is in
+ *  exchange_view.c and there is a headless test that can prove it.
+ */
 
 #include "trade_ui.h"
 #include "fonts.h"
+#include "resource.h"
 
-/* Deliberately no local name table: RESOURCE_NAMES (resource.h) is
- * already indexed by ResourceType and covers every good. A parallel
- * array here is exactly the kind of duplicate enumeration that went
- * stale when Hops/Malt/Beer were added. */
-static const char *SELL_BTN_LABELS[3] = { "+1", "+10", "All" };
-static const char *BUY_BTN_LABELS[3]  = { "+1", "+10", "Max" };
-
-static SDL_FRect panel_rect(int screen_w, int screen_h)
+/* SDL wants its own rect type; the kit deliberately does not know about
+ * it (that is what keeps layout linkable without SDL). */
+static SDL_FRect to_sdl(UiRect r)
 {
-    SDL_FRect r;
-    r.w = (float)TRADE_W;
-    r.h = (float)TRADE_H;
-    r.x = (float)((screen_w - TRADE_W) / 2);
-    r.y = (float)((screen_h - TRADE_H) / 2);
-    return r;
+    SDL_FRect s;
+    s.x = r.x; s.y = r.y; s.w = r.w; s.h = r.h;
+    return s;
 }
 
-/* One resource's whole block: label line + sell row + buy row. */
-static SDL_FRect block_rect(int screen_w, int screen_h, int i)
+/* A stable per-resource hue for the swatch column. Derived from the
+ * enum rather than stored in a table: a parallel colour table indexed
+ * by ResourceType is exactly the shape that went stale when Hops, Malt
+ * and Beer were added (see the RES_COL note in building.c). */
+static SDL_Color resource_swatch(int res)
 {
-    SDL_FRect panel = panel_rect(screen_w, screen_h);
-    SDL_FRect r;
-    r.x = panel.x + (float)TRADE_MARGIN;
-    r.w = panel.w - (float)TRADE_MARGIN * 2.0f;
-    r.h = (float)TRADE_BLOCK_H;
-    r.y = panel.y + (float)TRADE_TITLE_H + (float)TRADE_MARGIN
-        + (float)i * ((float)TRADE_BLOCK_H + (float)TRADE_BLOCK_PAD);
-    return r;
+    static const SDL_Color C[] = {
+        { 150, 110,  60, 255 },   /* Wood  */
+        {  90, 150, 190, 255 },   /* Fish  */
+        { 210, 185,  90, 255 },   /* Grain */
+        { 120, 170,  90, 255 },   /* Hops  */
+        { 190, 150,  80, 255 },   /* Malt  */
+        { 200, 140,  60, 255 },   /* Beer  */
+        { 225, 200, 110, 255 }    /* Gold  */
+    };
+    int n = (int)(sizeof(C) / sizeof(C[0]));
+    if (res < 0 || res >= n) return C[0];
+    return C[res];
 }
 
-/* Button within resource block `resource_i`'s action row: is_buy
- * selects the Buy row (1) vs the Sell row (0); btn_i is 0/1/2 for
- * +1/+10/All-or-Max. Right-aligned within the block, evenly spaced. */
-static SDL_FRect action_btn_rect(int screen_w, int screen_h,
-                                 int resource_i, int is_buy, int btn_i)
+static void fill(SDL_Renderer *r, UiRect rect, Uint8 cr, Uint8 cg,
+                 Uint8 cb, Uint8 ca)
 {
-    SDL_FRect block   = block_rect(screen_w, screen_h, resource_i);
-    float     total_w = 3.0f * (float)TRADE_BTN_W + 2.0f * (float)TRADE_BTN_GAP;
-    float     start_x = block.x + block.w - 10.0f - total_w;
-    SDL_FRect r;
-    r.w = (float)TRADE_BTN_W;
-    r.h = (float)TRADE_BTN_H;
-    r.x = start_x + (float)btn_i * ((float)TRADE_BTN_W + (float)TRADE_BTN_GAP);
-    r.y = block.y + 28.0f
-        + (float)is_buy * ((float)TRADE_BTN_H + (float)TRADE_ROW_GAP);
-    return r;
+    SDL_FRect f = to_sdl(rect);
+    SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
+    SDL_RenderFillRect(r, &f);
 }
 
-static SDL_FRect close_btn_rect(int screen_w, int screen_h)
+static void outline(SDL_Renderer *r, UiRect rect, Uint8 cr, Uint8 cg,
+                    Uint8 cb, Uint8 ca)
 {
-    SDL_FRect panel = panel_rect(screen_w, screen_h);
-    SDL_FRect r;
-    r.w = (float)TRADE_BTN_W * 1.5f;
-    r.h = (float)TRADE_CLOSE_H;
-    r.x = panel.x + (panel.w - r.w) / 2.0f;
-    r.y = panel.y + panel.h - (float)TRADE_MARGIN - r.h;
-    return r;
+    SDL_FRect f = to_sdl(rect);
+    SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
+    SDL_RenderRect(r, &f);
 }
 
-static int point_in(SDL_FRect r, int x, int y)
+/* Right-aligned-ish numeric cell: the kit forbids measuring text, so
+ * numbers are drawn from a fixed inset inside their column rather than
+ * measured and right-aligned. Consistent, and honest about the rule. */
+static void draw_cell(SDL_Renderer *r, UiRect col, const char *text,
+                      SDL_Color colour)
 {
-    return (float)x >= r.x && (float)x < r.x + r.w &&
-           (float)y >= r.y && (float)y < r.y + r.h;
-}
-
-/* Shared by draw's Sell/Buy rows and the "greyed out" affordability
- * check: whether resource `res` has anything left to sell, or any
- * room+Gold left to buy. */
-static int can_sell(const Stockpile *s, ResourceType res)
-{
-    return s->amount[res] > 0;
-}
-
-static int can_buy(const Stockpile *s, const Faction *fac, ResourceType res)
-{
-    int headroom = s->capacity - s->amount[res];
-    /* The faction must both hold the good and the player afford its ask. */
-    return headroom > 0 && fac->inventory[res] > 0 &&
-           s->amount[RES_GOLD] >= faction_ask(fac, res);
+    font_draw_text(r, FONT_SMALL, text,
+                   (int)(col.x + 8.0f), (int)(col.y + 9.0f), colour);
 }
 
 void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
-                   const Stockpile *s, const Faction *fac,
+                   const UiList *list, const ExchangeView *view,
                    int mouse_x, int mouse_y)
 {
-    int i, dir, btn;
-    SDL_FRect panel = panel_rect(screen_w, screen_h);
-    SDL_FRect dim   = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
-    SDL_FRect title_bar = { panel.x, panel.y, panel.w, (float)TRADE_TITLE_H };
+    const SDL_Color TITLE  = { 200, 175, 110, 255 };
+    const SDL_Color HEAD   = { 150, 135,  95, 255 };
+    const SDL_Color TEXT   = { 220, 210, 185, 255 };
+    const SDL_Color DIM    = { 120, 112,  98, 255 };
+    const SDL_Color WARN   = { 220, 130, 120, 255 };
+    UiRect          panel;
+    int             i;
+    char            buf[64];
+    RejectReason    hover_reason = REJ_OK;
 
-    /* --- Dim the world behind the screen ---------------- */
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 160);
-    SDL_RenderFillRect(renderer, &dim);
-    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    if (list->count == 0) return;
 
-    /* --- Panel background/border ------------------------ */
-    SDL_SetRenderDrawColor(renderer, 35, 28, 18, 255);
-    SDL_RenderFillRect(renderer, &panel);
-    SDL_SetRenderDrawColor(renderer, 120, 100, 60, 255);
-    SDL_RenderRect(renderer, &panel);
+    /* Widget 0 is the panel — exchange_build pushes it first so a click
+     * inside is absorbed rather than falling through to the world. */
+    panel = list->items[0].rect;
 
-    /* --- Title bar ---------------------------------------- */
-    SDL_SetRenderDrawColor(renderer, 55, 44, 28, 255);
-    SDL_RenderFillRect(renderer, &title_bar);
-    SDL_SetRenderDrawColor(renderer, 120, 100, 60, 255);
-    SDL_RenderLine(renderer, panel.x, panel.y + (float)TRADE_TITLE_H,
-                   panel.x + panel.w, panel.y + (float)TRADE_TITLE_H);
+    /* Dim the world behind. */
     {
-        SDL_Color title_col = { 200, 175, 110, 255 };
-        font_draw_text(renderer, FONT_NORMAL, "Marketplace",
-                       (int)(panel.x + 12.0f), (int)(panel.y + 8.0f), title_col);
+        UiRect all = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        fill(renderer, all, 0, 0, 0, 160);
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     }
 
-    /* --- Resource blocks ------------------------------------ */
-    for (i = 0; i < TRADE_SELLABLE_COUNT; i++) {
-        SDL_FRect    block = block_rect(screen_w, screen_h, i);
-        ResourceType res   = (ResourceType)i;
-        char         buf[80];
-        SDL_Color    text_col = { 220, 200, 160, 255 };
+    fill(renderer, panel, 35, 28, 18, 255);
+    outline(renderer, panel, 120, 100, 60, 255);
 
-        SDL_SetRenderDrawColor(renderer, 45, 37, 25, 255);
-        SDL_RenderFillRect(renderer, &block);
-        SDL_SetRenderDrawColor(renderer, 80, 66, 45, 255);
-        SDL_RenderRect(renderer, &block);
+    /* Title bar and the two running totals a trader actually needs:
+     * their own Gold, and whether the counterparty can still pay. */
+    {
+        UiRect bar = { panel.x, panel.y, panel.w, EXCHANGE_TITLE_H };
+        fill(renderer, bar, 55, 44, 28, 255);
+        SDL_SetRenderDrawColor(renderer, 120, 100, 60, 255);
+        SDL_RenderLine(renderer, panel.x, panel.y + EXCHANGE_TITLE_H,
+                       panel.x + panel.w, panel.y + EXCHANGE_TITLE_H);
 
-        SDL_snprintf(buf, sizeof(buf), "%s: %d  (sell %dg / buy %dg)",
-                    RESOURCE_NAMES[res], s->amount[res],
-                    faction_bid(fac, res), faction_ask(fac, res));
-        font_draw_text(renderer, FONT_NORMAL, buf,
-                       (int)(block.x + 10.0f), (int)(block.y + 4.0f), text_col);
-
-        /* Row-direction labels, left of the button groups */
+        /* A stripe of the island's colour down the title bar's left
+         * edge: which island's market this is, answered before the
+         * title has been read (UI_PLAN Phase 5). */
         {
-            SDL_Color dir_col = { 170, 155, 120, 255 };
-            SDL_FRect sell_r  = action_btn_rect(screen_w, screen_h, i, 0, 0);
-            SDL_FRect buy_r   = action_btn_rect(screen_w, screen_h, i, 1, 0);
-            font_draw_text(renderer, FONT_SMALL, "Sell",
-                           (int)(block.x + 10.0f), (int)(sell_r.y + 6.0f), dir_col);
-            font_draw_text(renderer, FONT_SMALL, "Buy",
-                           (int)(block.x + 10.0f), (int)(buy_r.y + 6.0f), dir_col);
+            UiRect stripe = { panel.x, panel.y, 5.0f, EXCHANGE_TITLE_H };
+            fill(renderer, stripe, view->hue_r, view->hue_g, view->hue_b, 255);
         }
 
-        for (dir = 0; dir < 2; dir++) {
-            int afford = dir ? can_buy(s, fac, res) : can_sell(s, res);
+        font_draw_text(renderer, FONT_NORMAL, view->title,
+                       (int)(panel.x + 14.0f), (int)(panel.y + 10.0f), TITLE);
 
-            for (btn = 0; btn < 3; btn++) {
-                SDL_FRect br      = action_btn_rect(screen_w, screen_h, i, dir, btn);
-                int       hovr    = point_in(br, mouse_x, mouse_y);
-                SDL_Color lbl_col;
+        SDL_snprintf(buf, sizeof(buf), "Your Gold: %d", view->your_gold);
+        font_draw_text(renderer, FONT_SMALL, buf,
+                       (int)(panel.x + panel.w - 320.0f),
+                       (int)(panel.y + 14.0f), TEXT);
 
-                SDL_SetRenderDrawColor(renderer,
-                    (hovr && afford) ? 90 : 60,
-                    (hovr && afford) ? 75 : 50,
-                    (hovr && afford) ? 50 : 33, 255);
-                SDL_RenderFillRect(renderer, &br);
-                SDL_SetRenderDrawColor(renderer,
-                    (hovr && afford) ? 200 : 100,
-                    (hovr && afford) ? 175 : 85,
-                    (hovr && afford) ? 100 : 50, 255);
-                SDL_RenderRect(renderer, &br);
-
-                lbl_col.r = afford ? 220 : 130;
-                lbl_col.g = afford ? 200 : 115;
-                lbl_col.b = afford ? 160 : 110;
-                lbl_col.a = 255;
-                font_draw_text(renderer, FONT_SMALL,
-                               dir ? BUY_BTN_LABELS[btn] : SELL_BTN_LABELS[btn],
-                               (int)(br.x + 8.0f), (int)(br.y + 6.0f), lbl_col);
-            }
+        if (view->their_gold != EXCHANGE_INFINITE) {
+            SDL_Color col = view->their_gold > 0 ? DIM : WARN;
+            SDL_snprintf(buf, sizeof(buf), "Their Gold: %d",
+                         view->their_gold);
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(panel.x + panel.w - 160.0f),
+                           (int)(panel.y + 14.0f), col);
         }
     }
 
-    /* --- Close button -------------------------------------- */
-    {
-        SDL_FRect cr   = close_btn_rect(screen_w, screen_h);
-        int       hovr = point_in(cr, mouse_x, mouse_y);
-        SDL_Color lbl_col = { 220, 175, 175, 255 };
+    /* Column headings, positioned off the first row's geometry so they
+     * cannot drift from the cells beneath them. */
+    for (i = 0; i < list->count; i++) {
+        const UiWidget *w = &list->items[i];
+        UiRect          head;
 
-        SDL_SetRenderDrawColor(renderer,
-            hovr ? 120 : 80, hovr ? 35 : 22, hovr ? 35 : 22, 255);
-        SDL_RenderFillRect(renderer, &cr);
-        SDL_SetRenderDrawColor(renderer,
-            hovr ? 200 : 100, hovr ? 100 : 50, hovr ? 100 : 50, 255);
-        SDL_RenderRect(renderer, &cr);
+        if (ui_id_group(w->id) != UI_GROUP_RESOURCE) continue;
 
-        font_draw_text(renderer, FONT_NORMAL, "Close",
-                       (int)(cr.x + 20.0f), (int)(cr.y + 6.0f), lbl_col);
+        head    = w->rect;
+        head.y -= EXCHANGE_HEAD_H;
+        head.h  = EXCHANGE_HEAD_H;
+
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_NAME),   "Good",  HEAD);
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_YOURS),  "Yours", HEAD);
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_THEIRS), "Theirs",HEAD);
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_BID),    "Bid",   HEAD);
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_ASK),    "Ask",   HEAD);
+        break;   /* headings once, above the first row */
     }
-}
 
-TradeHit trade_ui_hit_test(int screen_w, int screen_h,
-                           int mouse_x, int mouse_y,
-                           ResourceType *out_res, int *out_qty)
-{
-    int i, dir, btn;
+    /* Rows and buttons, in list order. */
+    for (i = 0; i < list->count; i++) {
+        const UiWidget *w     = &list->items[i];
+        int             group = ui_id_group(w->id);
+        int             hover = ui_point_in(w->rect, (float)mouse_x,
+                                            (float)mouse_y);
 
-    if (point_in(close_btn_rect(screen_w, screen_h), mouse_x, mouse_y))
-        return TRADE_HIT_CLOSE;
+        if (i == 0) continue;   /* the panel itself, already drawn */
 
-    for (i = 0; i < TRADE_SELLABLE_COUNT; i++) {
-        for (dir = 0; dir < 2; dir++) {
-            for (btn = 0; btn < 3; btn++) {
-                if (point_in(action_btn_rect(screen_w, screen_h, i, dir, btn),
-                            mouse_x, mouse_y)) {
-                    *out_res = (ResourceType)i;
-                    *out_qty = (btn == 0) ? 1 : (btn == 1) ? 10 : -1;
-                    return dir ? TRADE_HIT_BUY : TRADE_HIT_SELL;
+        if (group == UI_GROUP_RESOURCE) {
+            const ExchangeRow *row = NULL;
+            int                j;
+            UiRect             swatch;
+
+            for (j = 0; j < view->row_count; j++)
+                if (view->rows[j].ident == ui_id_value(w->id)) {
+                    row = &view->rows[j];
+                    break;
                 }
+            if (!row) continue;
+
+            /* Zebra striping keeps a long paginated list readable. */
+            if ((j % 2) == 0) fill(renderer, w->rect, 44, 36, 24, 255);
+
+            swatch    = exchange_col_rect(w->rect, EX_COL_NAME);
+            swatch.x += 2.0f;
+            swatch.y += 10.0f;
+            swatch.w  = 12.0f;
+            swatch.h  = 12.0f;
+            {
+                SDL_Color c = resource_swatch((int)row->ident);
+                fill(renderer, swatch, c.r, c.g, c.b, 255);
             }
+
+            {
+                UiRect name = exchange_col_rect(w->rect, EX_COL_NAME);
+                name.x += 12.0f;
+                draw_cell(renderer, name, row->name, TEXT);
+            }
+
+            SDL_snprintf(buf, sizeof(buf), "%d", row->yours);
+            draw_cell(renderer, exchange_col_rect(w->rect, EX_COL_YOURS),
+                      buf, TEXT);
+
+            if (row->theirs == EXCHANGE_INFINITE)
+                SDL_snprintf(buf, sizeof(buf), "--");
+            else
+                SDL_snprintf(buf, sizeof(buf), "%d", row->theirs);
+            draw_cell(renderer, exchange_col_rect(w->rect, EX_COL_THEIRS),
+                      buf, row->refuse == (uint8_t)REJ_OK ? DIM : WARN);
+
+            SDL_snprintf(buf, sizeof(buf), "%d", row->bid);
+            draw_cell(renderer, exchange_col_rect(w->rect, EX_COL_BID),
+                      buf, TEXT);
+
+            SDL_snprintf(buf, sizeof(buf), "%d", row->ask);
+            draw_cell(renderer, exchange_col_rect(w->rect, EX_COL_ASK),
+                      buf, TEXT);
+            continue;
+        }
+
+        /* Buttons: sell, buy, pager, close. A disabled one is drawn
+         * flat and dark — greyed, never hidden, so the screen does not
+         * reshuffle as stock and Gold move (and so the player can hover
+         * it to learn why it is off, once M1's tooltips land). */
+        {
+            int disabled = (w->flags & UI_W_DISABLED) != 0;
+            int header   = (w->flags & UI_W_HEADER) != 0;
+
+            if (header) {
+                draw_cell(renderer, w->rect, w->label, DIM);
+                continue;
+            }
+
+            if (disabled)      fill(renderer, w->rect, 42, 38, 30, 255);
+            else if (hover)    fill(renderer, w->rect, 96, 80, 46, 255);
+            else               fill(renderer, w->rect, 68, 56, 34, 255);
+
+            outline(renderer, w->rect, disabled ? 60 : 130,
+                    disabled ? 54 : 110, disabled ? 44 : 66, 255);
+
+            font_draw_text(renderer, FONT_SMALL, w->label,
+                           (int)(w->rect.x + 8.0f),
+                           (int)(w->rect.y + 5.0f),
+                           disabled ? DIM : TEXT);
+
+            /* Hovering a refused button says why. Noted here, drawn
+             * after the loop: a later row's buttons would otherwise
+             * paint over it. */
+            if (disabled && hover && w->reason != (uint8_t)REJ_OK)
+                hover_reason = (RejectReason)w->reason;
         }
     }
 
-    return TRADE_HIT_NONE;
+    /* The refusal, just above the cursor — where the eye already is,
+     * rather than off at the widget it belongs to.
+     *
+     * Kept on screen by budgeting a fixed box rather than measuring the
+     * string: layout may not consult font metrics (ui_kit.h's hard
+     * rule), so the clamp assumes the widest reason in the table. */
+    if (hover_reason != REJ_OK) {
+        const float TIP_W = 200.0f, TIP_H = 18.0f;
+        UiRect      screen = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
+        UiRect      tip    = ui_tooltip_rect((float)mouse_x + 12.0f + TIP_W * 0.5f,
+                                             (float)mouse_y - 2.0f,
+                                             TIP_W, TIP_H, screen);
+
+        font_draw_text(renderer, FONT_SMALL, ui_reject_text(hover_reason),
+                       (int)tip.x, (int)tip.y, WARN);
+    }
 }
