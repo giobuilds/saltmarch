@@ -596,6 +596,13 @@ uint64_t sim_hash(const GameState *gs)
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
     fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
 
+    /* The price history too (UI_PLAN M3). It is state the sim produces
+     * and the UI renders, so a replay that reproduced everything except
+     * the chart would be a replay with a hole in it. */
+    fnv_bytes(&h, gs->faction.hist, sizeof(gs->faction.hist));
+    fnv_bytes(&h, &gs->faction.hist_head, sizeof(gs->faction.hist_head));
+    fnv_bytes(&h, &gs->faction.hist_count, sizeof(gs->faction.hist_count));
+
     return h;
 }
 
@@ -939,7 +946,7 @@ int game_find_building_at(const GameState *gs, int row, int col)
  * faction cannot pay for more than its gold covers, so qty is clamped to
  * that; a broke faction buys nothing (returns 0). */
 static RejectReason sim_sell(GameState *gs, int island, ResourceType res,
-                             int qty)
+                             int qty, int limit)
 {
     Island  *isl = &gs->islands[island];
     Faction *fac = &gs->faction;
@@ -948,6 +955,11 @@ static RejectReason sim_sell(GameState *gs, int island, ResourceType res,
     if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return REJ_UNAVAILABLE;
 
     price = faction_bid(fac, res);
+
+    /* The screen said `limit`; if the market has since moved against
+     * the seller, refuse rather than fill at the worse price. */
+    if (limit > 0 && price < limit) return REJ_PRICE_MOVED;
+
     if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
     if (price > 0 && qty > fac->gold / price) qty = fac->gold / price;
     if (qty <= 0) {
@@ -968,14 +980,21 @@ static RejectReason sim_sell(GameState *gs, int island, ResourceType res,
     return REJ_OK;
 }
 
-void game_sell_resource(GameState *gs, ResourceType res, int qty)
+void game_sell_resource_limit(GameState *gs, ResourceType res, int qty,
+                              int limit)
 {
     Command c = {0};
     c.kind = CMD_SELL_RESOURCE;
     c.a    = gs->current_island;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = limit;
     command_submit(gs, &c);
+}
+
+void game_sell_resource(GameState *gs, ResourceType res, int qty)
+{
+    game_sell_resource_limit(gs, res, qty, 0);
 }
 
 /* ---- sim_buy / game_buy_resource ----------------------------
@@ -986,7 +1005,7 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty)
  * replays correctly. Player gold falls by exactly what the faction's
  * rises (conservation); the faction's inventory drops, lifting the ask. */
 static RejectReason sim_buy(GameState *gs, int island, ResourceType res,
-                            int qty)
+                            int qty, int limit)
 {
     Island  *isl = &gs->islands[island];
     Faction *fac = &gs->faction;
@@ -995,6 +1014,8 @@ static RejectReason sim_buy(GameState *gs, int island, ResourceType res,
     if (res < 0 || res >= RES_COUNT || res == RES_GOLD) return REJ_UNAVAILABLE;
 
     price    = faction_ask(fac, res);
+    if (limit > 0 && price > limit) return REJ_PRICE_MOVED;
+
     headroom = isl->stockpile.capacity - isl->stockpile.amount[res];
     if (headroom < 0) headroom = 0;
 
@@ -1024,14 +1045,21 @@ static RejectReason sim_buy(GameState *gs, int island, ResourceType res,
     return REJ_OK;
 }
 
-void game_buy_resource(GameState *gs, ResourceType res, int qty)
+void game_buy_resource_limit(GameState *gs, ResourceType res, int qty,
+                             int limit)
 {
     Command c = {0};
     c.kind = CMD_BUY_RESOURCE;
     c.a    = gs->current_island;
     c.b    = (int32_t)res;
     c.c    = qty;
+    c.d    = limit;
     command_submit(gs, &c);
+}
+
+void game_buy_resource(GameState *gs, ResourceType res, int qty)
+{
+    game_buy_resource_limit(gs, res, qty, 0);
 }
 
 /* ---- sim_demolish / game_demolish_building ------------------- */
@@ -1505,10 +1533,10 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         return sim_demolish(gs, c->a, c->b);
     case CMD_SELL_RESOURCE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_sell(gs, c->a, (ResourceType)c->b, c->c);
+        return sim_sell(gs, c->a, (ResourceType)c->b, c->c, c->d);
     case CMD_BUY_RESOURCE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_buy(gs, c->a, (ResourceType)c->b, c->c);
+        return sim_buy(gs, c->a, (ResourceType)c->b, c->c, c->d);
     case CMD_UPGRADE_HOUSE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_upgrade_house(gs, c->a, c->b);

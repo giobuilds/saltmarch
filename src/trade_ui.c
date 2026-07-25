@@ -7,6 +7,7 @@
 
 #include "trade_ui.h"
 #include "fonts.h"
+#include "render.h"
 #include "resource.h"
 
 /* SDL wants its own rect type; the kit deliberately does not know about
@@ -147,6 +148,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         draw_cell(renderer, exchange_col_rect(head, EX_COL_THEIRS), "Theirs",HEAD);
         draw_cell(renderer, exchange_col_rect(head, EX_COL_BID),    "Bid",   HEAD);
         draw_cell(renderer, exchange_col_rect(head, EX_COL_ASK),    "Ask",   HEAD);
+        draw_cell(renderer, exchange_col_rect(head, EX_COL_TREND),  "Trend", HEAD);
         break;   /* headings once, above the first row */
     }
 
@@ -208,6 +210,18 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             SDL_snprintf(buf, sizeof(buf), "%d", row->ask);
             draw_cell(renderer, exchange_col_rect(w->rect, EX_COL_ASK),
                       buf, TEXT);
+
+            /* The recent price line. This is the mitigation for
+             * MMO_PLAN's "elastic market reads as a rigged slot
+             * machine" risk: Sell-Max leaves a visible scar here, and
+             * mean reversion visibly heals it. */
+            {
+                UiRect    tr = exchange_col_rect(w->rect, EX_COL_TREND);
+                SDL_Color line = { 150, 185, 150, 255 };
+                render_sparkline(renderer, tr.x + 4.0f, tr.y + 8.0f,
+                                 tr.w - 8.0f, tr.h - 16.0f,
+                                 row->hist, row->hist_count, line);
+            }
             continue;
         }
 

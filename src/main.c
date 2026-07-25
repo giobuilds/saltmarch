@@ -482,7 +482,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 gs->inventory_open = 0;
 
         } else if (gs->trade_open) {
-            ExchangeHit hit = exchange_hit(&app->exchange_list, &app->ui,
+            ExchangeHit hit = exchange_hit(&app->exchange_list, &app->exchange,
+                                           &app->ui,
                                            (float)gs->input.logical_x,
                                            (float)gs->input.logical_y);
             switch (hit.kind) {
@@ -494,7 +495,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                  * since. */
                 if (qty < 0)
                     qty = app->snap.islands[gs->current_island].stock[hit.res];
-                game_sell_resource(gs, (ResourceType)hit.res, qty);
+                /* The price the row was showing rides along as a limit:
+                 * if the market moves against us before this applies,
+                 * the sim refuses rather than filling worse (M3). */
+                game_sell_resource_limit(gs, (ResourceType)hit.res, qty,
+                                         hit.price);
                 fx_reject_expect(&app->fx, gs->cmd_seq_last,
                                  fx_anchor_rect(hit.rect));
                 break;
@@ -503,7 +508,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 /* qty < 0 ("Max") is resolved inside game_buy_resource
                  * itself, since it needs both storage headroom and
                  * Gold on hand to know what "max" means. */
-                game_buy_resource(gs, (ResourceType)hit.res, hit.qty);
+                game_buy_resource_limit(gs, (ResourceType)hit.res, hit.qty,
+                                        hit.price);
                 fx_reject_expect(&app->fx, gs->cmd_seq_last,
                                  fx_anchor_rect(hit.rect));
                 break;
@@ -808,11 +814,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         font_draw_text(app->r, FONT_SMALL, buf, x, y, hdr);
         y += line;
         for (r = 0; r < (int)RES_GOLD; r++) {
+            SDL_Color spark = { 150, 185, 150, 255 };
+
             SDL_snprintf(buf, sizeof(buf), "%-6s inv %4d  bid %3d  ask %3d",
                          RESOURCE_NAMES[r], fac->inventory[r],
                          faction_bid(fac, (ResourceType)r),
                          faction_ask(fac, (ResourceType)r));
             font_draw_text(app->r, FONT_SMALL, buf, x, y, txt);
+
+            /* The same ring the trade screen draws (UI_PLAN M3): the
+             * tuning overlay and the player's chart must not be able to
+             * disagree about what the price did. */
+            render_sparkline(app->r, (float)(x + 210), (float)y + 2.0f,
+                             60.0f, 12.0f, app->snap.price_hist[r],
+                             app->snap.price_hist_count[r], spark);
             y += line;
         }
     }

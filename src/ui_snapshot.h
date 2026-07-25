@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include "building.h"    /* MAX_BUILDINGS, BuildingType                */
 #include "island.h"      /* MAX_ISLANDS, ISLAND_NAME_LEN               */
+#include "faction.h"     /* FACTION_HIST_LEN                           */
 #include "resource.h"    /* RES_COUNT                                  */
 #include "ship.h"        /* MAX_SHIPS                                  */
 #include "game.h"        /* ConfirmState (the pending confirmation)    */
@@ -109,6 +110,10 @@ typedef struct {
     int32_t  ask[RES_COUNT];
     int32_t  counterparty_stock[RES_COUNT];
     int32_t  counterparty_gold;
+
+    /* The market's recent mid-prices, oldest first (UI_PLAN M3). */
+    int16_t  price_hist[RES_COUNT][FACTION_HIST_LEN];
+    int32_t  price_hist_count[RES_COUNT];
 
     /* The pending confirmation, copied whole (UI_PLAN Phase 6). The
      * popup's builder is a pure function of the snapshot like every

@@ -456,11 +456,17 @@ cannot know it. Stated as "or later" rather than guessed at.
   assertions cover the same class today, and a golden file is only worth
   having once the layout has stopped moving every phase.
 
-### Phase M3 — with MMO Phase 3 (elastic market)
+### Phase M3 — with MMO Phase 3 (elastic market) — **DONE**
 - `exchange_view_faction()`; refusal rendering (greyed cells + reason,
   reusing the existing unaffordable-buy greying path); "faction out of
-  gold" message lands here.
-- Limit-order price stamping + `REJ_PRICE_MOVED` flash.
+  gold" message lands here. **Landed early**, in Phase 1: the fixed
+  price tables were already gone, so the exchange view read the
+  faction's live quotes from the start.
+- Limit-order price stamping + `REJ_PRICE_MOVED` flash. **Done.** The
+  price the clicked row was DISPLAYING rides in the command's spare
+  slot; sim_sell/sim_buy recompute the live quote and refuse when it has
+  moved against the player. Zero means no limit, which is what replayed
+  and scripted commands carry, so old logs are unaffected.
 - **Price-history sparkline column** (~48px per row): the faction keeps a
   small per-resource ring buffer of mid-price sampled every K ticks — sim
   state, in `sim_hash`, so replay covers it; `ExchangeView` carries a
@@ -468,6 +474,20 @@ cannot know it. Stated as "or later" rather than guessed at.
   this is the mitigation for MMO_PLAN's "rigged slot machine" risk, and
   the Phase 3 debug/tuning overlay renders from the same buffer (the
   tuning UI and the player UI cannot disagree about the quote).
+  **Done** — 24 samples per good, one every 50 ticks; the trade screen
+  and the F10 overlay call the same `render_sparkline()`.
+
+*Two things worth recording.* The determinism fixture's hash changed
+(41f8ca6fde89c2ae → 0577606f5f7a9676) for the first time in this whole
+effort: new sim state is hashed state, and that is the intended cost of
+making the history replayable rather than cosmetic.
+
+And adding it immediately exposed a latent bug. `faction_init()` set its
+fields one by one and GameState is malloc'd, so the new array was
+uninitialised memory entering `sim_hash` — two clients of the same world
+disagreeing for reasons neither could see. It memsets first now. The
+co-op resync test caught it the instant the field appeared, which is
+that test earning its keep.
 
 ### Phase M4 — with MMO Phase 4 (shared feed)
 The feed is out-of-process, wall-clock, and **untrusted input**:

@@ -31,6 +31,7 @@
  * ========================================================= */
 
 #include <stdint.h>
+#include "faction.h"     /* FACTION_HIST_LEN */
 #include "ui_kit.h"
 #include "ui_snapshot.h"
 
@@ -58,6 +59,13 @@ typedef struct {
     int32_t  bid;                      /* they buy at                  */
     int32_t  ask;                      /* they sell at                 */
     uint8_t  refuse;                   /* RejectReason from THEIR side */
+
+    /* Recent mid-prices, oldest first (UI_PLAN M3). A copy of the
+     * faction's own ring — the same buffer the F10 tuning overlay
+     * draws, so the debug view and the player's screen cannot disagree
+     * about what the price did. */
+    int16_t  hist[FACTION_HIST_LEN];
+    int32_t  hist_count;
 } ExchangeRow;
 
 typedef struct {
@@ -80,7 +88,7 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
 /* ---- geometry ---------------------------------------------
  * Public so the drawer can size its columns identically without
  * recomputing them, and so tests can assert against them. */
-#define EXCHANGE_W          860.0f
+#define EXCHANGE_W          920.0f
 #define EXCHANGE_MARGIN      16.0f
 #define EXCHANGE_TITLE_H     40.0f
 #define EXCHANGE_HEAD_H      22.0f    /* column headings              */
@@ -97,6 +105,7 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
 #define EXCHANGE_COL_THEIRS  90.0f
 #define EXCHANGE_COL_BID     70.0f
 #define EXCHANGE_COL_ASK     70.0f
+#define EXCHANGE_COL_TREND   48.0f    /* the sparkline (UI_PLAN M3)   */
 
 /* The action cluster, right to left. Sell quantities are negative, buy
  * quantities positive; the "all"/"max" ends are the sentinel -1/-1
@@ -127,6 +136,7 @@ typedef enum {
     EX_COL_THEIRS,
     EX_COL_BID,
     EX_COL_ASK,
+    EX_COL_TREND,
     EX_COL_COUNT
 } ExchangeCol;
 
@@ -145,14 +155,18 @@ typedef struct {
     ExchangeHitKind kind;
     int             res;
     int             qty;     /* < 0 means "all"/"max", as before      */
+    int             price;   /* the quote the row was SHOWING — sent
+                              * as the command's limit (UI_PLAN M3)   */
     int             page;
     UiRect          rect;    /* the widget hit — where to flash a
                               * rejection (UI_PLAN M1)                */
 } ExchangeHit;
 
-/* Decode a click against the list that was drawn. */
-ExchangeHit exchange_hit(const UiList *list, const UiState *st,
-                         float x, float y);
+/* Decode a click against the list that was drawn. `view` supplies the
+ * price the clicked row was showing, which becomes the command's limit
+ * (UI_PLAN M3) — it must be the same view the list was built from. */
+ExchangeHit exchange_hit(const UiList *list, const ExchangeView *view,
+                         const UiState *st, float x, float y);
 
 /* How many pages the view needs at this screen size — the drawer shows
  * it, the test asserts it. */

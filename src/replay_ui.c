@@ -207,13 +207,13 @@ static void click_exchange(GameState *gs, UiState *st, uint32_t id)
     in.ui.hovered_col    = -1;
     in.ui.current_island = (int16_t)gs->current_island;
 
-    hit = exchange_hit(&list, st, (float)in.x, (float)in.y);
+    hit = exchange_hit(&list, &view, st, (float)in.x, (float)in.y);
     if (hit.kind == EXCHANGE_HIT_BUY) {
-        game_buy_resource(gs, (ResourceType)hit.res, hit.qty);
+        game_buy_resource_limit(gs, (ResourceType)hit.res, hit.qty, hit.price);
     } else if (hit.kind == EXCHANGE_HIT_SELL) {
         int qty = hit.qty;
         if (qty < 0) qty = snap.islands[snap.current_island].stock[hit.res];
-        game_sell_resource(gs, (ResourceType)hit.res, qty);
+        game_sell_resource_limit(gs, (ResourceType)hit.res, qty, hit.price);
     } else {
         return;
     }
@@ -319,6 +319,7 @@ static int exchange_expected(const ExchangeHit *hit, const UiSnapshot *snap,
         out->a    = snap->current_island;
         out->b    = hit->res;
         out->c    = qty;
+        out->d    = hit->price;   /* the limit the screen implied */
         return 1;
     }
     if (hit->kind == EXCHANGE_HIT_BUY) {
@@ -326,6 +327,7 @@ static int exchange_expected(const ExchangeHit *hit, const UiSnapshot *snap,
         out->a    = snap->current_island;
         out->b    = hit->res;
         out->c    = hit->qty;
+        out->d    = hit->price;
         return 1;
     }
     return 0;
@@ -424,7 +426,7 @@ static void verify_one(const UiSnapshot *snap, const UiState *st,
 
     /* Emission, where the mapping is pure. */
     if (in->ui.overlay == (uint8_t)UI_OVERLAY_TRADE && in->seq != 0) {
-        ExchangeHit    hit = exchange_hit(&ex_list, st, (float)in->x,
+        ExchangeHit    hit = exchange_hit(&ex_list, &ex, st, (float)in->x,
                                           (float)in->y);
         Command        expect;
         const Command *actual = command_by_seq(v->gs, in->seq);
@@ -454,7 +456,8 @@ static void verify_one(const UiSnapshot *snap, const UiState *st,
             v->failures++;
 
         } else if (expect.kind != actual->kind || expect.a != actual->a ||
-                   expect.b != actual->b || expect.c != actual->c) {
+                   expect.b != actual->b || expect.c != actual->c ||
+                   expect.d != actual->d) {
             if (v->verbose) {
                 char a[96], b[96];
                 command_describe(&expect, a, sizeof(a));

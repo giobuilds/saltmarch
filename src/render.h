@@ -65,6 +65,15 @@ void render_pending_placements(SDL_Renderer *renderer, const Camera *cam,
 void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
                            const FxReject *fx);
 
+/* A tiny price line in `area`: `n` samples, oldest first, scaled to
+ * their own min/max. Shared by the trade screen and the F10 tuning
+ * overlay (UI_PLAN M3) so the two cannot draw the same history
+ * differently — the player's chart and the developer's chart are the
+ * same chart. Draws nothing for fewer than two samples. */
+void render_sparkline(SDL_Renderer *renderer, float x, float y,
+                      float w, float h, const int16_t *vals, int n,
+                      SDL_Color col);
+
 void render_draw_diamond(SDL_Renderer *renderer,
                          float bx, float by, float zoom,
                          SDL_Color top_col, SDL_Color bot_col);

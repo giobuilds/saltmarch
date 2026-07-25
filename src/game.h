@@ -514,6 +514,13 @@ int game_find_building_at(const GameState *gs, int row, int col);
  * trade screen. */
 void game_sell_resource(GameState *gs, ResourceType res, int qty);
 
+/* As above, but refusing the trade if the quote has moved against the
+ * player since the screen they clicked was drawn (UI_PLAN M3).
+ * `limit` is the price that screen displayed; 0 means no limit, which
+ * is what the plain forms above pass. */
+void game_sell_resource_limit(GameState *gs, ResourceType res, int qty,
+                              int limit);
+
 /* Buys up to `qty` units of `res` for the stockpile, paying Gold at
  * BUY_PRICE[res] (resource.h) — the same markup rate the build-
  * confirmation popup's Gold-payment option uses. Clamps `qty` down
@@ -524,6 +531,8 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty);
  * is RES_GOLD or the resolved quantity is <= 0. Used by the
  * Marketplace trade screen. */
 void game_buy_resource(GameState *gs, ResourceType res, int qty);
+void game_buy_resource_limit(GameState *gs, ResourceType res, int qty,
+                             int limit);
 
 /* Removes the building at buildings[idx] (marks it inactive — the
  * slot itself is left for building_place() to reuse later, same

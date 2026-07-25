@@ -54,10 +54,20 @@ void command_describe(const Command *c, char *out, size_t n)
         snprintf(out, n, "DEMOLISH  island %d  building %d", c->a, c->b);
         break;
     case CMD_SELL_RESOURCE:
-        snprintf(out, n, "SELL  island %d  res %d  qty %d", c->a, c->b, c->c);
+        if (c->d > 0)
+            snprintf(out, n, "SELL  island %d  res %d  qty %d  at %d+",
+                     c->a, c->b, c->c, c->d);
+        else
+            snprintf(out, n, "SELL  island %d  res %d  qty %d",
+                     c->a, c->b, c->c);
         break;
     case CMD_BUY_RESOURCE:
-        snprintf(out, n, "BUY  island %d  res %d  qty %d", c->a, c->b, c->c);
+        if (c->d > 0)
+            snprintf(out, n, "BUY  island %d  res %d  qty %d  at %d-",
+                     c->a, c->b, c->c, c->d);
+        else
+            snprintf(out, n, "BUY  island %d  res %d  qty %d",
+                     c->a, c->b, c->c);
         break;
     case CMD_UPGRADE_HOUSE:
         snprintf(out, n, "UPGRADE_HOUSE  island %d  building %d", c->a, c->b);

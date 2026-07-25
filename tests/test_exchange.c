@@ -26,6 +26,8 @@
 
 #include "exchange_view.h"
 #include "ui_kit.h"
+#include "game.h"
+#include "resource.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -186,7 +188,7 @@ static void test_hits(void)
             if (g != UI_GROUP_SELL && g != UI_GROUP_BUY) continue;
             if (w->flags & UI_W_DISABLED) continue;
 
-            hit = exchange_hit(&list, &st, cx(w->rect), cy(w->rect));
+            hit = exchange_hit(&list, &v, &st, cx(w->rect), cy(w->rect));
             if (hit.res != (int)ui_id_value(w->id) || hit.qty != w->value)
                 ok = 0;
             if (g == UI_GROUP_SELL && hit.kind != EXCHANGE_HIT_SELL) ok = 0;
@@ -197,9 +199,9 @@ static void test_hits(void)
 
     /* Clicking outside the panel is distinguishable from clicking the
      * panel background — one dismisses, the other is absorbed. */
-    hit = exchange_hit(&list, &st, 5.0f, 5.0f);
+    hit = exchange_hit(&list, &v, &st, 5.0f, 5.0f);
     CHECK(hit.kind == EXCHANGE_HIT_OUTSIDE, "a click outside says so");
-    hit = exchange_hit(&list, &st, cx(list.items[0].rect),
+    hit = exchange_hit(&list, &v, &st, cx(list.items[0].rect),
                        list.items[0].rect.y + 4.0f);
     CHECK(hit.kind == EXCHANGE_HIT_NONE, "a click on the panel is absorbed");
 
@@ -226,7 +228,7 @@ static void test_hits(void)
                 break;
             }
 
-        hit = exchange_hit(&list, &st, cx(first_row_btn), cy(first_row_btn));
+        hit = exchange_hit(&list, &v, &st, cx(first_row_btn), cy(first_row_btn));
         CHECK(hit.kind == EXCHANGE_HIT_SELL && hit.res == first_of_page1,
               "the same pixel on page 2 sells the good that is there now");
         CHECK(hit.res != res_p0,
@@ -342,7 +344,7 @@ static void test_scripted_clicks(void)
     for (i = 0; i < list.count; i++) {
         const UiWidget *w = &list.items[i];
         if (ui_id_group(w->id) == UI_GROUP_SELL && w->value == 1) {
-            hit = exchange_hit(&list, &st, cx(w->rect), cy(w->rect));
+            hit = exchange_hit(&list, &v, &st, cx(w->rect), cy(w->rect));
             seen_res[emitted] = hit.res;
             seen_qty[emitted] = hit.qty;
             emitted++;
@@ -353,7 +355,7 @@ static void test_scripted_clicks(void)
     {
         const UiWidget *next = ui_list_find(&list,
                                     ui_id(UI_GROUP_ACTION, UI_ACTION_NEXT));
-        hit = exchange_hit(&list, &st, cx(next->rect), cy(next->rect));
+        hit = exchange_hit(&list, &v, &st, cx(next->rect), cy(next->rect));
         if (hit.kind != EXCHANGE_HIT_PAGE) correct = 0;
         st.exchange_page = hit.page;          /* the fold UiState is  */
     }
@@ -362,7 +364,7 @@ static void test_scripted_clicks(void)
     for (i = 0; i < list.count; i++) {
         const UiWidget *w = &list.items[i];
         if (ui_id_group(w->id) == UI_GROUP_BUY && w->value == 10) {
-            hit = exchange_hit(&list, &st, cx(w->rect), cy(w->rect));
+            hit = exchange_hit(&list, &v, &st, cx(w->rect), cy(w->rect));
             seen_res[emitted] = hit.res;
             seen_qty[emitted] = hit.qty;
             emitted++;
@@ -373,7 +375,7 @@ static void test_scripted_clicks(void)
     {
         const UiWidget *close = ui_list_find(&list,
                                     ui_id(UI_GROUP_ACTION, UI_ACTION_CLOSE));
-        hit = exchange_hit(&list, &st, cx(close->rect), cy(close->rect));
+        hit = exchange_hit(&list, &v, &st, cx(close->rect), cy(close->rect));
         if (hit.kind != EXCHANGE_HIT_CLOSE) correct = 0;
     }
 
@@ -431,6 +433,90 @@ static void test_grouping(void)
     }
 }
 
+/* ---- 7. limit orders and price history (UI_PLAN M3) ------ */
+static void test_limits_and_history(void)
+{
+    GameState   *gs = game_init();
+    UiSnapshot   snap;
+    ExchangeView view;
+    UiList       list;
+    UiState      st;
+    ExchangeHit  hit;
+    int          i;
+
+    if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
+    game_new_seeded(gs, 8080u);
+    memset(&st, 0, sizeof(st));
+
+    /* Let the market sample itself a few times. */
+    for (i = 0; i < 300; i++) sim_run_one_tick(gs);
+
+    ui_snapshot_build(&snap, gs);
+    exchange_view_market(&view, &snap, 0);
+    exchange_build(&list, &view, &st, SCREEN_WF, SCREEN_HF);
+
+    CHECK(view.rows[0].hist_count > 1,
+          "the view carries a price history to draw");
+
+    /* A click reports the price its row was showing — that number is
+     * what travels as the command's limit. */
+    {
+        const UiWidget *w = NULL;
+        int             j;
+        for (j = 0; j < list.count; j++)
+            if (ui_id_group(list.items[j].id) == UI_GROUP_BUY &&
+                !(list.items[j].flags & UI_W_DISABLED)) {
+                w = &list.items[j];
+                break;
+            }
+        CHECK(w != NULL, "found a live buy button");
+        if (w) {
+            int res = (int)ui_id_value(w->id);
+            hit = exchange_hit(&list, &view, &st,
+                               w->rect.x + w->rect.w * 0.5f,
+                               w->rect.y + w->rect.h * 0.5f);
+            CHECK(hit.price == view.rows[0].ask ||
+                  hit.price == snap.ask[res],
+                  "the click carries the ask the row displayed");
+        }
+    }
+
+    /* The limit is honoured: a buy at a limit below the live ask is
+     * refused rather than filled at the worse price. */
+    {
+        int before = gs->islands[0].stockpile.amount[RES_FISH];
+        int ask    = snap.ask[RES_FISH];
+
+        game_buy_resource_limit(gs, RES_FISH, 1, ask > 1 ? ask - 1 : 1);
+        sim_run_one_tick(gs);
+        CHECK(gs->islands[0].stockpile.amount[RES_FISH] == before,
+              "a buy whose limit is under the live ask does not fill");
+
+        game_buy_resource_limit(gs, RES_FISH, 1, ask);
+        sim_run_one_tick(gs);
+        CHECK(gs->islands[0].stockpile.amount[RES_FISH] == before + 1,
+              "...and one at the displayed price does");
+    }
+
+    /* And the refusal is stated as a moved price, not a generic no. */
+    {
+        Command      c;
+        RejectReason why;
+        memset(&c, 0, sizeof(c));
+        c.kind      = CMD_BUY_RESOURCE;
+        c.a         = 0;
+        c.b         = RES_FISH;
+        c.c         = 1;
+        c.d         = 1;      /* an absurdly low limit */
+        c.player_id = gs->local_player_id;
+        why = sim_apply_reason(gs, &c);
+        CHECK(why == REJ_PRICE_MOVED,
+              "the sim says the price moved, in those words");
+    }
+
+    game_free(gs);
+}
+
 int main(void)
 {
     printf("== exchange screen (no SDL linked) ==\n");
@@ -440,6 +526,7 @@ int main(void)
     test_refusals();
     test_scripted_clicks();
     test_grouping();
+    test_limits_and_history();
 
     if (failures == 0) { printf("\nPASSED\n"); return 0; }
     printf("\nFAILED (%d)\n", failures);

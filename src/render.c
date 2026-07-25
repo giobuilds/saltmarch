@@ -466,3 +466,42 @@ void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
                        (int)(x - 40.0f), (int)(y - 28.0f), col);
     }
 }
+
+/* ---- sparkline (UI_PLAN M3) ------------------------------- */
+void render_sparkline(SDL_Renderer *renderer, float x, float y,
+                      float w, float h, const int16_t *vals, int n,
+                      SDL_Color col)
+{
+    int   i;
+    int   lo, hi;
+    float span;
+
+    if (n < 2 || w <= 0.0f || h <= 0.0f) return;
+
+    lo = hi = vals[0];
+    for (i = 1; i < n; i++) {
+        if (vals[i] < lo) lo = vals[i];
+        if (vals[i] > hi) hi = vals[i];
+    }
+
+    /* A flat line is the common case early on, and dividing by its zero
+     * range would put it at the top of the box. Centre it instead:
+     * "this price has not moved" is information worth reading. */
+    span = (float)(hi - lo);
+    if (span < 1.0f) span = 0.0f;
+
+    SDL_SetRenderDrawColor(renderer, col.r, col.g, col.b, col.a);
+    for (i = 1; i < n; i++) {
+        float x0 = x + w * ((float)(i - 1) / (float)(n - 1));
+        float x1 = x + w * ((float)i / (float)(n - 1));
+        float y0, y1;
+
+        if (span == 0.0f) {
+            y0 = y1 = y + h * 0.5f;
+        } else {
+            y0 = y + h - h * ((float)(vals[i - 1] - lo) / span);
+            y1 = y + h - h * ((float)(vals[i]     - lo) / span);
+        }
+        SDL_RenderLine(renderer, x0, y0, x1, y1);
+    }
+}

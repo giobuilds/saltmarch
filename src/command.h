@@ -28,8 +28,9 @@
  *   CMD_PLACE_BUILDING  a=island b=row c=col d=type*2 + pay_with_gold
  *   CMD_PLACE_ROAD      a=island b=row c=col
  *   CMD_DEMOLISH        a=island b=building index
- *   CMD_SELL_RESOURCE   a=island b=resource c=qty
- *   CMD_BUY_RESOURCE    a=island b=resource c=qty  (c<0 => "max")
+ *   CMD_SELL_RESOURCE   a=island b=resource c=qty d=limit price
+ *   CMD_BUY_RESOURCE    a=island b=resource c=qty d=limit price
+ *                        (c<0 => "max"; d==0 => no limit)
  *   CMD_UPGRADE_HOUSE   a=island b=building index
  *   CMD_BUILD_SHIP      a=island b=shipyard index (unused today)
  *   CMD_SHIP_TRANSFER   a=ship   b=resource c=qty (sign=load/unload) d=island
@@ -43,6 +44,15 @@
  *   CMD_ESCROW_PUT      a=island b=resource c=qty (stockpile -> escrow)
  *   CMD_ESCROW_TAKE     a=island b=resource c=qty (escrow -> stockpile)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
+ *
+ * THE LIMIT PRICE (UI_PLAN M3) is the price the screen was showing when
+ * the player clicked. sim_apply recomputes the live quote and refuses
+ * with REJ_PRICE_MOVED if it moved against them — because a command
+ * applies a tick or more after the click, and under lockstep several,
+ * during which another player's Sell-Max can move the market. Without
+ * it the stale-screen race is a silent mis-fill; with it the race is a
+ * logged, replayable, visible non-event. Zero means "whatever it is
+ * now", which is what a replayed or scripted command carries.
  *
  * The PLACE_BUILDING pack (d = type*2 + pay_with_gold) is the one bit of
  * cleverness: five conceptual fields do not fit four slots, and both
