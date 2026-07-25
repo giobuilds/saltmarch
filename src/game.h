@@ -614,6 +614,14 @@ int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
  * route repeats the ship's last voyage (from_island -> to_island). */
 int game_ship_toggle_route(GameState *gs, int ship_idx);
 
+/* Attack another player's voyage with one of yours (MMO_PLAN later
+ * phases). Both ships must be at sea; `target_departure` binds the
+ * command to the voyage the player actually saw, so an intercept cannot
+ * land on a later voyage of the same ship. The engagement is computed
+ * deterministically inside the sim — there is nothing to aim. */
+int game_intercept(GameState *gs, int my_ship, int target_ship,
+                   uint64_t target_departure);
+
 /* ---- Phase 5: ownership-era commands ----------------------- */
 
 /* Claim `island_idx` as the local player's starting island. Validated

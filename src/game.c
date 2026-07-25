@@ -455,6 +455,71 @@ int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
     return 1;
 }
 
+/* ---- interception (MMO_PLAN later phases) ------------------
+ * The engagement, resolved from the log. Cargo is the stake: the winner
+ * takes what the loser was carrying, up to its own hold's capacity, and
+ * a failed attack costs the attacker the same way. Nothing is destroyed
+ * that was not aboard, and no ship is ever sunk — losing a hold is a
+ * setback, losing a ship would be an evening's work gone. */
+static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
+                                  uint64_t target_departure, uint32_t player)
+{
+    Ship *mine, *target;
+    int   attacker_wins, r;
+    Ship *winner, *loser;
+
+    if (my_idx < 0 || my_idx >= gs->ship_count)         return REJ_UNAVAILABLE;
+    if (target_idx < 0 || target_idx >= gs->ship_count) return REJ_NO_TARGET;
+    if (my_idx == target_idx)                           return REJ_NO_TARGET;
+
+    mine   = &gs->ships[my_idx];
+    target = &gs->ships[target_idx];
+
+    if (!mine->active || mine->at_island >= 0)     return REJ_UNAVAILABLE;
+    if (!target->active || target->at_island >= 0) return REJ_NO_TARGET;
+
+    /* Your own convoy is not a target. */
+    if (target->owner == player) return REJ_NO_TARGET;
+
+    /* The reference is bound to a voyage, not a ship: if the target
+     * has sailed again since the attacker committed, this command names
+     * something that no longer exists. */
+    if (target->departure_tick != target_departure) return REJ_NO_TARGET;
+
+    attacker_wins = intercept_attacker_wins(gs->world_seed, my_idx,
+                                            mine->departure_tick,
+                                            target_idx,
+                                            target->departure_tick);
+    winner = attacker_wins ? mine   : target;
+    loser  = attacker_wins ? target : mine;
+
+    for (r = 0; r < RES_COUNT; r++) {
+        int room, take;
+        if (loser->cargo[r] <= 0) continue;
+        room = SHIP_CARGO_CAPACITY - winner->cargo[r];
+        if (room <= 0) continue;
+        take = loser->cargo[r] < room ? loser->cargo[r] : room;
+        loser->cargo[r]  -= take;
+        winner->cargo[r] += take;
+    }
+
+    sim_log("Ship %d intercepted ship %d at sea — %s prevailed",
+            my_idx, target_idx, attacker_wins ? "the attacker"
+                                              : "the defender");
+    return REJ_OK;
+}
+
+int game_intercept(GameState *gs, int my_ship, int target_ship,
+                   uint64_t target_departure)
+{
+    Command c = {0};
+    c.kind = CMD_INTERCEPT;
+    c.a    = my_ship;
+    c.b    = target_ship;
+    c.c    = (int32_t)target_departure;
+    return command_submit(gs, &c);
+}
+
 /* ---- charters (MMO_PLAN later phases) ----------------------
  * One island's upkeep, once per tick. An island that cannot pay
  * accrues arrears; enough of them and the charter lapses, which
@@ -1771,6 +1836,13 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_escrow_take(gs, c->a, (ResourceType)c->b, c->c,
                                (uint32_t)c->d);
+    case CMD_INTERCEPT:
+        /* Your ship, anyone else's voyage. Ownership of the ATTACKER is
+         * checked here; the target's ownership is checked in the body,
+         * where "not yours" is the whole point rather than a rejection. */
+        if (!owns_ship(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_intercept(gs, c->a, c->b, (uint64_t)(uint32_t)c->c,
+                             c->player_id);
     case CMD_SET_DOCKING:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_set_docking(gs, c->a, c->b);

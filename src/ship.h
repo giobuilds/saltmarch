@@ -136,6 +136,23 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
 int voyage_is_raided(uint32_t world_seed, int ship_id, uint64_t departure_tick,
                      int from, int to);
 
+/* ---- interception (MMO_PLAN later phases) ------------------
+ * PvP that never needs a real-time arbiter. An intercept is a Command
+ * naming a voyage; the engagement is computed from the ordered log plus
+ * a seeded hash, so both players' clients — and the server — reach the
+ * same outcome from the same log without exchanging a shot.
+ *
+ * "Tide-time" is the honest description: you commit to an attack and
+ * the sea resolves it at a tick boundary. There is nothing to aim and
+ * nothing to dodge, which is what keeps the feed a dumb log.
+ */
+#define INTERCEPT_ATTACKER_ODDS   55   /* percent, out of 100          */
+
+/* Does the attacker prevail? Pure and seeded, like the piracy roll. */
+int intercept_attacker_wins(uint32_t world_seed,
+                            int attacker_ship, uint64_t attacker_departure,
+                            int target_ship, uint64_t target_departure);
+
 void ships_update(Ship ships[], int ship_count,
                   Island islands[], int island_count, uint64_t sim_tick_no,
                   uint32_t world_seed);

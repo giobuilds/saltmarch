@@ -45,6 +45,11 @@
  *   CMD_ESCROW_TAKE     a=island b=resource c=qty d=quay nonce
  *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
+ *   CMD_INTERCEPT       a=my ship b=target ship c=target departure tick
+ *                        (the tick BINDS the reference: if the target
+ *                        has since sailed again, the command names a
+ *                        voyage that no longer exists and is refused
+ *                        rather than applied to whatever is there now)
  *
  * THE LIMIT PRICE (UI_PLAN M3) is the price the screen was showing when
  * the player clicked. sim_apply recomputes the live quote and refuses
@@ -81,6 +86,7 @@ typedef enum {
     CMD_ESCROW_PUT,      /* owner: move goods stockpile -> harbor escrow */
     CMD_ESCROW_TAKE,     /* owner: move goods harbor escrow -> stockpile */
     CMD_SET_DOCKING,     /* owner: allow/forbid foreign ships docking    */
+    CMD_INTERCEPT,       /* attack another player's voyage at sea        */
     CMD_COUNT
 } CommandKind;
 
@@ -138,6 +144,7 @@ typedef enum {
     REJ_NOT_OWNER,            /* someone else's island or ship          */
     REJ_ESCROW_REFUSED,       /* docking forbidden, or no harbour       */
     REJ_OFFER_CHANGED,        /* the quay moved under an open panel     */
+    REJ_NO_TARGET,            /* that voyage is not there to intercept  */
     REJ_UNAVAILABLE,          /* generic: not possible right now        */
 
     REJ_COUNT

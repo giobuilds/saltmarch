@@ -368,10 +368,15 @@ Carbon.
   resulting premiums per lane beside the button — a lane whose quote has
   crept up is a lane that has been losing ships, which is knowledge a
   player can act on before it is their ship.
-- **Interception / tide-time PvP:** an intercept is a Command referencing a
-  voyage; both sides deterministically compute the engagement from the
-  ordered log plus seeded RNG. The feed/server never becomes a real-time
-  physics arbiter.
+- **Interception / tide-time PvP — DONE.** `CMD_INTERCEPT` names a voyage
+  by (ship, departure tick); the tick binds the reference, so a stale
+  click is refused with `REJ_NO_TARGET` rather than landing on whatever
+  voyage that ship is on now. `intercept_attacker_wins()` is a seeded
+  hash like the piracy roll, so both clients and the server reach the
+  same outcome from the ordered log — the feed never becomes an arbiter.
+  Cargo is the whole stake: the winner takes the loser's hold up to its
+  own capacity, and no ship is ever sunk. Losing a hold is a setback;
+  losing a ship would be an evening's work gone.
 - **Ghost factions from replays:** seed NPC islands with recorded human
   command logs replayed at offset ticks — believable neighbours, zero AI.
 - **Time-travel debug scrubber:** checkpoint + log = re-simulate to any past

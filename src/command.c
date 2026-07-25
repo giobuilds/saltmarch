@@ -26,7 +26,8 @@ static const char *const KIND_NAMES[CMD_COUNT] = {
     "PLACE_BUILDING", "PLACE_ROAD", "DEMOLISH", "SELL_RESOURCE",
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
     "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
-    "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING"
+    "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING",
+    "INTERCEPT"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -104,6 +105,10 @@ void command_describe(const Command *c, char *out, size_t n)
         break;
     case CMD_SET_DOCKING:
         snprintf(out, n, "SET_DOCKING  island %d  allow %d", c->a, c->b);
+        break;
+    case CMD_INTERCEPT:
+        snprintf(out, n, "INTERCEPT  ship %d -> ship %d  (departed %d)",
+                 c->a, c->b, c->c);
         break;
     default:
         snprintf(out, n, "%s  %d %d %d %d", command_kind_name(c->kind),

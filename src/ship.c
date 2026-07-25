@@ -143,6 +143,28 @@ int voyage_is_raided(uint32_t world_seed, int ship_id,
     return (int)(h % 1000u) < PIRACY_CHANCE_PER_MILLE;
 }
 
+int intercept_attacker_wins(uint32_t world_seed,
+                            int attacker_ship, uint64_t attacker_departure,
+                            int target_ship, uint64_t target_departure)
+{
+    uint32_t h = 2166136261u;
+    uint32_t parts[6];
+    int      i;
+
+    parts[0] = world_seed;
+    parts[1] = (uint32_t)attacker_ship;
+    parts[2] = (uint32_t)(attacker_departure & 0xFFFFFFFFu);
+    parts[3] = (uint32_t)target_ship;
+    parts[4] = (uint32_t)(target_departure & 0xFFFFFFFFu);
+    parts[5] = 0x9E3779B9u;   /* a different mix from the piracy roll */
+
+    for (i = 0; i < 6; i++) {
+        h ^= parts[i];
+        h *= 16777619u;
+    }
+    return (int)(h % 100u) < INTERCEPT_ATTACKER_ODDS;
+}
+
 /* The raid itself: pirates take a share of everything aboard. Called
  * exactly once per voyage, at the halfway tick. */
 static void voyage_raid(Ship *s, int ship_id)
