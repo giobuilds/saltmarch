@@ -67,10 +67,11 @@ saltmarch/
 │   ├── input.c/h              Keys, mouse, held-button drag state
 │   ├── render.c/h             Isometric projection and all world drawing
 │   ├── fonts.c/h              SDL_ttf wrapper
-│   ├── ui.c/h                 HUD bar and menu overlay
+│   ├── ui.c/h                 HUD painting and menu overlay
 │   ├── ui_kit.c/h             Layout, widget lists, hit-testing (SDL-free)
 │   ├── ui_snapshot.c/h        The per-frame world copy the UI reads
 │   ├── exchange_view.c/h      Exchange surface: rows, pagination, hits
+│   ├── hud_view.c/h           Build bar: category tabs, slots, hit decoding
 │   ├── trade_ui.c/h           Drawing for the exchange screen
 │   ├── world_ui.c/h           Archipelago overview and ship control
 │   ├── escrow_ui.c/h          Harbor escrow panel (co-op trade)

@@ -81,6 +81,7 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
 - `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
 - `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
+- `hud_view.c/h` — the build bar: category tabs, affordability, hit decoding, and the HUD metrics (`HUD_HEIGHT` et al). `ui.c` is now its drawer plus the menu overlay
 - `exchange_view.c/h` — the exchange surface (marketplace today, harbour escrow later): rows, pagination, refusals, hit decoding. `trade_ui.c` is now only its drawer
 - Overlay convention going forward: a `*_build()` in the SDL-free UI library produces a `UiList`; a `*_draw()` in the client renders that same list; hit-testing queries it. Draw and hit-test can no longer disagree about where a button is
 

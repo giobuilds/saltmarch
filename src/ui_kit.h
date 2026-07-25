@@ -73,7 +73,8 @@ enum {
     UI_GROUP_SELL,          /* value = ResourceType; widget value=qty */
     UI_GROUP_BUY,           /* value = ResourceType; widget value=qty */
     UI_GROUP_ISLAND,        /* value = island index                  */
-    UI_GROUP_SHIP           /* value = ship index                    */
+    UI_GROUP_SHIP,          /* value = ship index                    */
+    UI_GROUP_CATEGORY       /* value = BuildingCategory (HUD tabs)   */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are
@@ -84,7 +85,10 @@ typedef enum {
     UI_ACTION_PREV,
     UI_ACTION_NEXT,
     UI_ACTION_ACCEPT,
-    UI_ACTION_REJECT
+    UI_ACTION_REJECT,
+    UI_ACTION_MENU,       /* the cog                                 */
+    UI_ACTION_DEMOLISH,   /* the bulldozer tool                      */
+    UI_ACTION_WORLD       /* the archipelago overview                */
 } UiAction;
 
 /* ---- the layout cursor ------------------------------------
@@ -165,6 +169,11 @@ UiPage ui_paginate(int total, int per_page, int page);
 #define UI_W_DISABLED  0x01u
 #define UI_W_SELECTED  0x02u
 #define UI_W_HEADER    0x04u   /* label only, never hit-tested       */
+/* Greyed but still clickable: "you cannot afford this right now" is
+ * information, not a prohibition — the build-confirm popup can still
+ * offer to pay in Gold, so refusing the click would remove a real
+ * option. UI_W_DISABLED is for things that genuinely cannot be done. */
+#define UI_W_MUTED     0x08u
 
 typedef struct {
     uint32_t id;

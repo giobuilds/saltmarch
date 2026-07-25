@@ -36,8 +36,10 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                \
     } while (0)
 
-#define SCREEN_W 1920.0f
-#define SCREEN_H 1080.0f
+/* camera.h (reached through the snapshot header) already defines these
+ * as ints; the overlay is laid out against the same logical screen. */
+#define SCREEN_WF ((float)SCREEN_W)
+#define SCREEN_HF ((float)SCREEN_H)
 
 /* A synthetic market with `n` goods. Deliberately not built from a
  * UiSnapshot: the point is to exercise goods counts the game does not
@@ -86,14 +88,14 @@ static void test_fits_on_screen(void)
 
         synth(&v, SIZES[s]);
         memset(&st, 0, sizeof(st));
-        exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+        exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
 
         panel = list.items[0].rect;
 
         for (i = 0; i < list.count; i++) {
             UiRect r = list.items[i].rect;
             if (r.x < 0.0f || r.y < 0.0f ||
-                r.x + r.w > SCREEN_W || r.y + r.h > SCREEN_H)
+                r.x + r.w > SCREEN_WF || r.y + r.h > SCREEN_HF)
                 inside = 0;
             if (i > 0 &&
                 (r.x < panel.x - 0.01f || r.y < panel.y - 0.01f ||
@@ -125,20 +127,20 @@ static void test_pagination(void)
     memset(&st, 0, sizeof(st));
 
     synth(&v, 6);
-    pages6 = exchange_page_count(&v, SCREEN_H);
+    pages6 = exchange_page_count(&v, SCREEN_HF);
     CHECK(pages6 == 1, "6 goods — today's count — still fit on one page");
 
     synth(&v, 40);
-    pages40 = exchange_page_count(&v, SCREEN_H);
+    pages40 = exchange_page_count(&v, SCREEN_HF);
     CHECK(pages40 > 1, "40 goods paginate instead of overflowing");
 
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     rows_p0 = 0;
     for (i = 0; i < list.count; i++)
         if (ui_id_group(list.items[i].id) == UI_GROUP_RESOURCE) rows_p0++;
 
     st.exchange_page = 1;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     rows_p1 = 0;
     for (i = 0; i < list.count; i++)
         if (ui_id_group(list.items[i].id) == UI_GROUP_RESOURCE) rows_p1++;
@@ -149,7 +151,7 @@ static void test_pagination(void)
     /* The pager is greyed at the ends rather than vanishing, so the
      * Close button's neighbours never move under the cursor. */
     st.exchange_page = 0;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     {
         const UiWidget *prev = ui_list_find(&list,
                                     ui_id(UI_GROUP_ACTION, UI_ACTION_PREV));
@@ -173,7 +175,7 @@ static void test_hits(void)
 
     synth(&v, 40);
     memset(&st, 0, sizeof(st));
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
 
     /* Every button reports the identity and quantity it was built with. */
     {
@@ -217,7 +219,7 @@ static void test_hits(void)
             }
 
         st.exchange_page = 1;
-        exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+        exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
         for (i = 0; i < list.count; i++)
             if (ui_id_group(list.items[i].id) == UI_GROUP_RESOURCE) {
                 first_of_page1 = (int)ui_id_value(list.items[i].id);
@@ -245,7 +247,7 @@ static void test_refusals(void)
     /* Nothing in stock: every sell button off, buys unaffected. */
     synth(&v, 6);
     for (i = 0; i < v.row_count; i++) v.rows[i].yours = 0;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     {
         int sells_off = 1, buys_on = 0;
         for (i = 0; i < list.count; i++) {
@@ -264,7 +266,7 @@ static void test_refusals(void)
     /* No Gold: buys refused as CANT_AFFORD. */
     synth(&v, 6);
     v.your_gold = 0;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     {
         int right = 1, any = 0;
         for (i = 0; i < list.count; i++) {
@@ -280,7 +282,7 @@ static void test_refusals(void)
     /* Store full: buys refused as NO_STORAGE, sells still available. */
     synth(&v, 6);
     for (i = 0; i < v.row_count; i++) v.rows[i].yours = v.capacity;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     {
         int buys_off = 1, sells_on = 0;
         for (i = 0; i < list.count; i++) {
@@ -302,7 +304,7 @@ static void test_refusals(void)
     v.their_gold = 0;
     for (i = 0; i < v.row_count; i++)
         v.rows[i].refuse = (uint8_t)REJ_COUNTERPARTY_NO_GOLD;
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     {
         int right = 1, any = 0;
         for (i = 0; i < list.count; i++) {
@@ -335,7 +337,7 @@ static void test_scripted_clicks(void)
 
     /* Click: sell-1 on the first row, then Next, then buy-10 on the
      * first row of the new page, then Close. */
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
 
     for (i = 0; i < list.count; i++) {
         const UiWidget *w = &list.items[i];
@@ -356,7 +358,7 @@ static void test_scripted_clicks(void)
         st.exchange_page = hit.page;          /* the fold UiState is  */
     }
 
-    exchange_build(&list, &v, &st, SCREEN_W, SCREEN_H);
+    exchange_build(&list, &v, &st, SCREEN_WF, SCREEN_HF);
     for (i = 0; i < list.count; i++) {
         const UiWidget *w = &list.items[i];
         if (ui_id_group(w->id) == UI_GROUP_BUY && w->value == 10) {

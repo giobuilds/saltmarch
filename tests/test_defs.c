@@ -65,7 +65,7 @@ int main(void)
             printf("  FAIL: def[%d] (%s) has no category\n", i,
                    BUILDING_DEFS[i].name ? BUILDING_DEFS[i].name : "?");
             failures++;
-        } else if (BUILDING_DEFS[i].category >= BCAT_COUNT) {
+        } else if ((int)BUILDING_DEFS[i].category >= BCAT_COUNT) {
             printf("  FAIL: def[%d] has an out-of-range category\n", i);
             failures++;
         }
@@ -74,7 +74,7 @@ int main(void)
 
     for (i = 0; i < RES_COUNT; i++) {
         if (RESOURCE_CATEGORIES[i] == RCAT_NONE ||
-            RESOURCE_CATEGORIES[i] >= RCAT_COUNT) {
+            (int)RESOURCE_CATEGORIES[i] >= RCAT_COUNT) {
             printf("  FAIL: resource %d (%s) has no category\n", i,
                    RESOURCE_NAMES[i] ? RESOURCE_NAMES[i] : "?");
             failures++;
@@ -114,7 +114,7 @@ int main(void)
         for (c = 1; c < BCAT_COUNT; c++) {
             int n = 0, t;
             for (t = 0; t < BUILDING_TYPE_COUNT; t++)
-                if (BUILDING_DEFS[t].category == c &&
+                if ((int)BUILDING_DEFS[t].category == c &&
                     BUILDING_DEFS[t].hud_placeable) n++;
             if (n == 0) {
                 printf("  FAIL: category '%s' has no placeable buildings\n",

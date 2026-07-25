@@ -1,7 +1,8 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
 > Status: **in progress.** Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
-> (RejectReason), 1 (exchange screen) and 2 (data model) have landed; everything below
+> (RejectReason), 1 (exchange screen), 2 (data model) and 3 (HUD tabs)
+> have landed; everything below
 > them is still as planned.
 > Written for a future session to pick up cold.
 >
@@ -290,13 +291,37 @@ Phase 1's deferred category grouping landed with it: exchange rows are
 built in category order (two passes, no comparator), so a page holds
 related goods and enum order is preserved inside each group.
 
-### Phase 3 — HUD category tabs
+### Phase 3 — HUD category tabs — **DONE**
 Unchanged from v1 (HUD_HEIGHT 80 → ~112, 28px tab strip, sticky tab,
 greyed-not-hidden unavailable buildings) with one upgrade: the hover
 tooltip's "why can't I build this" now calls `sim_validate()` once the
 funnel exists (Phase 0.5's enum until then).
 **Verify:** as v1 (synthetic 40-entry def table, per-tab slot fit and
 hit-test).
+
+*As built:* `hud_view.c` (SDL-free) owns the bar's layout, tabs,
+affordability and hit decoding; `ui.c` is its drawer. The four separate
+`ui_hit_test` / `ui_cog_hit_test` / `ui_demolish_hit_test` /
+`ui_world_hit_test` entry points are gone — main.c makes one `hud_hit()`
+call against the list that was drawn, so the right-hand buttons are part
+of the same list as the slots.
+
+Two decisions worth recording:
+- **Greyed means muted, not disabled.** An unaffordable building stays
+  clickable, because the build-confirm popup can still offer to pay in
+  Gold — refusing the click would remove a real option. `UI_W_MUTED`
+  exists for exactly this distinction; `UI_W_DISABLED` remains for
+  things that genuinely cannot be done.
+- **HUD metrics moved to `hud_view.h`**, which ui.h now includes. They
+  had to leave ui.h because ui.h carries SDL and the layout that uses
+  them may not. Every existing reader of `HUD_HEIGHT` (client.c's hover
+  cutoff, ui.c) is unchanged.
+
+Deferred deliberately: the tooltip calls `building_place_check()`, not
+`sim_validate()`, which does not exist yet — the plan says the enum
+suffices until it does. A tab holding more slots than fit shows a
+"+k" marker rather than paginating; if a category ever gets that big it
+wants splitting, and saying so on screen is how that gets noticed.
 
 ### Phase 4 — Vitals, inventory, overlay arbiter
 As v1 (rule-driven vitals strip capped at 8 rows with `+k more`; inventory

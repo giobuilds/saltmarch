@@ -45,6 +45,8 @@ typedef struct {
     UiState       ui;
     ExchangeView  exchange;
     UiList        exchange_list;
+    HudView       hud;
+    UiList        hud_list;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -119,6 +121,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->ui,            0, sizeof(app->ui));
     SDL_memset(&app->exchange,      0, sizeof(app->exchange));
     SDL_memset(&app->exchange_list, 0, sizeof(app->exchange_list));
+    SDL_memset(&app->hud,           0, sizeof(app->hud));
+    SDL_memset(&app->hud_list,      0, sizeof(app->hud_list));
+    app->ui.hud_category = BCAT_GATHERING;
 
     /* Display name for the shared feed: SALTMARCH_PLAYER, or a default.
      * Cosmetic identity only — the sim's player_id comes from the co-op
@@ -218,6 +223,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
      * the tick loop, so every overlay in this frame sees one tick and
      * none of them can observe the world mid-tick. */
     ui_snapshot_build(&app->snap, gs);
+
+    hud_view_build(&app->hud, &app->snap, gs->current_island);
+    app->hud.selected      = gs->selected_building;
+    app->hud.demolish_mode = gs->demolish_mode;
+    app->hud.world_open    = gs->world_open;
+    app->hud.menu_open     = gs->menu_open;
+    hud_build(&app->hud_list, &app->hud, &app->ui,
+              (float)SCREEN_W, (float)SCREEN_H);
+
     if (gs->trade_open) {
         exchange_view_market(&app->exchange, &app->snap, gs->current_island);
         exchange_build(&app->exchange_list, &app->exchange, &app->ui,
@@ -495,36 +509,43 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             }
 
         } else {
-            /* CHANGED: check cog button first, then demolish button,
-             * then HUD slots, then map */
-            if (ui_cog_hit_test(SCREEN_W, SCREEN_H,
-                                gs->input.logical_x,
-                                gs->input.logical_y)) {
+            /* One hit-test against the bar's own widget list (UI_PLAN
+             * Phase 3), replacing the four separate ui_*_hit_test calls
+             * this cascade used to make. */
+            HudHit hh = hud_hit(&app->hud_list,
+                                (float)gs->input.logical_x,
+                                (float)gs->input.logical_y);
+
+            if (hh.kind == HUD_HIT_MENU) {
                 gs->menu_open = 1;
                 gs->selected_building = BUILDING_NONE; /* deselect on menu open */
                 gs->demolish_mode = 0;
 
-            } else if (ui_world_hit_test(SCREEN_W, SCREEN_H,
-                                         gs->input.logical_x,
-                                         gs->input.logical_y)) {
+            } else if (hh.kind == HUD_HIT_WORLD) {
                 gs->world_open        = 1;
                 gs->selected_building = BUILDING_NONE;
                 gs->demolish_mode     = 0;
 
-            } else if (ui_demolish_hit_test(SCREEN_W, SCREEN_H,
-                                            gs->input.logical_x,
-                                            gs->input.logical_y)) {
+            } else if (hh.kind == HUD_HIT_DEMOLISH) {
                 gs->demolish_mode = !gs->demolish_mode;
                 gs->selected_building = BUILDING_NONE;
 
+            } else if (hh.kind == HUD_HIT_TAB) {
+                /* Sticky: the tab changes here and nowhere else. */
+                app->ui.hud_category = hh.category;
+
+            } else if (hh.kind == HUD_HIT_NONE) {
+                /* The bar itself. Absorb it — a click on empty bar is
+                 * not a click on the world behind it. */
+
             } else {
-                BuildingType hud_hit = ui_hit_test(SCREEN_W, SCREEN_H,
-                                                   gs->input.logical_x,
-                                                   gs->input.logical_y);
-                if (hud_hit != BUILDING_NONE) {
+                BuildingType hud_sel = (hh.kind == HUD_HIT_BUILDING)
+                                       ? (BuildingType)hh.type
+                                       : BUILDING_NONE;
+                if (hud_sel != BUILDING_NONE) {
                     gs->selected_building =
-                        (gs->selected_building == hud_hit)
-                        ? BUILDING_NONE : hud_hit;
+                        (gs->selected_building == hud_sel)
+                        ? BUILDING_NONE : hud_sel;
                     gs->demolish_mode = 0;
                 } else if (gs->demolish_mode) {
                     /* Fix pass: clicking a building while the demolish
@@ -659,14 +680,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       pop_total(isl->pop_data, isl->building_count),
                       SCREEN_W);
 
-    /* CHANGED: pass menu_open flag to ui_draw */
-    ui_draw(app->r, SCREEN_W, SCREEN_H,
-            gs->selected_building,
-            gs->input.logical_x,
-            gs->input.logical_y,
-            gs->menu_open,
-            gs->demolish_mode,
-            gs->world_open);
+    ui_draw(app->r, &app->hud_list, &app->hud,
+            gs->input.logical_x, gs->input.logical_y);
 
     /* CHANGED: draw menu overlay on top of everything when open */
     if (gs->menu_open)

@@ -91,6 +91,7 @@ add_library(saltmarch_ui STATIC
     src/ui_kit.c
     src/ui_snapshot.c
     src/exchange_view.c
+    src/hud_view.c
 )
 target_link_libraries(saltmarch_ui PUBLIC saltmarch_sim)
 
