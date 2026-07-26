@@ -646,21 +646,40 @@ static int recv_into_buf(NetPeer *p)
  * The in-memory transport is exempt: it has no sockets, no latency and
  * no way to stall, and making the protocol tests depend on wall time
  * would trade a deterministic suite for a flaky one. */
+/* Elapsed milliseconds, saturating at zero when `then` is AFTER `now`.
+ *
+ * That is not a hypothetical ordering. net_pump samples `now` once at
+ * the top and then accepts connections, so a peer created later in the
+ * same call carries a timestamp a millisecond or two in the FUTURE
+ * relative to it. These are uint64_t: the plain subtraction wraps to
+ * something near 2^64, every timeout fires at once, and a peer is
+ * dropped in the same breath as it connects.
+ *
+ * It is a race on whether a millisecond boundary falls between two
+ * calls, so it hides completely on a fast machine and shows up on a
+ * loaded CI runner as a connection that "went silent" two seconds
+ * after saying hello. */
+static uint64_t ms_since(uint64_t now, uint64_t then)
+{
+    return now > then ? now - then : 0;
+}
+
 static int peer_timed_out(const NetSession *ns, const NetPeer *p,
                           uint64_t now, const char **why)
 {
     if (p->is_mem) return 0;
 
     if (ns->is_host && !p->said_hello &&
-        now - p->created_ms > HANDSHAKE_MS) {
+        ms_since(now, p->created_ms) > HANDSHAKE_MS) {
         *why = "peer connected but never introduced itself";
         return 1;
     }
-    if (now - p->last_recv_ms > IDLE_TIMEOUT_MS) {
+    if (ms_since(now, p->last_recv_ms) > IDLE_TIMEOUT_MS) {
         *why = "peer went silent";
         return 1;
     }
-    if (p->stall_since_ms && now - p->stall_since_ms > SEND_STALL_MS) {
+    if (p->stall_since_ms &&
+        ms_since(now, p->stall_since_ms) > SEND_STALL_MS) {
         *why = "peer stopped reading";
         return 1;
     }
@@ -1243,7 +1262,7 @@ NetSession *net_join_mem(NetSession *host, uint32_t resume_id)
 
 int net_pump(NetSession *ns, GameState *gs)
 {
-    uint64_t now = net_now_ms();
+    uint64_t now;
     int      i;
 
     if (!ns->alive) return 0;
@@ -1266,6 +1285,13 @@ int net_pump(NetSession *ns, GameState *gs)
             sim_log("net: connection accepted");
         }
     }
+
+    /* Sampled AFTER the accept loop, so no peer admitted above carries
+     * a timestamp later than it. ms_since() would absorb that anyway;
+     * this removes the inversion rather than tolerating it, and the two
+     * together are why a peer can no longer be timed out in the same
+     * pump that accepted it. */
+    now = net_now_ms();
 
     for (i = 0; i < NET_MAX_PEERS; i++) {
         NetPeer    *p   = &ns->peers[i];
@@ -1302,7 +1328,7 @@ int net_pump(NetSession *ns, GameState *gs)
          * silent peers would otherwise each conclude the other had
          * died, which is the one failure mode a keepalive exists to
          * prevent. */
-        if (!p->is_mem && now - p->last_send_ms >= PING_INTERVAL_MS)
+        if (!p->is_mem && ms_since(now, p->last_send_ms) >= PING_INTERVAL_MS)
             send_msg(ns, p, MSG_PING, NULL, 0);
     }
 

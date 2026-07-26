@@ -124,6 +124,20 @@ typedef enum {
     BUILDING_TRAPPERS_LODGE = 45, /* beside forest   -> Pelts         */
     BUILDING_FURRIER        = 46, /* Pelts + Cloth   -> Fur Coats     */
 
+    /* ---- SUPPLY_CHAIN Phase 6: Engineers ----
+     * The Watchmaker's and the Gramophone Works are the first
+     * three-input buildings in real content. */
+    BUILDING_GOLD_MINE        = 47, /* a gold seam    -> Gold Ore      */
+    BUILDING_WIRE_MILL        = 48, /* Iron           -> Wire          */
+    BUILDING_SPRING_WORKS     = 49, /* Iron           -> Springs       */
+    BUILDING_LAMP_WORKS       = 50, /* Glass + Wire   -> Lamps         */
+    BUILDING_WATCHMAKERS      = 51, /* Ore+Glass+Springs -> Watches    */
+    BUILDING_LAC_GROVE        = 52, /* lac soil       -> Shellac       */
+    BUILDING_GRAMOPHONE_WORKS = 53, /* Planks+Brass+Shellac -> Gram.   */
+    BUILDING_LOBSTER_POTS     = 54, /* coast          -> Lobster       */
+    BUILDING_FINE_KITCHEN     = 55, /* Lobster+Preserves -> Banquet    */
+    BUILDING_HOUSE_ENGINEER   = 56, /* upgrade of a Wright's House     */
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

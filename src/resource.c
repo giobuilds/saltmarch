@@ -46,6 +46,16 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     [RES_PELTS]     = "Pelts",
     [RES_FUR_COATS] = "Fur Coats",
 
+    [RES_GOLD_ORE]       = "Gold Ore",
+    [RES_WIRE]           = "Wire",
+    [RES_SPRINGS]        = "Springs",
+    [RES_LAMPS]          = "Lamps",
+    [RES_POCKET_WATCHES] = "Pocket Watches",
+    [RES_SHELLAC]        = "Shellac",
+    [RES_GRAMOPHONES]    = "Gramophones",
+    [RES_LOBSTER]        = "Lobster",
+    [RES_BANQUET]        = "Banquet",
+
     [RES_GOLD]  = "Gold",
 };
 
@@ -101,6 +111,16 @@ const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT] = {
     [RES_PELTS]     = RCAT_RAW,
     [RES_CLOTH]     = RCAT_REFINED,
     [RES_FUR_COATS] = RCAT_REFINED,
+
+    [RES_GOLD_ORE]       = RCAT_RAW,
+    [RES_SHELLAC]        = RCAT_RAW,
+    [RES_LOBSTER]        = RCAT_RAW,
+    [RES_WIRE]           = RCAT_REFINED,
+    [RES_SPRINGS]        = RCAT_REFINED,
+    [RES_LAMPS]          = RCAT_REFINED,
+    [RES_POCKET_WATCHES] = RCAT_REFINED,
+    [RES_GRAMOPHONES]    = RCAT_REFINED,
+    [RES_BANQUET]        = RCAT_REFINED,
 
     [RES_GOLD]  = RCAT_CURRENCY,
 };
@@ -168,6 +188,18 @@ const int SELL_PRICE[RES_COUNT] = {
     [RES_CLOTH]     = 13,
     [RES_PELTS]     = 7,
     [RES_FUR_COATS] = 28,
+
+    /* The Engineers band sits above the Artisans one: three-input
+     * goods cost three chains to make. */
+    [RES_GOLD_ORE]       = 9,
+    [RES_WIRE]           = 14,
+    [RES_SPRINGS]        = 14,
+    [RES_LAMPS]          = 26,
+    [RES_POCKET_WATCHES] = 48,
+    [RES_SHELLAC]        = 8,
+    [RES_GRAMOPHONES]    = 52,
+    [RES_LOBSTER]        = 9,
+    [RES_BANQUET]        = 38,
     /* RES_GOLD left at 0 — unused, can't sell gold for gold */
 };
 
@@ -214,6 +246,16 @@ const int BUY_PRICE[RES_COUNT] = {
     [RES_CLOTH]     = 26,
     [RES_PELTS]     = 14,
     [RES_FUR_COATS] = 56,
+
+    [RES_GOLD_ORE]       = 18,
+    [RES_WIRE]           = 28,
+    [RES_SPRINGS]        = 28,
+    [RES_LAMPS]          = 52,
+    [RES_POCKET_WATCHES] = 96,
+    [RES_SHELLAC]        = 16,
+    [RES_GRAMOPHONES]    = 104,
+    [RES_LOBSTER]        = 18,
+    [RES_BANQUET]        = 76,
     /* RES_GOLD left at 0 — unused */
 };
 

@@ -501,8 +501,10 @@ typedef struct {
  * v12 (SUPPLY_CHAIN Phase 5): four more goods, and MAX_ISLANDS 4 -> 8.
  * The second half is the one that matters — a v11 log describes a
  * FOUR-island world, so its island indices, its grants and its
- * voyages all mean something different in an eight-island one. */
-#define SAVE_VERSION 12u
+ * voyages all mean something different in an eight-island one.
+ *
+ * v13 (SUPPLY_CHAIN Phase 6): nine more goods for the Engineers line. */
+#define SAVE_VERSION 13u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

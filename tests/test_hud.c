@@ -343,6 +343,38 @@ static void test_real_defs(void)
     CHECK(total == placeable,
           "the tabs between them show every building exactly once");
 
+    /* Why that can fail, and why it is worth a second, louder check.
+     * The bar draws `hud_slots_that_fit` slots per tab and marks the
+     * remainder with a "+N" badge — which tells a player that
+     * buildings exist without giving them any way to reach one. It is
+     * a dead end, not a scrollbar.
+     *
+     * SUPPLY_CHAIN Phase 6 hit it for the first time: Workshops
+     * reached 22 against 21 slots, so exactly one building became
+     * unbuildable. Three furnace-driven rows moved to Factories, where
+     * they always belonged. The next phase to overflow a tab will fail
+     * HERE, naming the category, rather than being discovered as a
+     * building somebody could not find. At that point the answer is
+     * paging in the bar, not another recategorisation. */
+    {
+        int cap = hud_slots_that_fit(SCR_W), cat_i, over = 0;
+        for (cat_i = BCAT_NONE + 1; cat_i < BCAT_COUNT; cat_i++) {
+            int n = 0, t2;
+            for (t2 = 0; t2 < BUILDING_TYPE_COUNT; t2++)
+                if ((int)BUILDING_DEFS[t2].category == cat_i &&
+                    BUILDING_DEFS[t2].hud_placeable) n++;
+            if (n > cap) {
+                printf("  FAIL: '%s' holds %d buildings but only %d fit — "
+                       "%d cannot be built at all\n",
+                       building_category_name((BuildingCategory)cat_i),
+                       n, cap, n - cap);
+                over++;
+            }
+        }
+        CHECK(over == 0, "no category holds more buildings than the bar "
+                         "can show");
+    }
+
     /* With a rich island nothing is greyed; with a poor one, plenty is,
      * and the count of slots is unchanged. */
     {

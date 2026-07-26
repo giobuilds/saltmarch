@@ -93,6 +93,25 @@ typedef enum {
     RES_PELTS,      /* Trapper's Lodge (northern forest)              */
     RES_FUR_COATS,  /* Pelts + Cloth  -> Furrier       (Artisans)     */
 
+    /* ---- SUPPLY_CHAIN Phase 6: Engineers ----
+     * The deepest tier yet, and the one that finally needs the whole
+     * archipelago at once: gold ore is highland, lac is jungle,
+     * lobster is any coast, and the glass and brass behind the rest
+     * are Phase 4's northern industry.
+     *
+     * Two of these are the first THREE-input buildings in real
+     * content — the Watchmaker's and the Gramophone Works — which is
+     * the limit Phase 2 reserved and nothing had exercised. */
+    RES_GOLD_ORE,       /* Gold Mine        (highland deposit)         */
+    RES_WIRE,           /* Iron            -> Wire Mill                */
+    RES_SPRINGS,        /* Iron            -> Spring Works             */
+    RES_LAMPS,          /* Glass + Wire    -> Lamp Works    (Engineers)*/
+    RES_POCKET_WATCHES, /* Ore+Glass+Springs -> Watchmaker's (Eng.)    */
+    RES_SHELLAC,        /* Lac Grove        (jungle crop)              */
+    RES_GRAMOPHONES,    /* Planks+Brass+Shellac -> Gramophone Works    */
+    RES_LOBSTER,        /* Lobster Pots     (coast)                    */
+    RES_BANQUET,        /* Lobster + Preserves -> Fine Kitchen (Eng.)  */
+
     RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;

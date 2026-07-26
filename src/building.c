@@ -360,7 +360,13 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_BRICKWORKS] = {
         .name = "Brickworks",
-        .category = BCAT_WORKSHOP,
+        /* A furnace, not a bench: BCAT_FACTORY's own definition is
+         * "heavy industry: furnaces, machine shops", which this fits
+         * better than "one artisan's worth of processing". Moved in
+         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
+         * by exactly one slot -- but moved because it is more nearly
+         * true, not only because it fit. */
+        .category = BCAT_FACTORY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 175, .col_g = 90, .col_b = 60,
@@ -469,7 +475,13 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * finish. */
     [BUILDING_CHARCOAL_KILN] = {
         .name = "Charcoal Kiln",
-        .category = BCAT_WORKSHOP,
+        /* A furnace, not a bench: BCAT_FACTORY's own definition is
+         * "heavy industry: furnaces, machine shops", which this fits
+         * better than "one artisan's worth of processing". Moved in
+         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
+         * by exactly one slot -- but moved because it is more nearly
+         * true, not only because it fit. */
+        .category = BCAT_FACTORY,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 70, .col_g = 62, .col_b = 58,
@@ -563,7 +575,13 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_GLASSWORKS] = {
         .name = "Glassworks",
-        .category = BCAT_WORKSHOP,
+        /* A furnace, not a bench: BCAT_FACTORY's own definition is
+         * "heavy industry: furnaces, machine shops", which this fits
+         * better than "one artisan's worth of processing". Moved in
+         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
+         * by exactly one slot -- but moved because it is more nearly
+         * true, not only because it fit. */
+        .category = BCAT_FACTORY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 150, .col_g = 200, .col_b = 205,
@@ -773,6 +791,158 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .tick_seconds = 13.0f,
         .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 260 },
         .hud_placeable = 1
+    },
+
+    /* ---- SUPPLY_CHAIN Phase 6: Engineers ----
+     *
+     * The tier that needs the whole archipelago. Gold ore is highland
+     * and nowhere else, lac is jungle and nowhere else, lobster wants
+     * any coast, and the glass and brass behind the rest are Phase 4's
+     * northern industry -- so an Engineers neighbourhood is an argument
+     * for holding one of everything.
+     *
+     * The Watchmaker's and the Gramophone Works are the first
+     * three-input buildings in real content, which is the limit Phase 2
+     * reserved and nothing until now has exercised. */
+    [BUILDING_GOLD_MINE] = {
+        .name = "Gold Mine",
+        .category = BCAT_EXTRACTION,
+        /* 1x1, like every other mine -- see the Iron Mine's note. */
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_deposit = DEPOSIT_GOLD_ORE,
+        .col_r = 205, .col_g = 175, .col_b = 60,
+        .produces = RES_GOLD_ORE, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_PLANKS] = 12, [RES_GOLD] = 220 },
+        .hud_placeable = 1
+    },
+    [BUILDING_WIRE_MILL] = {
+        .name = "Wire Mill",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 165, .col_g = 165, .col_b = 175,
+        .produces = RES_WIRE, .produce_amt = 1,
+        .consumes = { RES_IRON, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 180 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SPRING_WORKS] = {
+        .name = "Spring Works",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 150, .col_g = 155, .col_b = 145,
+        .produces = RES_SPRINGS, .produce_amt = 1,
+        .consumes = { RES_IRON, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 180 },
+        .hud_placeable = 1
+    },
+    [BUILDING_LAMP_WORKS] = {
+        .name = "Lamp Works",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 235, .col_g = 215, .col_b = 130,
+        .produces = RES_LAMPS, .produce_amt = 1,
+        .consumes = { RES_GLASS, RES_WIRE, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_STEEL_BEAMS] = 8, [RES_GOLD] = 300 },
+        .hud_placeable = 1
+    },
+    /* First three-input building in the shipped table. All-or-nothing
+     * like every other: no gold ore, no watches, however many springs
+     * are on the shelf. */
+    [BUILDING_WATCHMAKERS] = {
+        .name = "Watchmaker's",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 215, .col_g = 190, .col_b = 110,
+        .produces = RES_POCKET_WATCHES, .produce_amt = 1,
+        .consumes = { RES_GOLD_ORE, RES_GLASS, RES_SPRINGS },
+        .consume_amt = { 1, 1, 1 },
+        .tick_seconds = 18.0f,
+        .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 380 },
+        .hud_placeable = 1
+    },
+    /* Brought forward from Phase 5's deferred southern list: it was
+     * held back only because nothing consumed Shellac, and the
+     * Gramophone Works now does. */
+    [BUILDING_LAC_GROVE] = {
+        .name = "Lac Grove",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_LAC,
+        .col_r = 150, .col_g = 90, .col_b = 70,
+        .produces = RES_SHELLAC, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_GRAMOPHONE_WORKS] = {
+        .name = "Gramophone Works",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 130, .col_g = 100, .col_b = 90,
+        .produces = RES_GRAMOPHONES, .produce_amt = 1,
+        .consumes = { RES_PLANKS, RES_BRASS, RES_SHELLAC },
+        .consume_amt = { 1, 1, 1 },
+        .tick_seconds = 18.0f,
+        .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 400 },
+        .hud_placeable = 1
+    },
+    [BUILDING_LOBSTER_POTS] = {
+        .name = "Lobster Pots",
+        .category = BCAT_FARMING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 190, .col_g = 80, .col_b = 70,
+        .produces = RES_LOBSTER, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_WOOD] = 12, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FINE_KITCHEN] = {
+        .name = "Fine Kitchen",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 215, .col_g = 150, .col_b = 140,
+        .produces = RES_BANQUET, .produce_amt = 1,
+        .consumes = { RES_LOBSTER, RES_PRESERVES, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 16.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 320 },
+        .hud_placeable = 1
+    },
+    /* Upgrade-only, like the Artisan's House: the second line's top. */
+    [BUILDING_HOUSE_ENGINEER] = {
+        .name = "Engineer's House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 170, .col_g = 195, .col_b = 215,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_STEEL_BEAMS] = 8, [RES_GOLD] = 320 },
+        .hud_placeable = 0
     },
 };
 

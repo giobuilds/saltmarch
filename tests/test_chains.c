@@ -185,6 +185,25 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
+    /* Engineers (SUPPLY_CHAIN Phase 6) are deeper still: gold ore is
+     * highland and nowhere else, shellac is jungle and nowhere else,
+     * and a Banquet wants a coast. The tier is an argument for holding
+     * one of everything. */
+    for (s = 0; s < sizeof(SEEDS) / sizeof(SEEDS[0]); s++) {
+        char msg[96];
+        int  unmet = 0;
+
+        survey(NORTH_SOUTH, (int)(sizeof NORTH_SOUTH / sizeof NORTH_SOUTH[0]),
+               SEEDS[s], placeable);
+        reachable_goods(placeable, makeable);
+        report_tier(tier_def_for(BUILDING_HOUSE_ENGINEER), makeable,
+                    "from the whole archipelago", &unmet);
+        snprintf(msg, sizeof(msg),
+                 "seed %u: Engineers are satisfiable across the archipelago",
+                 SEEDS[s]);
+        CHECK(unmet == 0, msg);
+    }
+
     /* And the negatives, which are what make the other climates matter
      * rather than decorate. The home island alone must NOT be able to
      * brew, and the whole NORTH must not be able to make a Fur Coat —
@@ -203,6 +222,31 @@ static void test_tiers_are_satisfiable(void)
           "no northern island can card cotton");
     CHECK(!makeable[RES_FUR_COATS],
           "so Artisans cannot be reached without sailing south");
+
+    /* Engineers lean on the two scarcest climates in opposite
+     * directions, so each is checked without the other. */
+    {
+        static const MapProfile NO_HIGHLAND[] = {
+            PROFILE_TEMPERATE, PROFILE_WOODLAND, PROFILE_ATOLL,
+            PROFILE_PLANTATION, PROFILE_JUNGLE
+        };
+        static const MapProfile NO_JUNGLE[] = {
+            PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND,
+            PROFILE_ATOLL, PROFILE_PLANTATION
+        };
+        survey(NO_HIGHLAND,
+               (int)(sizeof NO_HIGHLAND / sizeof NO_HIGHLAND[0]), 4242u,
+               placeable);
+        reachable_goods(placeable, makeable);
+        CHECK(!makeable[RES_POCKET_WATCHES],
+              "no highland, no gold ore, no Pocket Watches");
+
+        survey(NO_JUNGLE, (int)(sizeof NO_JUNGLE / sizeof NO_JUNGLE[0]),
+               4242u, placeable);
+        reachable_goods(placeable, makeable);
+        CHECK(!makeable[RES_GRAMOPHONES],
+              "no jungle, no shellac, no Gramophones");
+    }
 }
 
 /* ---- nothing in the table is orphaned --------------------- */
@@ -261,6 +305,64 @@ static void test_no_dead_goods(void)
         }
     }
     CHECK(unused == 0, "every good is wanted by something");
+
+    /* SUPPLY_CHAIN Phase 6's verify step: the three-input path in real
+     * content, and evidence that Phase 2's ceiling did not need
+     * raising again. Until now MAX_BUILDING_INPUTS was a limit the
+     * tests exercised and no shipped building reached. */
+    {
+        int t2, three = 0, widest = 0;
+        for (t2 = 0; t2 < BUILDING_TYPE_COUNT; t2++) {
+            int j2, used = 0;
+            for (j2 = 0; j2 < MAX_BUILDING_INPUTS; j2++)
+                if (BUILDING_DEFS[t2].consumes[j2] != RES_COUNT) used++;
+            if (used > widest) widest = used;
+            if (used == 3) three++;
+        }
+        CHECK(three >= 2,
+              "at least two shipped buildings take three inputs");
+        CHECK(widest == MAX_BUILDING_INPUTS,
+              "and the widest uses the ceiling exactly — it did not need "
+              "raising");
+    }
+    CHECK(BUILDING_DEFS[BUILDING_WATCHMAKERS].consumes[2] == RES_SPRINGS &&
+          BUILDING_DEFS[BUILDING_GRAMOPHONE_WORKS].consumes[2] == RES_SHELLAC,
+          "the Watchmaker's and the Gramophone Works are the two");
+
+    /* And the rule driven on a REAL three-input def, not a synthetic
+     * one. building_missing_input's own comment says it was hoisted
+     * out of island_tick_buildings so a test could reach it, because
+     * the third slot would otherwise stay unproven until this phase.
+     * Making good on that: each of the three inputs is withheld in
+     * turn, and each alone must block the tick. A two-slot
+     * implementation passes the first two of these and fails the
+     * third. */
+    {
+        const BuildingDef *w = &BUILDING_DEFS[BUILDING_WATCHMAKERS];
+        Stockpile          st;
+        int                k;
+
+        stockpile_init(&st);
+        st.amount[RES_GOLD_ORE] = 5;
+        st.amount[RES_GLASS]    = 5;
+        st.amount[RES_SPRINGS]  = 5;
+        CHECK(building_missing_input(w, &st) < 0,
+              "a Watchmaker's with all three inputs may tick");
+
+        for (k = 0; k < MAX_BUILDING_INPUTS; k++) {
+            char        msg[96];
+            ResourceType res = w->consumes[k];
+            int          keep;
+
+            if (res == RES_COUNT) continue;
+            keep = st.amount[res];
+            st.amount[res] = 0;
+            snprintf(msg, sizeof(msg),
+                     "and none at all without %s alone", RESOURCE_NAMES[res]);
+            CHECK(building_missing_input(w, &st) == k, msg);
+            st.amount[res] = keep;
+        }
+    }
 
     /* Prices exist for everything tradeable, or the market lists a
      * good at nothing. */
