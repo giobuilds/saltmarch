@@ -209,12 +209,18 @@ static void test_real_table(void)
     printf("--- the table as shipped ---\n");
 
     /* SUPPLY_CHAIN Phase 3 rooted two SEPARATE lines rather than a
-     * ladder: a Wright's House is built, not upgraded into. Both base
-     * tiers are therefore terminal until Artisans (Phase 4) and
-     * Engineers (Phase 6) give them somewhere to go. */
+     * ladder: a Wright's House is built, not upgraded into. Phase 4
+     * gives the first of them somewhere to go; the Wrights line waits
+     * for Engineers in Phase 6. */
     CHECK(tier_def_for(BUILDING_HOUSE) != NULL &&
-          tier_def_for(BUILDING_HOUSE)->next_tier == BUILDING_NONE,
-          "a Marsh Cottage has nowhere to climb yet — Artisans is Phase 4");
+          tier_def_for(BUILDING_HOUSE)->next_tier == BUILDING_HOUSE_ARTISAN,
+          "a Marsh Cottage climbs to Artisans");
+    CHECK(tier_def_for(BUILDING_HOUSE_WORKER) != NULL &&
+          tier_def_for(BUILDING_HOUSE_WORKER)->next_tier == BUILDING_NONE,
+          "a Wright's House still has nowhere to climb — Engineers is Phase 6");
+    CHECK(tier_def_for(BUILDING_HOUSE_ARTISAN) != NULL &&
+          tier_def_for(BUILDING_HOUSE_ARTISAN)->next_tier == BUILDING_NONE,
+          "and Artisans is the top of that line for now");
     CHECK(tier_def_for(BUILDING_HOUSE_WORKER) != NULL &&
           tier_def_for(BUILDING_HOUSE_WORKER)->next_tier == BUILDING_NONE,
           "nor a Wright's House — Engineers is Phase 6");
@@ -246,11 +252,28 @@ static void test_real_table(void)
               "Wrights want Sausages, Bread, Soap and Beer");
     }
 
+    /* Gold is not the gate, and this is the phase where that stops
+     * being a claim about a synthetic table and becomes one about the
+     * shipped one: the way to promote a neighbourhood is to build the
+     * chains that will keep feeding it. */
     for (r = 0; r < RES_COUNT; r++) stock[r] = 0;
     stock[RES_GOLD] = 10000;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_UNAVAILABLE,
-          "so however rich the island, there is nothing to promote into");
-    CHECK(to == BUILDING_NONE, "and no destination is named");
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
+          "however rich the island, an unsupplied cottage cannot climb");
+
+    stock[RES_PRESERVES]       = 1;
+    stock[RES_SEWING_MACHINES] = 1;
+    stock[RES_SPECTACLES]      = 1;
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
+          "three of the four goods is still not four");
+    stock[RES_WINDOWS] = 1;
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_OK,
+          "with all four present it may climb");
+    CHECK(to == BUILDING_HOUSE_ARTISAN, "and Artisans is where it goes");
+
+    stock[RES_GOLD] = 0;
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_CANT_AFFORD,
+          "the goods are necessary but the Gold is still required too");
 }
 
 /* ---- 5. sim and UI answer identically ---------------------- */
@@ -298,21 +321,25 @@ static void test_sim_and_ui_agree(void)
     }
     pop_init(&isl->pop_data[idx]);
 
-    /* Phase 3 leaves both base tiers terminal, so the only verdict
-     * either side can reach on the SHIPPED table is "nowhere to go".
-     * That is still worth asserting jointly: it is the wiring — sim
-     * reading Island, UI reading a snapshot — rather than the rule,
-     * which section 3 proves at five needs and behind a building. The
-     * accept path comes back under test in Phase 4 with Artisans. */
+    /* SUPPLY_CHAIN Phase 4 gives this test its accept path back. Until
+     * Artisans existed both base tiers were terminal and the only
+     * verdict either side could reach on the SHIPPED table was "nowhere
+     * to go"; now the same house can be refused AND promoted, and both
+     * halves are asserted jointly — sim reading Island, UI reading a
+     * snapshot — which is the wiring rather than the rule.
+     *
+     * Refusal first: a cottage with its own tier's goods but none of
+     * the four Artisans want. Gold is deliberately abundant throughout,
+     * because the whole point of the rule is that Gold is not the gate. */
     isl->stockpile.amount[RES_GOLD] = 5000;
     stockpile_add(&isl->stockpile, RES_FISH, 3);
     stockpile_add(&isl->stockpile, RES_OILSKINS, 3);
     stockpile_add(&isl->stockpile, RES_MARSH_GIN, 3);
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
-                                 &to_ui) == REJ_UNAVAILABLE,
-          "the UI reports a fully supplied cottage as having nowhere to go");
-    CHECK(to_ui == BUILDING_NONE, "and names no destination");
+                                 &to_ui) == REJ_NEEDS_GOODS,
+          "the UI refuses a cottage that has none of what Artisans want");
+    CHECK(to_ui == BUILDING_NONE, "and names no destination while refusing");
 
     /* The popup says so too, rather than offering a button. */
     gs->confirm.open = 1;
@@ -322,7 +349,7 @@ static void test_sim_and_ui_agree(void)
     gs->confirm.cmd.b = idx;
     ui_snapshot_build(&snap, gs);
     confirm_view_build(&view, &snap);
-    CHECK(view.refusal == REJ_UNAVAILABLE, "the popup records the refusal");
+    CHECK(view.refusal == REJ_NEEDS_GOODS, "the popup records the refusal");
     CHECK(!view.options[0].affordable,
           "and cannot be accepted, however much Gold is in the store");
 
@@ -336,6 +363,43 @@ static void test_sim_and_ui_agree(void)
           "the sim refuses the same upgrade the UI refused");
     CHECK(isl->stockpile.amount[RES_GOLD] == before,
           "and a refused upgrade costs nothing");
+
+    /* ---- and now the accept path, on the same house ---- */
+    stockpile_add(&isl->stockpile, RES_PRESERVES, 2);
+    stockpile_add(&isl->stockpile, RES_SEWING_MACHINES, 2);
+    stockpile_add(&isl->stockpile, RES_SPECTACLES, 2);
+    stockpile_add(&isl->stockpile, RES_WINDOWS, 2);
+
+    ui_snapshot_build(&snap, gs);
+    CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
+                                 &to_ui) == REJ_OK,
+          "supply the four and the UI says it may climb");
+    CHECK(to_ui == BUILDING_HOUSE_ARTISAN, "and names Artisans as where");
+
+    gs->confirm.open = 1;
+    gs->confirm.kind = CONFIRM_UPGRADE;
+    gs->confirm.cmd.kind = CMD_UPGRADE_HOUSE;
+    gs->confirm.cmd.a = gs->current_island;
+    gs->confirm.cmd.b = idx;
+    ui_snapshot_build(&snap, gs);
+    confirm_view_build(&view, &snap);
+    CHECK(view.refusal == REJ_OK, "the popup offers it rather than refusing");
+    CHECK(view.options[0].affordable, "and the button can be pressed");
+
+    before = isl->stockpile.amount[RES_GOLD];
+    gs->confirm.open = 0;
+    game_upgrade_house(gs, idx);
+    while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
+
+    CHECK(isl->buildings[idx].type == BUILDING_HOUSE_ARTISAN,
+          "the sim promotes the house the UI said it would");
+    CHECK(isl->stockpile.amount[RES_GOLD] < before,
+          "and the upgrade is paid for");
+    /* The needs are a standing requirement, not a price: they must be
+     * PRESENT to climb, and they stay on the shelf afterwards to feed
+     * the tier that now wants them every needs tick. */
+    CHECK(isl->stockpile.amount[RES_PRESERVES] == 2,
+          "the goods that qualified it are not consumed by the upgrade");
 
     /* island_has_building and its snapshot twin must not drift. */
     {

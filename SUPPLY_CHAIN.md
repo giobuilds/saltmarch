@@ -116,8 +116,8 @@ Northern islands (temperate, highland, woodland, atoll — today's four):
 | Windows | Glass + Planks → **Window Shop** |
 | Spectacles | Glass + Brass → **Spectacle Shop** |
 | Pelts | **Trapper's Lodge** |
-| Cloth | Cotton → **Spinning Mill** |
-| Fur Coats | Pelts + Cloth → **Furrier** |
+| Cloth | Cotton → **Spinning Mill** *(Phase 5: no northern cotton)* |
+| Fur Coats | Pelts + Cloth → **Furrier** *(deferred to Phase 5 with Cloth)* |
 | Preserves | **Cattle Pen** + **Pepper Field** → **Kitchen** → **Cannery** |
 | Sewing Machines | Iron + Coal (**Coal Mine**) → **Foundry** → **Machine Shop** |
 | Wire | Iron → **Wire Mill** |
@@ -164,7 +164,7 @@ upgradeable once**, plus a building that opens a seventh path:
 | Tier | Needs |
 |---|---|
 | Marshfolk | Fish, Oilskins, Marsh Gin |
-| Artisans | Preserves, Sewing Machines, Fur Coats, Spectacles, Windows |
+| Artisans | Preserves, Sewing Machines, Spectacles, Windows (+ Fur Coats in Phase 5) |
 | Wrights | Sausages, Bread, Soap, Beer |
 | Engineers | Lamps, Pocket Watches, Gramophones, Banquet |
 | Merchants | Coffee, Rum, Flatbread, Marsh Hats |
@@ -440,7 +440,7 @@ synthetically by `tier_upgrade_check_def`, and test_tier now asserts
 the refusal path jointly through both sim and UI — but the full
 accept wiring comes back under test in Phase 4.
 
-## Phase 4 — iron, glass, and the Artisans
+## Phase 4 — iron, glass, and the Artisans — **DONE**
 
 Iron Mine, Coal Mine, Charcoal Kiln, Bloomery, Ironworks, Sand Pit,
 Glassworks, Brass Foundry, Window Shop, Spectacle Shop, Trapper's
@@ -454,6 +454,55 @@ checklist popup earns its keep.
 **Verify:** as Phase 3, for Artisans. Plus the first three-input
 building in real content (none of these need three yet — the assertion
 is that Phase 2's limit is exercised by tests until Phase 6 uses it).
+
+### As built
+
+Sixteen buildings, sixteen goods, one house type, `SAVE_VERSION` 10 →
+11. The fixtures moved as ground rule 5 says they must:
+`bd365d99e940a1b9` → `1767c62ef9af3f29`, and the UI fixture
+`2f8399c0b704c114` → `8662da1d9d239104`.
+
+**Two deviations from the plan above, both forced by the same thing.**
+
+*Fur Coats is deferred to Phase 5, and the Pelts line with it.* Artisans
+was specified with five needs, but Fur Coats = Pelts + Cloth, Cloth
+comes from Cotton, and no northern profile grows cotton — the chain
+cannot close until the southern islands exist. Artisans therefore ships
+with **four** needs (Preserves, Sewing Machines, Spectacles, Windows)
+and gains the fifth in Phase 5. Trapper's Lodge and Furrier are held
+back with it rather than shipped half-connected: a `Pelts` nobody
+consumes is exactly what `test_chains`' orphan check exists to catch,
+and shipping the producer without the consumer would have traded a
+missing chain for a dangling one.
+
+*Pepper needed a crop bit.* `FERTILE_PEPPER` is new, granted on
+temperate and woodland but deliberately **not** on the highland — the
+highland is metal country, and an island that could both feed and
+equip Artisans by itself would remove the reason to hold two.
+
+**The Artisans house is the first upgrade-only building since Phase 3
+made Wright's House placeable**, which changed an assertion in
+`test_defs`: "every building can be reached from the HUD" is now "every
+building is placeable or upgraded into", since a def that is neither is
+content no player can ever see.
+
+**The accept path is back under test end to end**, as Phase 3 promised
+it would be. `test_tier` now drives one house through refusal *and*
+promotion on the shipped table, jointly through sim and UI, and asserts
+the part of the rule most easily got wrong: the qualifying goods are
+**not consumed** by the upgrade. They are a standing requirement, not a
+price — they stay on the shelf to feed the tier that now wants them
+every needs tick.
+
+**A bug the verify step caught, exactly as designed.** Iron Mine and
+Coal Mine were first written 2×2. `needs_deposit` requires the seam
+under *every* tile of the footprint, and the scatter pass lays deposits
+down one tile at a time, so a 2×2 mine can never place anywhere —
+`test_chains` reported it as "nothing anywhere can produce Iron Ore"
+and, transitively, Iron, Steel Beams, Brass, Spectacles, Steel and
+Sewing Machines. Both are 1×1 now, like the Clay Pit that already knew
+this. Worth recording because the failure is invisible by inspection:
+the def table looks perfectly reasonable.
 
 ## Phase 5 — the southern islands
 

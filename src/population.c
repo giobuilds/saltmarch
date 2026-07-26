@@ -24,11 +24,25 @@
  * Wright's House edge that used to exist is gone: a Wright's House is
  * now something you build. */
 static const TierDef TIER_DEFS[] = {
+    /* SUPPLY_CHAIN Phase 4 gives the Marsh Cottage somewhere to go.
+     * Until now both base tiers were terminal and sim_upgrade_house's
+     * accept path had no content to run on; this is the edge that puts
+     * it back under test end to end. */
     { BUILDING_HOUSE,
       { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT },
-      BUILDING_NONE, 0, BUILDING_NONE },
+      BUILDING_HOUSE_ARTISAN, 400, BUILDING_NONE },
     { BUILDING_HOUSE_WORKER,
       { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_NONE },
+    /* Artisans want four, not the five the plan's table lists: Fur
+     * Coats needs Cloth, Cloth needs Cotton, and no northern profile
+     * grows cotton — the chain cannot close until Phase 5's southern
+     * islands exist. Deferring the whole Pelts line (Trapper's Lodge,
+     * Furrier) with it keeps every good consumed by something, which
+     * is the check test_chains makes and the one that caught this. */
+    { BUILDING_HOUSE_ARTISAN,
+      { RES_PRESERVES, RES_SEWING_MACHINES, RES_SPECTACLES, RES_WINDOWS,
+        RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))

@@ -88,6 +88,32 @@ typedef enum {
     BUILDING_WINDMILL     = 24,   /* Grain    -> Flour                */
     BUILDING_BAKEHOUSE    = 25,   /* Flour    -> Bread                */
 
+    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ----
+     * Four chains and the tier they feed. Appended, like Phase 3's, so
+     * every existing type keeps its value; only the resource enum
+     * shifts under this phase's SAVE_VERSION bump. */
+    BUILDING_CHARCOAL_KILN  = 26, /* Wood            -> Charcoal      */
+    BUILDING_IRON_MINE      = 27, /* an iron deposit -> Iron Ore      */
+    BUILDING_COAL_MINE      = 28, /* a coal deposit  -> Coal          */
+    BUILDING_BLOOMERY       = 29, /* Ore + Charcoal  -> Iron          */
+    BUILDING_IRONWORKS      = 30, /* Iron            -> Steel Beams   */
+    BUILDING_SAND_PIT       = 31, /* a sand deposit  -> Sand          */
+    BUILDING_GLASSWORKS     = 32, /* Sand            -> Glass         */
+    BUILDING_BRASS_FOUNDRY  = 33, /* Iron + Charcoal -> Brass         */
+    BUILDING_WINDOW_SHOP    = 34, /* Glass + Planks  -> Windows       */
+    BUILDING_SPECTACLE_SHOP = 35, /* Glass + Brass   -> Spectacles    */
+    BUILDING_CATTLE_PEN     = 36, /* pasture         -> Cattle        */
+    BUILDING_PEPPER_FIELD   = 37, /* pepper soil     -> Pepper        */
+    BUILDING_KITCHEN        = 38, /* Cattle + Pepper -> Potted Meat   */
+    BUILDING_CANNERY        = 39, /* Potted Meat     -> Preserves     */
+    BUILDING_FOUNDRY        = 40, /* Iron + Coal     -> Steel         */
+    BUILDING_MACHINE_SHOP   = 41, /* Steel + Planks  -> Sewing Mach.  */
+
+    /* The first tier reached by UPGRADING rather than by building, so
+     * like BUILDING_HOUSE_WORKER before Phase 3 it has no HUD slot:
+     * the only way to one is game_upgrade_house on a Marsh Cottage. */
+    BUILDING_HOUSE_ARTISAN  = 42,
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

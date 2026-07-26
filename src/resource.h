@@ -50,6 +50,32 @@ typedef enum {
     RES_FLOUR,      /* Grain    -> Windmill                           */
     RES_BREAD,      /* Flour    -> Bakehouse        (Wrights want)    */
 
+    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ----
+     * The first tier reached by UPGRADING rather than by building, so
+     * these are the first goods whose whole purpose is to promote a
+     * neighbourhood rather than to keep one alive.
+     *
+     * Four chains, each deeper than anything in Phase 3: ore and
+     * charcoal become iron before iron becomes anything else, so the
+     * Bloomery is the first building whose inputs are BOTH themselves
+     * manufactured. Grouped by chain, raw good first. */
+    RES_CHARCOAL,        /* Wood            -> Charcoal Kiln          */
+    RES_IRON_ORE,        /* Iron Mine        (a deposit)              */
+    RES_COAL,            /* Coal Mine        (a deposit)              */
+    RES_IRON,            /* Ore + Charcoal  -> Bloomery               */
+    RES_STEEL_BEAMS,     /* Iron            -> Ironworks   (build mat)*/
+    RES_SAND,            /* Sand Pit         (a deposit)              */
+    RES_GLASS,           /* Sand            -> Glassworks             */
+    RES_BRASS,           /* Iron + Charcoal -> Brass Foundry          */
+    RES_WINDOWS,         /* Glass + Planks  -> Window Shop  (Artisans)*/
+    RES_SPECTACLES,      /* Glass + Brass   -> Spectacle Shop (Artis.)*/
+    RES_CATTLE,          /* Cattle Pen       (pasture)                */
+    RES_PEPPER,          /* Pepper Field     (FERTILE_PEPPER)         */
+    RES_POTTED_MEAT,     /* Cattle + Pepper -> Kitchen                */
+    RES_PRESERVES,       /* Potted Meat     -> Cannery      (Artisans)*/
+    RES_STEEL,           /* Iron + Coal     -> Foundry                */
+    RES_SEWING_MACHINES, /* Steel + Planks  -> Machine Shop (Artisans)*/
+
     RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;

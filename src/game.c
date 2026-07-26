@@ -481,8 +481,17 @@ typedef struct {
  * recorded "sell 5 of resource 6" was Gold and is now Bricks. Nothing
  * about the format changed; the vocabulary did, which is the harder
  * kind of incompatibility to notice and the reason the plan's ground
- * rule 5 says every content phase bumps this. */
-#define SAVE_VERSION 10u
+ * rule 5 says every content phase bumps this.
+ *
+ * v10 (SERVER.md, "Log truncation"): the header gained flags and a
+ * snapshot length, and a save may now carry state instead of history.
+ * A real format change, unlike v9's.
+ *
+ * v11 (SUPPLY_CHAIN Phase 4): sixteen more goods before RES_GOLD, for
+ * iron, glass, preserves and sewing machines. Same shape as v9 and the
+ * same hazard — a v10 log's bytes parse, but its "resource 20" was
+ * Gold and now means Charcoal. */
+#define SAVE_VERSION 11u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

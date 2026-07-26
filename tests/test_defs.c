@@ -12,6 +12,7 @@
 
 #include "building.h"
 #include "resource.h"
+#include "population.h"   /* tier_def_for: an upgrade target is reachable */
 #include <stdio.h>
 #include <string.h>
 
@@ -112,16 +113,16 @@ int main(void)
 
     /* A category is only useful if it actually groups. Every one of
      * them held a building until SUPPLY_CHAIN Phase 2 widened the set
-     * ahead of the content that fills it: Factories is empty until the
-     * foundries arrive in Phase 4, and the HUD already gives an empty
-     * category no tab. So the assertion is now that exactly the
-     * categories we know to be empty are empty — which fails both when
-     * one is forgotten and when Phase 4 fills Factories without
-     * updating this list. */
+     * ahead of the content that fills it. Factories was the last empty
+     * one and SUPPLY_CHAIN Phase 4 filled it — Bloomery, Ironworks,
+     * Brass Foundry, Cannery, Foundry, Machine Shop — so the assertion
+     * goes back to its strongest form: every category has something in
+     * it. A category that empties again is a tab the HUD stops drawing
+     * and a player stops finding. */
     {
         int c, unexpected = 0;
         for (c = 1; c < BCAT_COUNT; c++) {
-            int n = 0, t, expected_empty = (c == BCAT_FACTORY);
+            int n = 0, t, expected_empty = 0;
             for (t = 0; t < BUILDING_TYPE_COUNT; t++)
                 if ((int)BUILDING_DEFS[t].category == c &&
                     BUILDING_DEFS[t].hud_placeable) n++;
@@ -131,8 +132,7 @@ int main(void)
                 unexpected++;
             }
         }
-        CHECK(unexpected == 0,
-              "every category holds buildings, except Factories until Phase 4");
+        CHECK(unexpected == 0, "every category holds buildings");
     }
 
     /* A couple of pinned assignments, so a careless re-categorisation
@@ -154,19 +154,29 @@ int main(void)
     CHECK(BUILDING_DEFS[BUILDING_SHIPYARD].hud_placeable == 1,
           "Shipyard is HUD-placeable (ship-build popup reachable)");
     /* A Wright's House was upgrade-only until SUPPLY_CHAIN Phase 3
-     * made it the base of the second house line. Both base tiers are
-     * on the HUD now, and every def in the table is placeable — so
-     * the guard becomes "nothing is unreachable", which is what the
-     * swapped-row bug actually broke. */
+     * made it the base of the second house line. Phase 4 reintroduces
+     * exactly one unreachable-by-HUD def -- the Artisan's House, which
+     * you get by upgrading a Marsh Cottage and no other way -- so the
+     * guard is that the ONLY such defs are the ones some tier upgrades
+     * into. A def that is neither placeable nor an upgrade target is
+     * content nobody can ever see, which is what the swapped-row bug
+     * actually produced. */
     {
         int t, unreachable = 0;
-        for (t = 0; t < BUILDING_TYPE_COUNT; t++)
-            if (!BUILDING_DEFS[t].hud_placeable) {
-                printf("  FAIL: %s is on no HUD tab and reachable no other "
-                       "way\n", BUILDING_DEFS[t].name);
-                unreachable++;
+        for (t = 0; t < BUILDING_TYPE_COUNT; t++) {
+            int u, is_upgrade_target = 0;
+            if (BUILDING_DEFS[t].hud_placeable) continue;
+            for (u = 0; u < BUILDING_TYPE_COUNT && !is_upgrade_target; u++) {
+                const TierDef *tier = tier_def_for((BuildingType)u);
+                if (tier && (int)tier->next_tier == t) is_upgrade_target = 1;
             }
-        CHECK(unreachable == 0, "every building can be reached from the HUD");
+            if (is_upgrade_target) continue;
+            printf("  FAIL: %s is on no HUD tab and reachable no other "
+                   "way\n", BUILDING_DEFS[t].name);
+            unreachable++;
+        }
+        CHECK(unreachable == 0,
+              "every building is placeable or upgraded into");
     }
     CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].cost[RES_GOLD] > 0,
           "and a Wright's House costs something, now that it is built");

@@ -452,6 +452,267 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_WOOD] = 15, [RES_GOLD] = 140 },
         .hud_placeable = 1
     },
+
+    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ----
+     *
+     * Deeper than anything before it. Phase 3's chains were two steps
+     * from a field; these run three and four, and the Bloomery is the
+     * first building whose inputs are BOTH themselves manufactured —
+     * ore from a mine and charcoal from a kiln — so an Artisans
+     * district is a district, not a building.
+     *
+     * Steel Beams are the phase's build material, the way Bricks were
+     * Phase 3's: nothing consumes them in a chain, they are what the
+     * heavy industry below is made of. That is also what keeps them off
+     * test_chains' orphan list, and it is deliberate rather than
+     * incidental — a good with no consumer is a chain someone forgot to
+     * finish. */
+    [BUILDING_CHARCOAL_KILN] = {
+        .name = "Charcoal Kiln",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 70, .col_g = 62, .col_b = 58,
+        .produces = RES_CHARCOAL, .produce_amt = 1,
+        .consumes = { RES_WOOD, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 90 },
+        .hud_placeable = 1
+    },
+    [BUILDING_IRON_MINE] = {
+        .name = "Iron Mine",
+        .category = BCAT_EXTRACTION,
+        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit
+         * demands the seam under EVERY tile of the footprint, and the
+         * scatter pass lays deposits down one tile at a time. A 2x2
+         * mine would need four adjacent iron tiles and would therefore
+         * never place anywhere — which is exactly how test_chains
+         * caught it, as "nothing anywhere can produce Iron Ore". */
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_deposit = DEPOSIT_IRON,
+        .col_r = 130, .col_g = 95, .col_b = 80,
+        .produces = RES_IRON_ORE, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 160 },
+        .hud_placeable = 1
+    },
+    [BUILDING_COAL_MINE] = {
+        .name = "Coal Mine",
+        .category = BCAT_EXTRACTION,
+        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit
+         * demands the seam under EVERY tile of the footprint, and the
+         * scatter pass lays deposits down one tile at a time. A 2x2
+         * mine would need four adjacent iron tiles and would therefore
+         * never place anywhere — which is exactly how test_chains
+         * caught it, as "nothing anywhere can produce Iron Ore". */
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_deposit = DEPOSIT_COAL,
+        .col_r = 60, .col_g = 58, .col_b = 62,
+        .produces = RES_COAL, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 160 },
+        .hud_placeable = 1
+    },
+    /* The first building whose every input is itself manufactured. */
+    [BUILDING_BLOOMERY] = {
+        .name = "Bloomery",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 150, .col_g = 80, .col_b = 50,
+        .produces = RES_IRON, .produce_amt = 1,
+        .consumes = { RES_IRON_ORE, RES_CHARCOAL, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 200 },
+        .hud_placeable = 1
+    },
+    [BUILDING_IRONWORKS] = {
+        .name = "Ironworks",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 120, .col_g = 70, .col_b = 60,
+        .produces = RES_STEEL_BEAMS, .produce_amt = 1,
+        .consumes = { RES_IRON, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 12.0f,
+        .cost = { [RES_BRICKS] = 15, [RES_GOLD] = 240 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SAND_PIT] = {
+        .name = "Sand Pit",
+        .category = BCAT_EXTRACTION,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_deposit = DEPOSIT_SAND,
+        .col_r = 215, .col_g = 195, .col_b = 140,
+        .produces = RES_SAND, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 6.0f,
+        .cost = { [RES_GOLD] = 90 },
+        .hud_placeable = 1
+    },
+    [BUILDING_GLASSWORKS] = {
+        .name = "Glassworks",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 150, .col_g = 200, .col_b = 205,
+        .produces = RES_GLASS, .produce_amt = 1,
+        .consumes = { RES_SAND, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 170 },
+        .hud_placeable = 1
+    },
+    [BUILDING_BRASS_FOUNDRY] = {
+        .name = "Brass Foundry",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 190, .col_g = 155, .col_b = 60,
+        .produces = RES_BRASS, .produce_amt = 1,
+        .consumes = { RES_IRON, RES_CHARCOAL, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 210 },
+        .hud_placeable = 1
+    },
+    [BUILDING_WINDOW_SHOP] = {
+        .name = "Window Shop",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 175, .col_g = 210, .col_b = 220,
+        .produces = RES_WINDOWS, .produce_amt = 1,
+        .consumes = { RES_GLASS, RES_PLANKS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 12.0f,
+        .cost = { [RES_STEEL_BEAMS] = 8, [RES_GOLD] = 260 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SPECTACLE_SHOP] = {
+        .name = "Spectacle Shop",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 205, .col_g = 190, .col_b = 120,
+        .produces = RES_SPECTACLES, .produce_amt = 1,
+        .consumes = { RES_GLASS, RES_BRASS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_STEEL_BEAMS] = 8, [RES_GOLD] = 280 },
+        .hud_placeable = 1
+    },
+    /* Grazing again, competing with sheep and pigs for the same grass
+     * — the same decision Phase 3's Sheep Pasture created, now with a
+     * third claimant. */
+    [BUILDING_CATTLE_PEN] = {
+        .name = "Cattle Pen",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_PASTURE,
+        .col_r = 165, .col_g = 130, .col_b = 105,
+        .produces = RES_CATTLE, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_WOOD] = 15, [RES_GOLD] = 120 },
+        .hud_placeable = 1
+    },
+    [BUILDING_PEPPER_FIELD] = {
+        .name = "Pepper Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_PEPPER,
+        .col_r = 120, .col_g = 160, .col_b = 70,
+        .produces = RES_PEPPER, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_KITCHEN] = {
+        .name = "Kitchen",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 120, .col_b = 95,
+        .produces = RES_POTTED_MEAT, .produce_amt = 1,
+        .consumes = { RES_CATTLE, RES_PEPPER, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 150 },
+        .hud_placeable = 1
+    },
+    [BUILDING_CANNERY] = {
+        .name = "Cannery",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 175, .col_g = 165, .col_b = 150,
+        .produces = RES_PRESERVES, .produce_amt = 1,
+        .consumes = { RES_POTTED_MEAT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 12.0f,
+        .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 230 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FOUNDRY] = {
+        .name = "Foundry",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 100, .col_g = 90, .col_b = 95,
+        .produces = RES_STEEL, .produce_amt = 1,
+        .consumes = { RES_IRON, RES_COAL, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 12.0f,
+        .cost = { [RES_BRICKS] = 15, [RES_GOLD] = 250 },
+        .hud_placeable = 1
+    },
+    [BUILDING_MACHINE_SHOP] = {
+        .name = "Machine Shop",
+        .category = BCAT_FACTORY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 140, .col_g = 145, .col_b = 160,
+        .produces = RES_SEWING_MACHINES, .produce_amt = 1,
+        .consumes = { RES_STEEL, RES_PLANKS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 15.0f,
+        .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 320 },
+        .hud_placeable = 1
+    },
+    /* No HUD slot: the only way to one is upgrading a Marsh Cottage,
+     * which is what makes this the first tier the upgrade rule
+     * actually runs on end to end. cost[] is what the upgrade charges
+     * beyond the tier's Gold — see TIER_DEFS. */
+    [BUILDING_HOUSE_ARTISAN] = {
+        .name = "Artisan's House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 205, .col_g = 165, .col_b = 190,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 250 },
+        .hud_placeable = 0
+    },
 };
 
 const char *building_category_name(BuildingCategory c)
