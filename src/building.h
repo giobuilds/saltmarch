@@ -114,6 +114,16 @@ typedef enum {
      * the only way to one is game_upgrade_house on a Marsh Cottage. */
     BUILDING_HOUSE_ARTISAN  = 42,
 
+    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ----
+     * The four that close Artisans' fifth need. Deferred out of Phase
+     * 4 precisely because Cloth has no northern source, which is what
+     * now makes a southern colony a prerequisite rather than an
+     * ornament. */
+    BUILDING_COTTON_FIELD   = 43, /* cotton soil     -> Cotton        */
+    BUILDING_SPINNING_MILL  = 44, /* Cotton          -> Cloth         */
+    BUILDING_TRAPPERS_LODGE = 45, /* beside forest   -> Pelts         */
+    BUILDING_FURRIER        = 46, /* Pelts + Cloth   -> Fur Coats     */
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

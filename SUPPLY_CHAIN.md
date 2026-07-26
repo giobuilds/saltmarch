@@ -116,8 +116,8 @@ Northern islands (temperate, highland, woodland, atoll — today's four):
 | Windows | Glass + Planks → **Window Shop** |
 | Spectacles | Glass + Brass → **Spectacle Shop** |
 | Pelts | **Trapper's Lodge** |
-| Cloth | Cotton → **Spinning Mill** *(Phase 5: no northern cotton)* |
-| Fur Coats | Pelts + Cloth → **Furrier** *(deferred to Phase 5 with Cloth)* |
+| Cloth | Cotton → **Spinning Mill** |
+| Fur Coats | Pelts + Cloth → **Furrier** |
 | Preserves | **Cattle Pen** + **Pepper Field** → **Kitchen** → **Cannery** |
 | Sewing Machines | Iron + Coal (**Coal Mine**) → **Foundry** → **Machine Shop** |
 | Wire | Iron → **Wire Mill** |
@@ -164,7 +164,7 @@ upgradeable once**, plus a building that opens a seventh path:
 | Tier | Needs |
 |---|---|
 | Marshfolk | Fish, Oilskins, Marsh Gin |
-| Artisans | Preserves, Sewing Machines, Spectacles, Windows (+ Fur Coats in Phase 5) |
+| Artisans | Preserves, Sewing Machines, Fur Coats, Spectacles, Windows |
 | Wrights | Sausages, Bread, Soap, Beer |
 | Engineers | Lamps, Pocket Watches, Gramophones, Banquet |
 | Merchants | Coffee, Rum, Flatbread, Marsh Hats |
@@ -504,7 +504,7 @@ Sewing Machines. Both are 1×1 now, like the Clay Pit that already knew
 this. Worth recording because the failure is invisible by inspection:
 the def table looks perfectly reasonable.
 
-## Phase 5 — the southern islands
+## Phase 5 — the southern islands — **DONE**
 
 **Goal:** a second climate, and a reason for the shipping lanes the
 game already models.
@@ -523,6 +523,50 @@ game already models.
 north, and a Wrights house on the home island satisfied from them;
 eight islands render on the world map without overlapping; the co-op
 and server tests still pass at the new island count.
+
+### As built
+
+`MAX_ISLANDS` 4 → 8, two new profiles, four buildings, four goods.
+`SAVE_VERSION` 11 → 12 and `NET_PROTO_VERSION` 5 → 6. Fixtures:
+`1767c62ef9af3f29` → `8fb5de71e1b16549`, UI `8662da1d9d239104` →
+`45aefaf14e428a94`.
+
+**Scope: the chains that close, not every chain listed.** Shipping all
+thirteen southern chains would have orphaned roughly eight goods —
+Coffee, Rum, Chocolate, Cigars, Flatbread, Marsh Hats, Shellac, Sails
+— because their consumers are the Merchants and Investors tiers, which
+are Phase 7. So Phase 5 ships the *climate* in full and only the chain
+that has a consumer today: Cotton → Cloth, Trapper's Lodge → Pelts,
+Furrier → Fur Coats, and Fur Coats added to Artisans, settling the debt
+Phase 4 recorded. The rest arrive in Phase 7 with the tiers that eat
+them.
+
+**The terrain, however, ships whole.** Both southern palettes carry
+every southern crop — cane, cocoa, coffee, tobacco, maize, plantain,
+lac — even though nothing consumes them yet. Terrain is the expensive
+half of a climate, and a jungle that grew only what today's buildings
+use would have to be regenerated in Phase 7, changing every existing
+world's map underneath its save.
+
+**What the phase actually buys.** Artisans need Fur Coats, Fur Coats
+need Cloth, Cloth needs Cotton, and no northern profile grows cotton —
+so an Artisans neighbourhood cannot exist without a southern colony and
+a ship between. `test_chains` asserts that in both directions: Artisans
+are satisfiable across the archipelago on five seeds, and the whole
+NORTH cannot make a Fur Coat. The negative is the one that matters; the
+moment a northern island grows cotton, the south is scenery.
+
+Artisans at five needs is also the first real content to use
+`MAX_TIER_GOODS` in full, which Phase 2 reserved and nothing had
+exercised.
+
+**`tests/test_world.c` is new**, because hand-placed coordinates are
+exactly the kind of thing that looks right in a diff and overlaps on
+screen — and the failure is quiet, since an island drawn underneath
+another is still there and still ticking, just unclickable. It samples
+the screen through the real hit-test and requires all eight nodes to
+own a region and all eight regions to be the same size, which is what
+catches partial occlusion that "everything has some area" would miss.
 
 ## Phase 6 — Engineers
 

@@ -123,17 +123,34 @@ static void test_profiles(void)
           count_deposit(&map, DEPOSIT_PEARLS) == 0,
           "the home island has no gold and no pearls");
 
-    /* Southern crops have no profile yet (Phase 5). Asserting they are
-     * absent is what makes their arrival visible rather than silent. */
+    /* SUPPLY_CHAIN Phase 5 gave the southern crops their profiles, so
+     * this flips from "nowhere yet" to "exactly there and nowhere
+     * else". The northern half of the assertion is the load-bearing
+     * one: the moment a northern island grows cotton, the southern
+     * colony stops being a prerequisite for Artisans and becomes
+     * optional scenery. */
     {
-        int p, southern = 0;
-        for (p = 0; p < PROFILE_COUNT; p++) {
-            map_init(&map, 4242u, (MapProfile)p);
-            southern += count_crop(&map, FERTILE_COTTON | FERTILE_CANE |
-                                         FERTILE_COCOA  | FERTILE_COFFEE |
-                                         FERTILE_TOBACCO| FERTILE_MAIZE |
-                                         FERTILE_PLANTAIN | FERTILE_LAC);
+        static const uint32_t SOUTHERN =
+            FERTILE_COTTON | FERTILE_CANE | FERTILE_COCOA | FERTILE_COFFEE |
+            FERTILE_TOBACCO | FERTILE_MAIZE | FERTILE_PLANTAIN | FERTILE_LAC;
+        static const MapProfile NORTH[] = {
+            PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND,
+            PROFILE_ATOLL
+        };
+        static const MapProfile SOUTH[] = {
+            PROFILE_PLANTATION, PROFILE_JUNGLE
+        };
+        int p, southern = 0, grown = 0;
+
+        for (p = 0; p < (int)(sizeof NORTH / sizeof NORTH[0]); p++) {
+            map_init(&map, 4242u, NORTH[p]);
+            southern += count_crop(&map, SOUTHERN);
         }
+        for (p = 0; p < (int)(sizeof SOUTH / sizeof SOUTH[0]); p++) {
+            map_init(&map, 4242u, SOUTH[p]);
+            grown += count_crop(&map, SOUTHERN);
+        }
+        CHECK(grown > 0, "the southern profiles grow southern crops");
         CHECK(southern == 0, "no northern profile grows a southern crop");
     }
 }

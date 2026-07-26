@@ -76,6 +76,23 @@ typedef enum {
     RES_STEEL,           /* Iron + Coal     -> Foundry                */
     RES_SEWING_MACHINES, /* Steel + Planks  -> Machine Shop (Artisans)*/
 
+    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ----
+     * The chain that makes the south load-bearing rather than
+     * scenery. Cotton grows on no northern profile, Cloth comes only
+     * from Cotton, and Artisans want Fur Coats — so an Artisans
+     * neighbourhood cannot exist without a southern island and the
+     * voyage between. That is the shipping lane's whole argument.
+     *
+     * The rest of the southern goods (cane, cocoa, coffee, tobacco,
+     * maize, plantain, alpaca, lac) wait for Phase 7, which brings the
+     * Merchants and Investors tiers that eat them. Their CROPS are
+     * already in the ground — see PROFILE_PLANTATION and
+     * PROFILE_JUNGLE — because terrain is the expensive half. */
+    RES_COTTON,     /* Cotton Field    (southern only)                */
+    RES_CLOTH,      /* Cotton         -> Spinning Mill                */
+    RES_PELTS,      /* Trapper's Lodge (northern forest)              */
+    RES_FUR_COATS,  /* Pelts + Cloth  -> Furrier       (Artisans)     */
+
     RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;

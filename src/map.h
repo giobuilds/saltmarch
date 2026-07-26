@@ -112,6 +112,11 @@ typedef enum {
     PROFILE_HIGHLAND  = 1,
     PROFILE_WOODLAND  = 2,
     PROFILE_ATOLL     = 3,
+    /* SUPPLY_CHAIN Phase 5: the southern climates. Appended, so every
+     * existing profile keeps its value and an island's stored profile
+     * still means what it meant. */
+    PROFILE_PLANTATION = 4,   /* open ground: cotton, cane, tobacco   */
+    PROFILE_JUNGLE     = 5,   /* forest and shade: cocoa, coffee, lac */
     PROFILE_COUNT
 } MapProfile;
 

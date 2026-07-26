@@ -41,6 +41,11 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     [RES_STEEL]           = "Steel",
     [RES_SEWING_MACHINES] = "Sewing Machines",
 
+    [RES_COTTON]    = "Cotton",
+    [RES_CLOTH]     = "Cloth",
+    [RES_PELTS]     = "Pelts",
+    [RES_FUR_COATS] = "Fur Coats",
+
     [RES_GOLD]  = "Gold",
 };
 
@@ -91,6 +96,11 @@ const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT] = {
     [RES_PRESERVES]       = RCAT_REFINED,
     [RES_STEEL]           = RCAT_REFINED,
     [RES_SEWING_MACHINES] = RCAT_REFINED,
+
+    [RES_COTTON]    = RCAT_RAW,
+    [RES_PELTS]     = RCAT_RAW,
+    [RES_CLOTH]     = RCAT_REFINED,
+    [RES_FUR_COATS] = RCAT_REFINED,
 
     [RES_GOLD]  = RCAT_CURRENCY,
 };
@@ -151,6 +161,13 @@ const int SELL_PRICE[RES_COUNT] = {
     [RES_PRESERVES]       = 20,
     [RES_STEEL]           = 19,
     [RES_SEWING_MACHINES] = 34,
+
+    /* Fur Coats price in the Artisans band. Cotton is dear for a raw
+     * good because it can only come off a ship. */
+    [RES_COTTON]    = 6,
+    [RES_CLOTH]     = 13,
+    [RES_PELTS]     = 7,
+    [RES_FUR_COATS] = 28,
     /* RES_GOLD left at 0 — unused, can't sell gold for gold */
 };
 
@@ -192,6 +209,11 @@ const int BUY_PRICE[RES_COUNT] = {
     [RES_PRESERVES]       = 40,
     [RES_STEEL]           = 38,
     [RES_SEWING_MACHINES] = 68,
+
+    [RES_COTTON]    = 12,
+    [RES_CLOTH]     = 26,
+    [RES_PELTS]     = 14,
+    [RES_FUR_COATS] = 56,
     /* RES_GOLD left at 0 — unused */
 };
 
