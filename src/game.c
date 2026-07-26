@@ -9,6 +9,7 @@
 #include "island.h"
 #include "ship.h"
 #include "simlog.h"
+#include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,6 +71,78 @@ uint64_t game_scrub_max(const GameState *gs)
     return gs->scrub_active ? gs->scrub_live_tick : gs->sim_tick_no;
 }
 
+uint64_t game_scrub_min(const GameState *gs)
+{
+    return gs->history_floor_tick;
+}
+
+/* Adopt `buf` as the floor this world stands on. Takes a COPY: callers
+ * hand over buffers they own (a file's bytes, a wire frame) and must
+ * not have their lifetime tangled with the world's. */
+int game_set_history_floor(GameState *gs, const unsigned char *buf,
+                           size_t len, uint64_t tick)
+{
+    unsigned char *copy = (unsigned char *)malloc(len ? len : 1);
+
+    if (!copy) return 0;
+    if (len) memcpy(copy, buf, len);
+
+    free(gs->floor_snap);
+    gs->floor_snap         = copy;
+    gs->floor_snap_len     = len;
+    gs->history_floor_tick = tick;
+    gs->replay_valid       = 0;
+    return 1;
+}
+
+void game_clear_history_floor(GameState *gs)
+{
+    free(gs->floor_snap);
+    gs->floor_snap         = NULL;
+    gs->floor_snap_len     = 0;
+    gs->history_floor_tick = 0;
+}
+
+void game_truncate_log(GameState *gs)
+{
+    unsigned char *snap = NULL;
+    size_t         snap_len = 0;
+    int            first = gs->cmd_applied;
+    int            keep;
+
+    if (first <= 0) return;                 /* nothing applied yet */
+
+    /* Capture the state the discarded commands produced BEFORE
+     * discarding them. Without this the world would still be correct
+     * going forward but unreconstructable backward, and the scrubber
+     * would have nothing to stand on. */
+    if (!snapshot_encode(gs, &snap, &snap_len)) {
+        sim_log("game_truncate_log: could not snapshot; keeping history");
+        return;
+    }
+    if (!game_set_history_floor(gs, snap, snap_len, gs->sim_tick_no)) {
+        sim_log("game_truncate_log: out of memory; keeping history");
+        free(snap);
+        return;
+    }
+    free(snap);
+    if (first > gs->cmd_count) first = gs->cmd_count;
+    keep = gs->cmd_count - first;
+
+    /* Only the applied PREFIX goes. The tail is commands stamped for
+     * ticks that have not run yet -- accepted and acknowledged, but not
+     * applied -- and discarding those would un-accept work the players
+     * were already told had landed. */
+    if (keep > 0)
+        memmove(gs->cmd_log, gs->cmd_log + first,
+                sizeof(Command) * (size_t)keep);
+    gs->cmd_count   = keep;
+    gs->cmd_applied = 0;
+
+    sim_log("log truncated at tick %llu (%d pending commands kept)",
+            (unsigned long long)gs->sim_tick_no, keep);
+}
+
 void game_scrub_begin(GameState *gs)
 {
     if (gs->scrub_active) return;
@@ -85,6 +158,13 @@ void game_scrub_to(GameState *gs, uint64_t tick)
 
     if (!gs->scrub_active) return;
     if (tick > gs->scrub_live_tick) tick = gs->scrub_live_tick;
+    /* Not below the floor. game_install_world rebuilds from the seed at
+     * tick 0 and replays forward; against a truncated log that would
+     * not fail, it would quietly construct a DIFFERENT world -- one
+     * where none of the discarded history ever happened -- and present
+     * it as the past. Clamping is the difference between "you cannot
+     * look further back" and a convincing lie. */
+    if (tick < gs->history_floor_tick) tick = gs->history_floor_tick;
 
     /* The log is the world's history and must survive the trip. Copy it
      * out, rebuild from the seed, put it back: install_world resets the
@@ -96,7 +176,11 @@ void game_scrub_to(GameState *gs, uint64_t tick)
     if (!saved) return;
     if (count > 0) memcpy(saved, gs->cmd_log, sizeof(Command) * (size_t)count);
 
-    game_install_world(gs, seed, tick, saved, count);
+    if (gs->floor_snap)
+        game_install_from_snapshot(gs, gs->floor_snap, gs->floor_snap_len,
+                                   tick, saved, count);
+    else
+        game_install_world(gs, seed, tick, saved, count);
     free(saved);
 
     /* install_world cleared these; scrubbing is a view, not a new
@@ -168,6 +252,14 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 
     gs->world_seed = seed;
 
+    /* A world built from a seed has its whole history ahead of it, so
+     * any floor a previous life left behind is not merely stale, it
+     * belongs to a DIFFERENT world — and the scrubber would happily
+     * rebuild from that other world's snapshot. Cleared here rather
+     * than in the callers because this is the one place a world starts
+     * over. */
+    game_clear_history_floor(gs);
+
     for (i = 0; i < MAX_ISLANDS; i++) {
         /* Derive each island's seed from the world seed so one number
          * still reproduces the entire archipelago. */
@@ -229,7 +321,20 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 /* ---- game_init ----------------------------------------- */
 GameState *game_init(void)
 {
-    GameState *gs = (GameState *)malloc(sizeof(GameState));
+    /* calloc, not malloc. The explicit initialisation below stays --
+     * it documents intent and sets the fields whose correct start is
+     * not zero -- but a field added to GameState and forgotten here
+     * must not be able to arrive as garbage.
+     *
+     * That is not hypothetical: history_floor_tick's `floor_snap`
+     * pointer was added without a line here, game_reset_world frees it
+     * before assigning, and free() on an uninitialised pointer is
+     * undefined. Linux and macOS hand out zeroed pages, so free(NULL)
+     * quietly did nothing and every test passed on both; MSVC's debug
+     * CRT fills fresh allocations with 0xCD, so the same code segfaulted
+     * at startup before it could log a single line. Zeroing first costs
+     * one memset at launch and removes the whole class. */
+    GameState *gs = (GameState *)calloc(1, sizeof(GameState));
     if (!gs) return NULL;
 
     /* Plain data, zeroed here rather than through input.c: the device
@@ -238,9 +343,8 @@ GameState *game_init(void)
     gs->last_tick  = 0;   /* seeded by client_update on its first frame */
     gs->delta_time = 0.0f;
 
-    /* The command log starts empty. Zero it before anything can push,
-     * since malloc does not, and game_reset_world resets the counters
-     * but relies on the pointer/cap being valid. */
+    /* The command log starts empty. game_reset_world resets the
+     * counters but relies on the pointer/cap being valid. */
     gs->cmd_log     = NULL;
     gs->cmd_count   = 0;
     gs->intent_log  = NULL;
@@ -259,6 +363,11 @@ GameState *game_init(void)
     gs->cmd_seq_last    = 0u;
     gs->scrub_active    = 0;
     gs->scrub_live_tick = 0;
+    /* Freed by game_reset_world below, so it has to be a real pointer
+     * before that runs -- see the calloc note above. */
+    gs->floor_snap         = NULL;
+    gs->floor_snap_len     = 0;
+    gs->history_floor_tick = 0;
     gs->result_count    = 0;
     gs->local_player_id = 1u;
     gs->net             = NULL;   /* attached by net_attach when hosting/joining */
@@ -272,6 +381,7 @@ GameState *game_init(void)
 /* ---- game_free ----------------------------------------- */
 void game_free(GameState *gs)
 {
+    game_clear_history_floor(gs);
     if (!gs) return;
     command_log_free(gs);
     intent_log_free(gs);
@@ -314,6 +424,28 @@ void game_new_seeded(GameState *gs, uint32_t seed)
  * pre-release, and maintaining a second (now derivable) load path earns
  * nothing. A pre-v5 file is rejected with a clear message.
  * -------------------------------------------------------- */
+/* ---- Save format v10: optionally, state instead of history ----
+ * SERVER.md, "Log truncation". A save may now carry a SNAPSHOT section
+ * before its commands. When it does, loading restores the world
+ * directly and applies only the commands that follow it; when it does
+ * not, loading is exactly the v5 replay above.
+ *
+ * Both shapes exist on purpose. A world that has been running for
+ * months cannot be joined or restarted by replaying every tick from
+ * zero -- that cost is proportional to AGE and accrues whether or not
+ * anyone played, which is the whole reason this section exists. But the
+ * determinism gate (`--record` then `--replay`) proves what it proves
+ * PRECISELY BECAUSE a fixture is (seed, full log) and replaying
+ * re-derives the world; turn every save into a snapshot and "replay"
+ * silently degrades into "load", and CI's central guarantee evaporates
+ * while still reporting success.
+ *
+ * So: game_save writes history, and fixtures and the gate keep proving
+ * determinism. game_save_checkpoint writes state, and the server keeps
+ * a bounded file. One reader handles both.
+ * -------------------------------------------------------- */
+#define SAVE_FLAG_SNAPSHOT 1u
+
 typedef struct {
     uint32_t magic;
     uint32_t version;
@@ -322,6 +454,8 @@ typedef struct {
     uint64_t sim_tick_no;
     int32_t  cmd_count;
     int32_t  intent_count;   /* v8: the recorded input stream */
+    uint32_t flags;          /* v10: SAVE_FLAG_SNAPSHOT              */
+    int32_t  snapshot_bytes; /* v10: size of the snapshot section    */
 } SaveHeader;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
@@ -339,19 +473,33 @@ typedef struct {
  * v8 (UI_PLAN M1): the file gained a second section — the recorded
  * intent stream, appended after the commands. A v7 log describes the
  * same world; it simply has no clicks recorded, so the UI harness has
- * nothing to replay. */
-#define SAVE_VERSION 8u
+ * nothing to replay.
+ *
+ * v9 (SUPPLY_CHAIN Phase 3): thirteen goods inserted before RES_GOLD,
+ * which shifts its value and every resource index a command carries.
+ * The bytes of a v8 log are unchanged but their MEANING is not — a
+ * recorded "sell 5 of resource 6" was Gold and is now Bricks. Nothing
+ * about the format changed; the vocabulary did, which is the harder
+ * kind of incompatibility to notice and the reason the plan's ground
+ * rule 5 says every content phase bumps this. */
+#define SAVE_VERSION 10u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
  * writing one must not require a client. "wb"/"rb" are load-bearing on
  * Windows — the log is raw Command structs, and text mode would mangle
  * every 0x0A byte in them. */
-int game_save(const GameState *gs, const char *path)
+/* The one writer. `snap` is NULL for a history save and a full-state
+ * snapshot for a checkpoint; `cmds`/`n` are the commands that follow
+ * it, which for a checkpoint is only the tail that has not been applied
+ * yet. */
+static int save_write(const GameState *gs, const char *path,
+                      const unsigned char *snap, size_t snap_len,
+                      const Command *cmds, int n)
 {
     FILE         *f = fopen(path, "wb");
     SaveHeader    hdr;
-    size_t        log_bytes    = sizeof(Command) * (size_t)gs->cmd_count;
+    size_t        log_bytes    = sizeof(Command) * (size_t)n;
     size_t        intent_bytes = sizeof(Intent) * (size_t)gs->intent_count;
     int           ok;
 
@@ -373,12 +521,15 @@ int game_save(const GameState *gs, const char *path)
     hdr.world_seed     = gs->world_seed;
     hdr.current_island = gs->current_island;
     hdr.sim_tick_no    = gs->sim_tick_no;
-    hdr.cmd_count      = gs->cmd_count;
+    hdr.cmd_count      = n;
     hdr.intent_count   = gs->intent_count;
+    hdr.flags          = snap ? SAVE_FLAG_SNAPSHOT : 0u;
+    hdr.snapshot_bytes = snap ? (int32_t)snap_len : 0;
 
     ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
+      && (!snap || fwrite(snap, snap_len, 1, f) == 1)
       && (log_bytes == 0 ||
-          fwrite(gs->cmd_log, log_bytes, 1, f) == 1)
+          fwrite(cmds, log_bytes, 1, f) == 1)
       && (intent_bytes == 0 ||
           fwrite(gs->intent_log, intent_bytes, 1, f) == 1);
 
@@ -391,11 +542,48 @@ int game_save(const GameState *gs, const char *path)
         return 0;
     }
 
-    sim_log("Game saved to %s (seed %u, tick %llu, %d commands, %d intents)",
-            path, gs->world_seed,
-            (unsigned long long)gs->sim_tick_no, gs->cmd_count,
-            gs->intent_count);
+    if (snap)
+        sim_log("Checkpoint written to %s (tick %llu, %llu-byte snapshot, "
+                "%d pending commands, %d intents)",
+                path, (unsigned long long)gs->sim_tick_no,
+                (unsigned long long)snap_len, n, gs->intent_count);
+    else
+        sim_log("Game saved to %s (seed %u, tick %llu, %d commands, %d intents)",
+                path, gs->world_seed,
+                (unsigned long long)gs->sim_tick_no, n, gs->intent_count);
     return 1;
+}
+
+int game_save(const GameState *gs, const char *path)
+{
+    return save_write(gs, path, NULL, 0, gs->cmd_log, gs->cmd_count);
+}
+
+int game_save_checkpoint(const GameState *gs, const char *path)
+{
+    unsigned char *snap = NULL;
+    size_t         snap_len = 0;
+    int            ok, first, n;
+
+    if (!snapshot_encode(gs, &snap, &snap_len)) {
+        sim_log("game_save_checkpoint: could not encode the world");
+        return 0;
+    }
+
+    /* The tail is not optional. Commands are stamped
+     * NET_CMD_DELAY_TICKS into the future, so at any instant the log
+     * holds accepted, acknowledged commands that have not been applied
+     * yet. The snapshot describes the world BEFORE them; dropping them
+     * would silently un-accept work the players were already told had
+     * landed. */
+    first = gs->cmd_applied;
+    if (first < 0) first = 0;
+    if (first > gs->cmd_count) first = gs->cmd_count;
+    n = gs->cmd_count - first;
+
+    ok = save_write(gs, path, snap, snap_len, gs->cmd_log + first, n);
+    free(snap);
+    return ok;
 }
 
 /* ---- game_load --------------------------------------------
@@ -409,7 +597,7 @@ int game_load(GameState *gs, const char *path)
 {
     FILE          *f = fopen(path, "rb");
     long           size_l;
-    size_t         size, need;
+    size_t         size, need, snap_bytes;
     unsigned char *buf;
     SaveHeader     hdr;
     const Command *cmds;
@@ -456,7 +644,15 @@ int game_load(GameState *gs, const char *path)
         free(buf);
         return 0;
     }
-    need = sizeof(hdr) + sizeof(Command) * (size_t)hdr.cmd_count
+    if (hdr.snapshot_bytes < 0) {
+        sim_log("game_load: %s has an invalid header", path);
+        free(buf);
+        return 0;
+    }
+    snap_bytes = (hdr.flags & SAVE_FLAG_SNAPSHOT)
+                 ? (size_t)hdr.snapshot_bytes : 0;
+    need = sizeof(hdr) + snap_bytes
+                       + sizeof(Command) * (size_t)hdr.cmd_count
                        + sizeof(Intent)  * (size_t)hdr.intent_count;
     if (need > size) {
         sim_log("game_load: %s is truncated", path);
@@ -464,11 +660,41 @@ int game_load(GameState *gs, const char *path)
         return 0;
     }
 
-    /* Rebuild tick 0 from the seed (this sets replay_valid = 1), install
-     * the logged commands, then replay them up to the saved tick. */
-    cmds = (const Command *)(buf + sizeof(hdr));
-    if (!game_install_world(gs, hdr.world_seed, hdr.sim_tick_no,
-                            cmds, hdr.cmd_count)) {
+    cmds = (const Command *)(buf + sizeof(hdr) + snap_bytes);
+
+    if (snap_bytes) {
+        /* A checkpoint: the world is restored, not re-derived. The
+         * commands that follow are the tail that had not been applied
+         * when it was taken, so they are installed as PENDING and the
+         * sim applies each at its own stamped tick, exactly as it would
+         * have if nothing had been written to disk. */
+        if (!snapshot_decode(gs, buf + sizeof(hdr), snap_bytes)) {
+            sim_log("game_load: %s carries a snapshot this build "
+                    "cannot use", path);
+            free(buf);
+            return 0;
+        }
+        if (!command_log_set(gs, cmds, hdr.cmd_count)) {
+            sim_log("game_load: out of memory installing %d pending commands",
+                    hdr.cmd_count);
+            free(buf);
+            return 0;
+        }
+        /* F9 rebuilds by replaying from tick 0, and below this
+         * checkpoint there is no longer a tick 0 to replay. Recording
+         * the floor is what keeps the scrubber honest above it and
+         * stops it fabricating a past below it. */
+        if (!game_set_history_floor(gs, buf + sizeof(hdr), snap_bytes,
+                                    gs->sim_tick_no)) {
+            sim_log("game_load: out of memory keeping the history floor");
+            free(buf);
+            return 0;
+        }
+    } else if (!game_install_world(gs, hdr.world_seed, hdr.sim_tick_no,
+                                   cmds, hdr.cmd_count)) {
+        /* A history save: rebuild tick 0 from the seed (which sets
+         * replay_valid = 1), install the log, replay to the saved
+         * tick. Loading IS the determinism test. */
         sim_log("game_load: out of memory installing %d commands",
                 hdr.cmd_count);
         free(buf);
@@ -478,7 +704,7 @@ int game_load(GameState *gs, const char *path)
      * not what it is, so a failure to install them is worth a line in
      * the log and nothing more. */
     if (hdr.intent_count > 0) {
-        const Intent *ins = (const Intent *)(buf + sizeof(hdr) +
+        const Intent *ins = (const Intent *)(buf + sizeof(hdr) + snap_bytes +
                                 sizeof(Command) * (size_t)hdr.cmd_count);
         if (!intent_log_set(gs, ins, hdr.intent_count))
             sim_log("game_load: could not install %d intents",
@@ -491,8 +717,8 @@ int game_load(GameState *gs, const char *path)
 
     game_set_current_island(gs, hdr.current_island);
 
-    sim_log("Game loaded from %s (seed %u, replayed to tick %llu, %d commands)",
-            path, hdr.world_seed,
+    sim_log("Game loaded from %s (%s to tick %llu, %d commands)",
+            path, snap_bytes ? "restored" : "replayed",
             (unsigned long long)gs->sim_tick_no, gs->cmd_count);
     return 1;
 }
@@ -517,6 +743,20 @@ int game_load_commands(const char *path, Command **out_cmds, int *out_count)
     if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION ||
         hdr.cmd_count < 0) { fclose(f); return 0; }
 
+    /* A checkpoint is deliberately refused rather than skipped past.
+     * The caller wants a recorded SESSION -- somebody's actual play, to
+     * be re-addressed onto an NPC island -- and a checkpoint holds
+     * state plus the handful of commands that had not been applied
+     * when it was written. Reading those would hand back a four-command
+     * "session" and a ghost that does nothing, which is a far more
+     * confusing failure than saying so. */
+    if (hdr.flags & SAVE_FLAG_SNAPSHOT) {
+        sim_log("game_load_commands: %s is a checkpoint (state, not "
+                "history) — a recorded session is needed here", path);
+        fclose(f);
+        return 0;
+    }
+
     if (hdr.cmd_count == 0) { fclose(f); return 1; }
 
     cmds = (Command *)malloc(sizeof(Command) * (size_t)hdr.cmd_count);
@@ -536,6 +776,24 @@ int game_load_commands(const char *path, Command **out_cmds, int *out_count)
 /* ---- game_install_world -----------------------------------
  * The (seed, log, tick) -> world constructor shared by game_load and
  * the net layer's join/resync path. See game.h. */
+/* game_install_world's sibling for a world whose history starts at a
+ * snapshot instead of a seed. Decode, install the surviving tail, and
+ * run forward to `tick` — the same shape as the seed path, with the
+ * snapshot playing the part tick 0 used to. */
+int game_install_from_snapshot(GameState *gs, const unsigned char *snap,
+                               size_t snap_len, uint64_t tick,
+                               const Command *cmds, int n)
+{
+    if (!snapshot_decode(gs, snap, snap_len)) return 0;
+    if (!command_log_set(gs, cmds, n))        return 0;
+
+    if (!game_set_history_floor(gs, snap, snap_len, gs->sim_tick_no))
+        return 0;
+
+    while (gs->sim_tick_no < tick) sim_run_one_tick(gs);
+    return 1;
+}
+
 int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
                        const Command *cmds, int n)
 {

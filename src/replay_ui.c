@@ -119,8 +119,23 @@ int replay_cli_run(int argc, char *argv[])
          * `--replay <file>` a determinism gate needing no expected hash
          * — the form CI runs on every platform. */
         if (!game_verify_determinism(gs)) {
-            printf("replay SELF-CHECK FAILED: world is nondeterministic\n");
-            rc = 1;
+            /* State 3 is "not applicable", and it is not a failure.
+             * A checkpoint is the world as STATE: there is no log
+             * below it to re-derive it from, by design (SERVER.md,
+             * "Log truncation"). Its integrity is checked instead when
+             * it decodes -- a snapshot carries a checksum over its
+             * bytes and the sim_hash of the world it captured, and
+             * refuses to load if either disagrees. Reporting that as
+             * "nondeterministic" would be CI failing a file for not
+             * containing something it was never meant to contain. */
+            if (gs->replay_state == 3) {
+                printf("replay self-check: n/a — %s is a checkpoint "
+                       "(state, not history); its own checksum and hash "
+                       "were verified at load\n", a.replay_file);
+            } else {
+                printf("replay SELF-CHECK FAILED: world is nondeterministic\n");
+                rc = 1;
+            }
         }
 
         /* Re-drive the recorded clicks through the real UI (UI_PLAN

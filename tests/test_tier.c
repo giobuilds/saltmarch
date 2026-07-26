@@ -208,32 +208,49 @@ static void test_real_table(void)
 
     printf("--- the table as shipped ---\n");
 
+    /* SUPPLY_CHAIN Phase 3 rooted two SEPARATE lines rather than a
+     * ladder: a Wright's House is built, not upgraded into. Both base
+     * tiers are therefore terminal until Artisans (Phase 4) and
+     * Engineers (Phase 6) give them somewhere to go. */
     CHECK(tier_def_for(BUILDING_HOUSE) != NULL &&
-          tier_def_for(BUILDING_HOUSE)->next_tier == BUILDING_HOUSE_WORKER,
-          "a House upgrades to a Worker's House");
+          tier_def_for(BUILDING_HOUSE)->next_tier == BUILDING_NONE,
+          "a Marsh Cottage has nowhere to climb yet — Artisans is Phase 4");
     CHECK(tier_def_for(BUILDING_HOUSE_WORKER) != NULL &&
           tier_def_for(BUILDING_HOUSE_WORKER)->next_tier == BUILDING_NONE,
-          "and a Worker's House is the top of the line for now");
+          "nor a Wright's House — Engineers is Phase 6");
+    CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].hud_placeable,
+          "which is why a Wright's House is something you build");
     CHECK(tier_def_for(BUILDING_WAREHOUSE) == NULL,
           "a warehouse is not a tier");
     CHECK(tier_upgrade_requires(BUILDING_HOUSE) == BUILDING_NONE,
           "no tier needs a building yet — the Academy is Phase 8");
 
+    /* The needs the plan gives them. Grain is conspicuously absent: it
+     * is milled and baked now, which is what makes the Windmill and
+     * the Bakehouse worth building. */
+    {
+        const TierDef *m = tier_def_for(BUILDING_HOUSE);
+        const TierDef *w = tier_def_for(BUILDING_HOUSE_WORKER);
+        int i, mn = 0, wn = 0, grain = 0;
+        for (i = 0; i < MAX_TIER_GOODS; i++) {
+            if (m->needs[i] != RES_COUNT) mn++;
+            if (w->needs[i] != RES_COUNT) wn++;
+            if (m->needs[i] == RES_GRAIN || w->needs[i] == RES_GRAIN) grain++;
+        }
+        CHECK(mn == 3 && wn == 4, "Marshfolk want three things, Wrights four");
+        CHECK(grain == 0, "and nobody eats raw Grain any more");
+        CHECK(m->needs[1] == RES_OILSKINS && m->needs[2] == RES_MARSH_GIN,
+              "Marshfolk want Fish, Oilskins and Marsh Gin");
+        CHECK(w->needs[0] == RES_SAUSAGES && w->needs[1] == RES_BREAD &&
+              w->needs[2] == RES_SOAP && w->needs[3] == RES_BEER,
+              "Wrights want Sausages, Bread, Soap and Beer");
+    }
+
     for (r = 0; r < RES_COUNT; r++) stock[r] = 0;
     stock[RES_GOLD] = 10000;
-
-    /* Beer is the Worker tier's third need, and the one a starting
-     * island cannot make. Under the old rule 300 Gold was the whole
-     * requirement; now the brewery is. */
-    stock[RES_FISH] = 5; stock[RES_GRAIN] = 5;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
-          "a rich island with no Beer cannot promote anybody");
-    stock[RES_BEER] = 1;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_OK,
-          "one barrel is the difference");
-    CHECK(tier_upgrade_check(BUILDING_HOUSE_WORKER, stock, 1, &to) ==
-          REJ_UNAVAILABLE,
-          "and the tier above has nowhere further to go");
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_UNAVAILABLE,
+          "so however rich the island, there is nothing to promote into");
+    CHECK(to == BUILDING_NONE, "and no destination is named");
 }
 
 /* ---- 5. sim and UI answer identically ---------------------- */
@@ -281,24 +298,23 @@ static void test_sim_and_ui_agree(void)
     }
     pop_init(&isl->pop_data[idx]);
 
-    /* Empty store: both sides must refuse, and for the same reason. */
+    /* Phase 3 leaves both base tiers terminal, so the only verdict
+     * either side can reach on the SHIPPED table is "nowhere to go".
+     * That is still worth asserting jointly: it is the wiring — sim
+     * reading Island, UI reading a snapshot — rather than the rule,
+     * which section 3 proves at five needs and behind a building. The
+     * accept path comes back under test in Phase 4 with Artisans. */
     isl->stockpile.amount[RES_GOLD] = 5000;
-    ui_snapshot_build(&snap, gs);
-    CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
-                                 &to_ui) == REJ_NEEDS_GOODS,
-          "the UI refuses an unsupplied upgrade");
-
-    /* Now stock the tier's needs and re-ask. */
     stockpile_add(&isl->stockpile, RES_FISH, 3);
-    stockpile_add(&isl->stockpile, RES_GRAIN, 3);
-    stockpile_add(&isl->stockpile, RES_BEER, 3);
+    stockpile_add(&isl->stockpile, RES_OILSKINS, 3);
+    stockpile_add(&isl->stockpile, RES_MARSH_GIN, 3);
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
-                                 &to_ui) == REJ_OK,
-          "and allows a supplied one");
-    CHECK(to_ui == BUILDING_HOUSE_WORKER, "naming the tier it would become");
+                                 &to_ui) == REJ_UNAVAILABLE,
+          "the UI reports a fully supplied cottage as having nowhere to go");
+    CHECK(to_ui == BUILDING_NONE, "and names no destination");
 
-    /* The popup renders that same verdict as a checklist. */
+    /* The popup says so too, rather than offering a button. */
     gs->confirm.open = 1;
     gs->confirm.kind = CONFIRM_UPGRADE;
     gs->confirm.cmd.kind = CMD_UPGRADE_HOUSE;
@@ -306,35 +322,20 @@ static void test_sim_and_ui_agree(void)
     gs->confirm.cmd.b = idx;
     ui_snapshot_build(&snap, gs);
     confirm_view_build(&view, &snap);
+    CHECK(view.refusal == REJ_UNAVAILABLE, "the popup records the refusal");
+    CHECK(!view.options[0].affordable,
+          "and cannot be accepted, however much Gold is in the store");
 
-    CHECK(view.need_count == 3,
-          "the popup lists every good the next tier will want");
-    CHECK(view.needs[0].met && view.needs[1].met && view.needs[2].met,
-          "each marked present when it is");
-    CHECK(view.options[0].affordable,
-          "and the accept button follows the shared rule, not a gold check");
-
-    /* Take the Beer away: the checklist and the verdict move together. */
-    isl->stockpile.amount[RES_BEER] = 0;
-    ui_snapshot_build(&snap, gs);
-    confirm_view_build(&view, &snap);
-    CHECK(!view.needs[2].met && !view.options[0].affordable,
-          "removing one good marks its row AND disables accept");
-    CHECK(view.refusal == REJ_NEEDS_GOODS, "with the reason recorded");
-
-    /* The sim's own verdict, on the same world. */
-    stockpile_add(&isl->stockpile, RES_BEER, 2);
-    before = isl->stockpile.amount[RES_BEER];
+    /* The sim refuses identically, and changes nothing when it does. */
+    before = isl->stockpile.amount[RES_GOLD];
     gs->confirm.open = 0;
     game_upgrade_house(gs, idx);
     while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
 
-    CHECK(isl->buildings[idx].type == BUILDING_HOUSE_WORKER,
-          "the sim performs the upgrade the UI predicted");
-    CHECK(isl->stockpile.amount[RES_BEER] == before,
-          "and does not eat the goods — they are a supply test, not a price");
-    CHECK(isl->stockpile.amount[RES_GOLD] == 5000 - TIER_UPGRADE_COST_GOLD,
-          "the tier's gold is what it charges");
+    CHECK(isl->buildings[idx].type == BUILDING_HOUSE,
+          "the sim refuses the same upgrade the UI refused");
+    CHECK(isl->stockpile.amount[RES_GOLD] == before,
+          "and a refused upgrade costs nothing");
 
     /* island_has_building and its snapshot twin must not drift. */
     {

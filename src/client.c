@@ -154,6 +154,10 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
         if (gs->net && !net_tick_allowed(gs->net, gs->sim_tick_no))
             break;
         sim_run_one_tick(gs);
+        /* Per COMPLETED tick, not per frame: the desync hash has to be
+         * taken while the world is AT the boundary, and a frame that
+         * runs two ticks would otherwise step over one. */
+        net_on_tick(gs->net, gs);
         gs->sim_acc_ns -= SIM_TICK_NS;
     }
 }

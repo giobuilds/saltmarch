@@ -46,10 +46,12 @@ static void step(NetSession *hn, GameState *hg,
     if (hn) net_pump(hn, hg);
     if (gn) net_pump(gn, gg);
 
-    while (host_ticks-- > 0) sim_run_one_tick(hg);
+    /* net_on_tick per COMPLETED tick, exactly as client.c's pump does
+     * it: it is where the desync hash is taken. */
+    while (host_ticks-- > 0) { sim_run_one_tick(hg); net_on_tick(hn, hg); }
     while (gn && net_tick_allowed(gn, gg->sim_tick_no) &&
            gg->sim_tick_no < hg->sim_tick_no)
-        sim_run_one_tick(gg);
+        { sim_run_one_tick(gg); net_on_tick(gn, gg); }
 
     if (hn) net_after_update(hn, hg);
     if (gn) net_after_update(gn, gg);

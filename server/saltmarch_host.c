@@ -236,6 +236,11 @@ int main(int argc, char *argv[])
          * exactly why there is no separate "offline production" path. */
         while (acc_ns >= SIM_TICK_NS) {
             sim_run_one_tick(gs);
+            /* Inside the loop, not after it: catch-up here is
+             * unbounded by design, and hashing after the fact meant a
+             * burst of ticks recorded no desync baseline at all for the
+             * boundaries it flew past. */
+            net_on_tick(ns, gs);
             acc_ns -= SIM_TICK_NS;
 
             if (run_ticks && gs->sim_tick_no - start_tick >= run_ticks) {
@@ -248,9 +253,21 @@ int main(int argc, char *argv[])
 
         if (ckpt_seconds && ckpt_ns >= ckpt_seconds * 1000000000ULL) {
             ckpt_ns = 0;
-            if (!game_save(gs, world_path)) {
+            /* A checkpoint is STATE, not history (SERVER.md, "Log
+             * truncation"): the file stays the size of the world
+             * instead of growing with every command ever issued, and a
+             * restart -- or a join -- costs what the world weighs
+             * rather than how long it has been running. */
+            if (!game_save_checkpoint(gs, world_path)) {
                 fprintf(stderr, "host: checkpoint to %s FAILED\n", world_path);
                 rc = 1;
+            } else {
+                /* Written, so the history behind it is now redundant.
+                 * Dropping it here is what bounds the PROCESS as well
+                 * as the file: a server that runs for months would
+                 * otherwise hold every command of those months in
+                 * memory, and hand all of them to the next joiner. */
+                game_truncate_log(gs);
             }
         }
 
@@ -274,7 +291,7 @@ int main(int argc, char *argv[])
 
     /* The final checkpoint is the one that must not be skipped: it is
      * what makes "the world is still there tomorrow" true. */
-    if (!game_save(gs, world_path)) {
+    if (!game_save_checkpoint(gs, world_path)) {
         fprintf(stderr, "host: final checkpoint to %s FAILED\n", world_path);
         rc = 1;
     } else {

@@ -83,6 +83,7 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `net.c/h` — the lockstep protocol (its own SDL-free library); `server/saltmarch_host.c` is the dedicated server over it
 - `replay.c/h` + `replay_main.c` — record/replay harness and the `saltmarch_replay` CLI
 - `simlog.c/h` — `sim_log()`, the sim's SDL-free replacement for `SDL_Log`
+- `snapshot.c/h` — full world state as bytes: what a server checkpoint stores and what `MSG_WORLD` sends, so joining costs what the world weighs rather than how long it has existed. Explicit field-by-field encoding, never a struct dump; see its header for what is and is not world state
 - `ui_kit.c/h` — layout cursor, widget lists, hit-testing, the `RejectReason`→text table (UI_PLAN Phase 0; SDL-free by construction — layout may never consult font metrics)
 - `ui_snapshot.c/h` — the per-frame copy of the world that UI builders read *instead of* `GameState`, so UI code cannot mutate the sim or step its RNG
 - `ghost_faction.c/h` — seeds an NPC island by re-addressing a recorded human session (MMO_PLAN later phases); coordinates are snapped, ship-scoped commands dropped

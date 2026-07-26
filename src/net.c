@@ -11,10 +11,21 @@
  *
  * SOCKETS. Non-blocking recv into a per-peer accumulation buffer,
  * frames parsed out as they complete — a frame split across TCP
- * segments is just "not ready yet". Sends use a retry loop; at co-op
- * traffic volumes (bytes per second, one MSG_WORLD burst at join) a
- * full send buffer is momentary. Winsock and BSD sockets differ only
- * behind the small shim at the top.
+ * segments is just "not ready yet". Sends are queued into a per-peer
+ * outbound buffer and flushed non-blocking from net_pump. Winsock and
+ * BSD sockets differ only behind the small shim at the top.
+ *
+ * NOTHING HERE MAY BLOCK, and nothing here may grow without a bound.
+ * Both halves of that are hard-won (SERVER.md, "Transport hardening
+ * plan"). Sends used to retry a full socket buffer forever, and
+ * broadcast() runs from the tick loop, so one peer that stopped reading
+ * froze the world for everyone on the server. Receives used to drain
+ * until the socket ran dry, so one peer writing at line rate held the
+ * pump indefinitely and grew memory without limit. Every send path is
+ * therefore a queue-and-return, every receive path is budgeted, and
+ * every way a peer can go quiet or stop draining ends in a timeout.
+ * A new message type or code path that waits on a peer reintroduces
+ * the same class of bug.
  *
  * MANY PEERS (Phase 6). The host is an array of connections rather than
  * one: the same code now backs both "a player hosting a friend" and
@@ -26,9 +37,20 @@
  * gives single-player continuation.
  *
  * NO SDL. This file is transport, not simulation, but it links into the
- * dedicated server, which has no client — hence sim_log and a two-line
- * sleep shim in place of SDL_Log and SDL_Delay.
+ * dedicated server, which has no client — hence sim_log in place of
+ * SDL_Log, and net_now_ms in place of SDL_GetTicks. That clock drives
+ * timeouts only: no part of the world is a function of it, so it never
+ * reaches a hash and cannot make a replay disagree with the run that
+ * recorded it.
  */
+
+/* Before the platform shim, because the shim itself uses uint64_t (the
+ * monotonic clock) and nothing below is guaranteed to provide it. The
+ * POSIX socket headers happen to drag the fixed-width types in, which
+ * is exactly why this was invisible on Linux and a hard syntax error
+ * on MSVC — winsock2.h has no such side effect. */
+#include <stdint.h>
+#include <stddef.h>
 
 /* ---- platform shim ----------------------------------------
  * Included BEFORE net.h: winsock2.h must be seen before anything that
@@ -47,6 +69,7 @@
 #  define sock_close(s)   closesocket(s)
 #  define sock_errno()    WSAGetLastError()
 #  define SOCK_EWOULDBLOCK WSAEWOULDBLOCK
+#  define SOCK_EINPROGRESS WSAEWOULDBLOCK
 static int sock_set_nonblock(sock_t s)
 {
     u_long on = 1;
@@ -58,7 +81,17 @@ static int net_platform_init(void)
     return WSAStartup(MAKEWORD(2, 2), &w) == 0;
 }
 static void net_platform_quit(void) { WSACleanup(); }
-static void net_sleep_1ms(void) { Sleep(1); }
+/* Monotonic milliseconds. Drives the timeouts below and nothing else —
+ * no part of the world is a function of it, so it never enters a hash
+ * and cannot make a replay disagree with the run it recorded. */
+static uint64_t net_now_ms(void)
+{
+    static LARGE_INTEGER freq;
+    LARGE_INTEGER        c;
+    if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&c);
+    return (uint64_t)((double)c.QuadPart / (double)freq.QuadPart * 1000.0);
+}
 #  define SOCK_IOLEN(n)   ((int)(n))
 #  define SOCK_ADDRLEN(n) ((int)(n))
 #else
@@ -71,11 +104,13 @@ static void net_sleep_1ms(void) { Sleep(1); }
 #  include <fcntl.h>
 #  include <errno.h>
 #  include <time.h>
+#  include <sys/select.h>
    typedef int sock_t;
 #  define BAD_SOCK        (-1)
 #  define sock_close(s)   close(s)
 #  define sock_errno()    errno
 #  define SOCK_EWOULDBLOCK EWOULDBLOCK
+#  define SOCK_EINPROGRESS EINPROGRESS
 static int sock_set_nonblock(sock_t s)
 {
     int fl = fcntl(s, F_GETFL, 0);
@@ -83,15 +118,17 @@ static int sock_set_nonblock(sock_t s)
 }
 static int net_platform_init(void) { return 1; }
 static void net_platform_quit(void) { }
-static void net_sleep_1ms(void)
+/* Monotonic milliseconds. Drives the timeouts below and nothing else —
+ * no part of the world is a function of it, so it never enters a hash
+ * and cannot make a replay disagree with the run it recorded. */
+static uint64_t net_now_ms(void)
 {
     struct timespec ts;
-    ts.tv_sec  = 0;
-    ts.tv_nsec = 1000000L;
-    nanosleep(&ts, NULL);
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 #  define SOCK_IOLEN(n)   (n)
-#  define SOCK_ADDRLEN(n) (n)
+#  define SOCK_ADDRLEN(n) ((socklen_t)(n))
 #endif
 
 /* A send() to a peer that vanished must report an error, not raise
@@ -105,18 +142,81 @@ static void net_sleep_1ms(void)
 #  define SEND_FLAGS 0
 #endif
 
-static void sock_no_sigpipe(sock_t s)
+/* Everything a connected socket wants set on it, in one place so the
+ * accept path and the connect path cannot drift apart.
+ *
+ * TCP_NODELAY matters more here than the byte counts suggest: the
+ * frames that carry the lockstep clock are 13 bytes (MSG_TICK_AUTH) and
+ * 37 (MSG_CMD), which is exactly the shape Nagle holds back waiting for
+ * company. Up to ~40 ms of delay on the one path where latency is the
+ * product.
+ *
+ * SO_KEEPALIVE is the backstop under the idle timeout below: a peer
+ * whose machine vanished without closing (a yanked cable, a suspended
+ * laptop) leaves a socket that looks perfectly healthy until something
+ * probes it. */
+static void sock_tune(sock_t s)
 {
-#ifdef SO_NOSIGPIPE
     int yes = 1;
+
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&yes, sizeof(yes));
+    setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, (const char *)&yes, sizeof(yes));
+#ifdef SO_NOSIGPIPE
     setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, (const char *)&yes, sizeof(yes));
-#else
-    (void)s;
 #endif
+}
+
+/* Connect without handing the game's frame loop to the network stack.
+ * A blocking connect() to a host that is simply not there returns when
+ * the OS gives up — over a minute on Linux — and that whole time the
+ * window is frozen with no indication why. The socket is made
+ * non-blocking first, so the wait is ours to bound.
+ *
+ * Returns 1 on a connected socket. `ms` is the whole budget. */
+static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
+                                size_t addrlen, unsigned ms)
+{
+    struct timeval tv;
+    fd_set         wfds;
+    int            err = 0, rc;
+#ifdef _WIN32
+    int            elen = (int)sizeof(err);
+#else
+    socklen_t      elen = (socklen_t)sizeof(err);
+#endif
+
+    if (!sock_set_nonblock(s)) return 0;
+
+    if (connect(s, addr, SOCK_ADDRLEN(addrlen)) == 0) return 1;
+    if (sock_errno() != SOCK_EINPROGRESS) return 0;
+
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    /* tv_usec is `int` on macOS and `long` on Linux and Windows, so the
+     * only assignment that narrows nowhere is one from a type narrower
+     * than all three. The value is under a million by construction. */
+    tv.tv_sec  = (long)(ms / 1000u);
+    tv.tv_usec = (int)((ms % 1000u) * 1000u);
+
+#ifdef _WIN32
+    /* Winsock ignores nfds entirely, and a SOCKET is a pointer-width
+     * handle — computing `s + 1` for it would be inventing a narrowing
+     * conversion to satisfy an argument nobody reads. */
+    rc = select(0, NULL, &wfds, NULL, &tv);
+#else
+    rc = select(s + 1, NULL, &wfds, NULL, &tv);
+#endif
+    if (rc <= 0) return 0;                       /* timed out or failed */
+
+    /* Writable only means the attempt finished; SO_ERROR says how. */
+    if (getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&err, &elen) != 0)
+        return 0;
+    return err == 0;
 }
 
 #include "net.h"
 #include "simlog.h"
+#include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -131,7 +231,8 @@ enum {
                          * tick ignored); host->guest: stamped Command  */
     MSG_TICK_AUTH = 5,  /* host->guest: {uint64 tick} run through here  */
     MSG_HASH      = 6,  /* guest->host: {uint64 tick, uint64 hash}      */
-    MSG_BYE       = 7   /* polite shutdown either way                   */
+    MSG_BYE       = 7,  /* polite shutdown either way                   */
+    MSG_PING      = 8   /* either way: no payload, means "still here"   */
 };
 
 #define HASH_RING       16
@@ -143,6 +244,59 @@ enum {
  * has to happen anyway. Anything larger is a hostile or corrupt length
  * field and kills the connection rather than the allocator. */
 #define MAX_FRAME_BYTES (64u * 1024u * 1024u)
+
+/* ---- flow control and timeouts ----------------------------
+ * None of this existed before SERVER.md's hardening plan, and its
+ * absence was the whole of that plan's Phase A: with an unbounded
+ * blocking send and an unbounded receive drain, ONE peer could stop the
+ * world — either by not reading (the tick loop blocked inside send) or
+ * by writing forever (the pump never left the recv loop). Every limit
+ * below exists to keep one connection's behaviour to itself.
+ *
+ * The numbers are deliberately loose. Co-op traffic is bytes per
+ * second; anything that trips these is broken or hostile, not busy. */
+
+/* Bytes accepted from one peer in one pump before we move on. The
+ * remainder is still in the socket and arrives next pump — which is
+ * only what a frame split across TCP segments already did. */
+#define RECV_BUDGET     (1u * 1024u * 1024u)
+
+/* Hard ceiling on a peer's unparsed backlog. One maximum frame must fit
+ * whole or a legitimate MSG_WORLD could never be assembled, so this is
+ * that plus a chunk of slack. */
+#define MAX_RECV_BUF    ((size_t)MAX_FRAME_BYTES + 5u + RECV_CHUNK)
+
+/* How long a peer's outbound queue may sit without a single byte moving
+ * before we call it dead. This is a stall timer rather than a byte cap
+ * on purpose: the MSG_WORLD sent at join is legitimately large, and
+ * "slow but draining" must not be confused with "gone". */
+#define SEND_STALL_MS   15000u
+
+/* Say nothing for this long and a peer sends MSG_PING; say nothing for
+ * that long and it is dropped. Liveness deliberately does NOT ride on
+ * MSG_HASH: a guest sitting in the F8 scrubber has a frozen sim and
+ * reports no hashes, and is not dead. */
+#define PING_INTERVAL_MS  5000u
+#define IDLE_TIMEOUT_MS  30000u
+
+/* A connection that has not introduced itself is holding a slot that a
+ * real player wants; NET_MAX_PEERS of them is the whole server. */
+#define HANDSHAKE_MS    10000u
+
+/* How long net_join waits for a TCP handshake before reporting that the
+ * host is not there. (Name resolution ahead of it is still the
+ * resolver's to bound — getaddrinfo has no portable timeout, and
+ * putting it on a thread would drag a threading dependency into a file
+ * that deliberately has none.) */
+#define CONNECT_TIMEOUT_MS 5000u
+
+/* Command budget per peer: refilled every tick, allowed to bank up to a
+ * burst so that a player who clicks fast, or whose connection delivered
+ * a frame's worth at once, is never the one this catches. A peer that
+ * keeps overrunning an allowance this generous is not playing. */
+#define CMDS_PER_TICK    8
+#define CMD_BURST       64
+#define MAX_CMD_OVERRUNS 256
 
 /* ---- growable byte buffer ---------------------------------
  * Peers used to hold two fixed 256 KB arrays. That capped MSG_WORLD at
@@ -189,6 +343,22 @@ static void buf_consume(Buf *buf, size_t n)
     buf->len -= n;
 }
 
+/* Hand back the capacity a one-off burst grew. A join pushes a peer's
+ * buffers into the megabytes for as long as MSG_WORLD takes to cross;
+ * without this they stay that size for the rest of the session, times
+ * NET_MAX_PEERS. Only shrinks a buffer that has gone quiet again. */
+static void buf_trim(Buf *buf)
+{
+    unsigned char *nb;
+
+    if (buf->cap <= RECV_CHUNK || buf->len > RECV_CHUNK / 2) return;
+
+    nb = (unsigned char *)realloc(buf->b, RECV_CHUNK);
+    if (!nb) return;            /* keeping the larger block is harmless */
+    buf->b   = nb;
+    buf->cap = RECV_CHUNK;
+}
+
 static void buf_free(Buf *buf)
 {
     free(buf->b);
@@ -208,6 +378,21 @@ typedef struct NetPeer {
     int      said_hello;
 
     Buf      rbuf;           /* inbound bytes awaiting frame parsing     */
+    Buf      wbuf;           /* outbound bytes awaiting a writable socket*/
+
+    /* Wall-clock bookkeeping for the timeouts. Milliseconds from
+     * net_now_ms; monotonic, and never part of world state. */
+    uint64_t created_ms;
+    uint64_t last_recv_ms;
+    uint64_t last_send_ms;
+    uint64_t stall_since_ms; /* 0 while the outbound queue is moving     */
+
+    /* Submissions this peer may still make before the next tick refills
+     * it. Every accepted command is appended to the authoritative log
+     * forever and broadcast to everyone, so an unmetered client is a
+     * client that can permanently inflate the world. */
+    int      cmd_budget;
+    int      cmd_overruns;
 
     /* In-memory transport (net_pair_mem): sends append to mem_peer's
      * queue and recv drains our own; no sockets exist. A closed peer
@@ -223,6 +408,7 @@ struct NetSession {
     sock_t   listen_fd;       /* host only                              */
     int      alive;
     int      persistent;      /* host: outlive peers (the server does)  */
+    int      plat_init;       /* this session owns a platform startup   */
 
     NetPeer  peers[NET_MAX_PEERS];
 
@@ -232,10 +418,18 @@ struct NetSession {
     uint32_t resume_id;       /* identity to ask for at join, 0 = any   */
 
     /* host: my hash at recent NET_HASH_INTERVAL boundaries, to compare
-     * against guests' reports (guests run behind us). */
+     * against guests' reports (guests run behind us).
+     *
+     * The write cursor is separate from the fill count on purpose: they
+     * were one field, and since the count stopped at HASH_RING the slot
+     * index stopped with it — every boundary after the sixteenth
+     * overwrote slot 0 while slots 1-15 kept ticks from the world's
+     * first eighty seconds forever. A ring of sixteen that remembers
+     * one is not a ring, and the reports that missed it were discarded
+     * as "too old" in silence. */
     struct { uint64_t tick, hash; } hash_ring[HASH_RING];
-    int      hash_ring_n;
-    uint64_t last_hash_tick;  /* both: last boundary hashed/reported    */
+    int      hash_ring_n;     /* how many slots hold anything yet       */
+    uint64_t hash_ring_w;     /* monotonic; the next slot to write      */
 
     char     status[64];
 };
@@ -243,6 +437,17 @@ struct NetSession {
 static int peer_live(const NetPeer *p)
 {
     return p->in_use && (p->is_mem || p->fd != BAD_SOCK);
+}
+
+/* A guest's one connection: the host. Was written as `&ns->peers[0]`,
+ * which is true only because a fresh session allocates slot 0 first —
+ * a fact nothing enforced and a reconnect need not preserve. */
+static NetPeer *guest_peer(NetSession *ns)
+{
+    int i;
+    for (i = 0; i < NET_MAX_PEERS; i++)
+        if (peer_live(&ns->peers[i])) return &ns->peers[i];
+    return NULL;
 }
 
 static int session_connected(const NetSession *ns)
@@ -267,10 +472,15 @@ static NetPeer *peer_alloc(NetSession *ns)
     int i;
     for (i = 0; i < NET_MAX_PEERS; i++)
         if (!ns->peers[i].in_use) {
-            NetPeer *p = &ns->peers[i];
+            NetPeer *p   = &ns->peers[i];
+            uint64_t now = net_now_ms();
             memset(p, 0, sizeof(*p));
-            p->in_use = 1;
-            p->fd     = BAD_SOCK;
+            p->in_use       = 1;
+            p->fd           = BAD_SOCK;
+            p->created_ms   = now;
+            p->last_recv_ms = now;   /* the clocks start on arrival, not */
+            p->last_send_ms = now;   /* at zero — see peer_timed_out     */
+            p->cmd_budget   = CMD_BURST;
             return p;
         }
     return NULL;
@@ -292,6 +502,7 @@ static void peer_drop(NetSession *ns, NetPeer *p, const char *why)
         sock_close(p->fd);
     }
     buf_free(&p->rbuf);
+    buf_free(&p->wbuf);
     memset(p, 0, sizeof(*p));
     p->fd = BAD_SOCK;
 
@@ -306,39 +517,70 @@ static void peer_drop(NetSession *ns, NetPeer *p, const char *why)
 
 /* ---- low-level send/recv ---------------------------------- */
 
-static int send_all(NetPeer *p, const void *data, size_t n)
-{
-    const char *q = (const char *)data;
-
-    if (p->is_mem) {
-        if (!p->mem_peer) return 0;                    /* peer closed  */
-        return buf_append(&p->mem_peer->rbuf, q, n);
-    }
-
-    while (n > 0) {
-        long w = (long)send(p->fd, q, SOCK_IOLEN(n), SEND_FLAGS);
-        if (w > 0) { q += w; n -= (size_t)w; continue; }
-        if (w < 0 && sock_errno() == SOCK_EWOULDBLOCK) {
-            net_sleep_1ms();   /* momentary full buffer at these volumes */
-            continue;
-        }
-        return 0;
-    }
-    return 1;
-}
-
+/* Queue one framed message for `p`. NEVER touches the socket: sending
+ * used to retry a full buffer forever with 1 ms sleeps, and broadcast()
+ * runs from the tick loop, so one peer that stopped reading froze the
+ * whole world — including, on the dedicated server, every other
+ * player's. The bytes wait in wbuf and peer_flush moves what the socket
+ * will take, each pump.
+ *
+ * Header and payload are reserved together so a failed allocation
+ * cannot leave half a frame in the queue: the stream is a sequence of
+ * complete frames or it is nothing. */
 static int send_msg(NetSession *ns, NetPeer *p, unsigned char type,
                     const void *payload, uint32_t len)
 {
     unsigned char hdr[5];
+    Buf          *out;
+
     if (!peer_live(p) || !ns->alive) return 0;
+
     hdr[0] = type;
     hdr[1] = (unsigned char)(len);
     hdr[2] = (unsigned char)(len >> 8);
     hdr[3] = (unsigned char)(len >> 16);
     hdr[4] = (unsigned char)(len >> 24);
-    return send_all(p, hdr, 5) &&
-           (len == 0 || send_all(p, payload, len));
+
+    /* The in-memory transport has no socket to be busy: a send is an
+     * append straight onto the far side's inbound queue. */
+    out = p->is_mem ? (p->mem_peer ? &p->mem_peer->rbuf : NULL) : &p->wbuf;
+    if (!out) return 0;                                /* peer closed   */
+
+    if (!buf_reserve(out, 5u + (size_t)len)) return 0;
+    buf_append(out, hdr, 5);
+    if (len) buf_append(out, payload, len);
+
+    p->last_send_ms = net_now_ms();
+    return 1;
+}
+
+/* Move what the socket will take. Returns 0 on a dead connection.
+ *
+ * Progress, or an empty queue, clears the stall clock; a queue that
+ * holds bytes the socket refused starts it. peer_timed_out turns a
+ * clock that has been running too long into a disconnect — which is the
+ * bounded version of what the old retry loop did forever. */
+static int peer_flush(NetPeer *p)
+{
+    size_t sent = 0;
+
+    if (p->is_mem || p->fd == BAD_SOCK) return 1;
+
+    while (sent < p->wbuf.len) {
+        long w = (long)send(p->fd, (const char *)p->wbuf.b + sent,
+                            SOCK_IOLEN(p->wbuf.len - sent), SEND_FLAGS);
+        if (w > 0) { sent += (size_t)w; continue; }
+        if (w < 0 && sock_errno() == SOCK_EWOULDBLOCK) break;
+        return 0;
+    }
+
+    if (sent > 0) buf_consume(&p->wbuf, sent);
+
+    if (p->wbuf.len == 0 || sent > 0) p->stall_since_ms = 0;
+    else if (p->stall_since_ms == 0)  p->stall_since_ms = net_now_ms();
+
+    if (p->wbuf.len == 0) buf_trim(&p->wbuf);
+    return 1;
 }
 
 /* Every peer, one message. Send failures are not fatal here: the next
@@ -354,25 +596,75 @@ static void broadcast(NetSession *ns, unsigned char type,
 
 /* Drain the socket into the peer's buffer. Returns 0 on a dead
  * connection (or an allocation failure, which we treat the same way —
- * a peer we cannot buffer is a peer we cannot serve). */
+ * a peer we cannot buffer is a peer we cannot serve).
+ *
+ * Bounded twice. RECV_BUDGET caps how long we stay here, because this
+ * used to loop until the socket ran dry and a peer writing at line rate
+ * could hold the pump — and therefore the tick loop — indefinitely.
+ * MAX_RECV_BUF caps how much we will hold for a peer that never
+ * completes a frame. Hitting the budget is not an error: the rest of
+ * the bytes are still in the socket, and waiting a pump for them is
+ * exactly what a frame split across TCP segments already does. */
 static int recv_into_buf(NetPeer *p)
 {
+    size_t taken = 0;
+
     if (p->is_mem) {
         /* Sends land directly in rbuf; nothing to drain. EOF is the
          * severed flag once everything queued has been parsed. */
         return !(p->mem_severed && p->rbuf.len == 0);
     }
 
-    for (;;) {
-        long r;
-        if (!buf_reserve(&p->rbuf, RECV_CHUNK)) return 0;
+    while (taken < RECV_BUDGET) {
+        long   r;
+        size_t room;
+
+        if (p->rbuf.len >= MAX_RECV_BUF) return 0;   /* hostile backlog */
+        room = MAX_RECV_BUF - p->rbuf.len;
+        if (room > RECV_CHUNK) room = RECV_CHUNK;
+
+        if (!buf_reserve(&p->rbuf, room)) return 0;
         r = (long)recv(p->fd, (char *)p->rbuf.b + p->rbuf.len,
-                       SOCK_IOLEN(p->rbuf.cap - p->rbuf.len), 0);
-        if (r > 0) { p->rbuf.len += (size_t)r; continue; }
+                       SOCK_IOLEN(room), 0);
+        if (r > 0) {
+            p->rbuf.len += (size_t)r;
+            taken       += (size_t)r;
+            continue;
+        }
         if (r == 0) return 0;                     /* orderly close */
-        if (sock_errno() == SOCK_EWOULDBLOCK) return 1;
+        if (sock_errno() == SOCK_EWOULDBLOCK) break;
         return 0;                                 /* hard error    */
     }
+
+    if (taken > 0) p->last_recv_ms = net_now_ms();
+    return 1;
+}
+
+/* Has this connection run out of the patience we extend it? Every
+ * clause is a way a peer can occupy a slot while giving nothing back.
+ *
+ * The in-memory transport is exempt: it has no sockets, no latency and
+ * no way to stall, and making the protocol tests depend on wall time
+ * would trade a deterministic suite for a flaky one. */
+static int peer_timed_out(const NetSession *ns, const NetPeer *p,
+                          uint64_t now, const char **why)
+{
+    if (p->is_mem) return 0;
+
+    if (ns->is_host && !p->said_hello &&
+        now - p->created_ms > HANDSHAKE_MS) {
+        *why = "peer connected but never introduced itself";
+        return 1;
+    }
+    if (now - p->last_recv_ms > IDLE_TIMEOUT_MS) {
+        *why = "peer went silent";
+        return 1;
+    }
+    if (p->stall_since_ms && now - p->stall_since_ms > SEND_STALL_MS) {
+        *why = "peer stopped reading";
+        return 1;
+    }
+    return 0;
 }
 
 /* ---- host: identity ---------------------------------------- */
@@ -437,27 +729,58 @@ static int host_stamp_log_send(NetSession *ns, GameState *gs,
     return 1;
 }
 
+/* MSG_WORLD is a SNAPSHOT plus the commands that follow it, not the
+ * seed and the whole history (SERVER.md, "Log truncation").
+ *
+ * It used to be the latter, and the cost of joining was therefore
+ * proportional to the world's AGE: game_install_world replayed every
+ * tick from zero, inside net_pump, with the client's window frozen for
+ * the duration. A month-old server was a minute of that; a year was
+ * nine. It accrued whether or not anybody had played, because the
+ * server ticks regardless — nothing a player did made it better and
+ * nothing they could do made it stop.
+ *
+ * A snapshot is tens of KB and installs in the time it takes to decode:
+ * the join cost stops tracking how long the world has existed and
+ * starts tracking how big it is, which is bounded. */
 static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
 {
-    /* {seed, tick, n, Command[n]} — the same information as a v6 save. */
-    size_t  fixed = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(int32_t);
-    size_t  total = fixed + sizeof(Command) * (size_t)gs->cmd_count;
-    unsigned char *buf = (unsigned char *)malloc(total);
-    size_t  off = 0;
-    int32_t n = gs->cmd_count;
+    size_t         fixed = sizeof(uint64_t) + sizeof(int32_t) + sizeof(int32_t);
+    unsigned char *snap = NULL, *buf;
+    size_t         snap_len = 0, total, off = 0;
+    int32_t        n = gs->cmd_count - gs->cmd_applied;
+    int32_t        snap32;
 
-    if (!buf) return;
-    memcpy(buf + off, &gs->world_seed, sizeof(uint32_t));  off += sizeof(uint32_t);
+    if (n < 0) n = 0;
+
+    if (!snapshot_encode(gs, &snap, &snap_len)) {
+        sim_log("net: could not snapshot the world for player %u",
+                p->player_id);
+        return;
+    }
+    snap32 = (int32_t)snap_len;
+
+    total = fixed + snap_len + sizeof(Command) * (size_t)n;
+    buf   = (unsigned char *)malloc(total);
+    if (!buf) { free(snap); return; }
+
     memcpy(buf + off, &gs->sim_tick_no, sizeof(uint64_t)); off += sizeof(uint64_t);
+    memcpy(buf + off, &snap32, sizeof(int32_t));           off += sizeof(int32_t);
     memcpy(buf + off, &n, sizeof(int32_t));                off += sizeof(int32_t);
+    memcpy(buf + off, snap, snap_len);                     off += snap_len;
+    /* Only the unapplied tail: the snapshot already contains the effect
+     * of everything before it. */
     if (n > 0)
-        memcpy(buf + off, gs->cmd_log, sizeof(Command) * (size_t)n);
+        memcpy(buf + off, gs->cmd_log + gs->cmd_applied,
+               sizeof(Command) * (size_t)n);
 
     send_msg(ns, p, MSG_WORLD, buf, (uint32_t)total);
     free(buf);
-    sim_log("net: world sent to player %u (seed %u, tick %llu, %d commands)",
-            p->player_id, gs->world_seed,
-            (unsigned long long)gs->sim_tick_no, n);
+    free(snap);
+    sim_log("net: world sent to player %u (tick %llu, %llu-byte snapshot, "
+            "%d pending commands)",
+            p->player_id, (unsigned long long)gs->sim_tick_no,
+            (unsigned long long)snap_len, n);
 }
 
 /* A freshly joined player that owns nothing gets a starting island —
@@ -527,6 +850,16 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
         switch (type) {
         case MSG_HELLO: {
             uint32_t ver = 0, resume = PLAYER_NONE, id;
+            /* Exactly one introduction per connection. A second HELLO
+             * used to re-run identity assignment — which, seeing this
+             * peer's current id as connected and landed, handed out a
+             * FRESH one, re-sent the whole command log, and granted
+             * another starting island. Repeat it enough and one socket
+             * owns the archipelago. */
+            if (p->said_hello) {
+                peer_drop(ns, p, "peer said hello twice");
+                return;
+            }
             if (len >= 4) memcpy(&ver, payload, 4);
             if (len >= 8) memcpy(&resume, payload + 4, 4);
             if (ver != NET_PROTO_VERSION) {
@@ -552,6 +885,24 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
         case MSG_CMD:
             if (len == sizeof(Command) && p->said_hello) {
                 Command c;
+
+                /* Metered. Everything accepted here joins the
+                 * authoritative log — which is never truncated, is
+                 * replayed in full by every future joiner, and is what
+                 * a checkpoint consists of — and is broadcast to every
+                 * peer besides. An unmetered client is therefore a
+                 * client that can permanently inflate the world for
+                 * everyone, without exploiting anything: it need only
+                 * submit faster than people click. */
+                if (p->cmd_budget <= 0) {
+                    if (++p->cmd_overruns > MAX_CMD_OVERRUNS) {
+                        peer_drop(ns, p, "peer flooded the command log");
+                        return;
+                    }
+                    break;      /* over budget: dropped, not fatal yet */
+                }
+                p->cmd_budget--;
+
                 memcpy(&c, payload, sizeof(c));
                 /* Identity comes from the CONNECTION, never the wire. */
                 host_stamp_log_send(ns, gs, &c, p->player_id);
@@ -564,6 +915,10 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
                 memcpy(&hash, payload + 8, 8);
                 host_note_hash_mismatch(ns, p, gs, tick, hash);
             }
+            break;
+        case MSG_PING:
+            /* Nothing to do: simply arriving is the whole message, and
+             * recv_into_buf has already reset the idle clock. */
             break;
         case MSG_BYE:
             peer_drop(ns, p, "peer said goodbye");
@@ -585,17 +940,27 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
         }
         break;
     case MSG_WORLD: {
-        uint32_t seed;
         uint64_t tick;
-        int32_t  n;
-        size_t   fixed = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(int32_t);
+        int32_t  snap32, n;
+        size_t   fixed = sizeof(uint64_t) + sizeof(int32_t) + sizeof(int32_t);
+        size_t   snap_len;
+
         if (len < fixed) break;
-        memcpy(&seed, payload, 4);
-        memcpy(&tick, payload + 4, 8);
-        memcpy(&n,    payload + 12, 4);
-        if (n < 0 || fixed + sizeof(Command) * (size_t)n != len) break;
-        if (!game_install_world(gs, seed, tick,
-                                (const Command *)(payload + fixed), n)) {
+        memcpy(&tick,   payload, 8);
+        memcpy(&snap32, payload + 8, 4);
+        memcpy(&n,      payload + 12, 4);
+        if (snap32 <= 0 || n < 0) break;
+        snap_len = (size_t)snap32;
+        if (fixed + snap_len + sizeof(Command) * (size_t)n != len) break;
+
+        /* No replay from zero any more, so no unbounded loop to bound:
+         * the snapshot IS the starting point, and installing it costs
+         * the same whatever tick it claims. The only remaining work is
+         * the pending tail, which is a handful of commands by
+         * construction (NET_CMD_DELAY_TICKS of them). */
+        if (!game_install_from_snapshot(gs, payload + fixed, snap_len, tick,
+                                        (const Command *)(payload + fixed +
+                                                          snap_len), n)) {
             sim_log("net: failed to install world");
             peer_drop(ns, p, "could not install the host's world");
             break;
@@ -604,7 +969,6 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
          * construction; later ticks wait for MSG_TICK_AUTH. */
         ns->authorized_tick = tick;
         ns->world_installed = 1;
-        ns->last_hash_tick  = tick;
         sim_log("net: world installed at tick %llu",
                 (unsigned long long)tick);
         break;
@@ -623,6 +987,8 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             if (t > ns->authorized_tick) ns->authorized_tick = t;
         }
         break;
+    case MSG_PING:
+        break;                                /* liveness only, as above */
     case MSG_BYE:
         peer_drop(ns, p, "peer said goodbye");
         break;
@@ -667,26 +1033,57 @@ static NetSession *session_new(int is_host)
     return ns;
 }
 
+/* A bound listening socket, dual-stack where the platform allows it.
+ *
+ * One AF_INET6 socket with IPV6_V6ONLY cleared accepts both families,
+ * so which address a player reaches the server on stops being something
+ * anyone has to think about. Some platforms default that option on and
+ * refuse to clear it, which is what the IPv4 fallback is for. */
+static sock_t listen_socket(uint16_t port)
+{
+    struct sockaddr_in6 a6;
+    struct sockaddr_in  a4;
+    sock_t              s;
+    int                 yes = 1, no = 0;
+
+    s = socket(AF_INET6, SOCK_STREAM, 0);
+    if (s != BAD_SOCK) {
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
+                   (const char *)&yes, sizeof(yes));
+        setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
+                   (const char *)&no, sizeof(no));
+        memset(&a6, 0, sizeof(a6));
+        a6.sin6_family = AF_INET6;
+        a6.sin6_addr   = in6addr_any;
+        a6.sin6_port   = htons(port);
+        if (bind(s, (struct sockaddr *)&a6, sizeof(a6)) == 0) return s;
+        sock_close(s);
+    }
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == BAD_SOCK) return BAD_SOCK;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
+    memset(&a4, 0, sizeof(a4));
+    a4.sin_family      = AF_INET;
+    a4.sin_addr.s_addr = htonl(INADDR_ANY);
+    a4.sin_port        = htons(port);
+    if (bind(s, (struct sockaddr *)&a4, sizeof(a4)) == 0) return s;
+
+    sock_close(s);
+    return BAD_SOCK;
+}
+
 NetSession *net_host(uint16_t port)
 {
-    NetSession        *ns;
-    struct sockaddr_in a;
-    int                yes = 1;
+    NetSession *ns;
 
     if (!net_platform_init()) return NULL;
     ns = session_new(1);
-    if (!ns) return NULL;
+    if (!ns) { net_platform_quit(); return NULL; }
+    ns->plat_init = 1;
 
-    ns->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    ns->listen_fd = listen_socket(port);
     if (ns->listen_fd == BAD_SOCK) goto fail;
-    setsockopt(ns->listen_fd, SOL_SOCKET, SO_REUSEADDR,
-               (const char *)&yes, sizeof(yes));
-
-    memset(&a, 0, sizeof(a));
-    a.sin_family      = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
-    a.sin_port        = htons(port);
-    if (bind(ns->listen_fd, (struct sockaddr *)&a, sizeof(a)) != 0) goto fail;
     if (listen(ns->listen_fd, NET_MAX_PEERS) != 0) goto fail;
     if (!sock_set_nonblock(ns->listen_fd)) goto fail;
 
@@ -715,14 +1112,19 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
 
     if (!net_platform_init()) return NULL;
     ns = session_new(0);
-    if (!ns) return NULL;
+    if (!ns) { net_platform_quit(); return NULL; }
+    ns->plat_init = 1;
     ns->resume_id = resume_id;
 
     p = peer_alloc(ns);
     if (!p) goto fail;
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    /* AF_UNSPEC, not AF_INET: an address family is not something a
+     * player should have to know they have. Whatever the name resolves
+     * to — v4, v6, or both in whatever order the resolver prefers — is
+     * tried in turn below. */
+    hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     snprintf(portstr, sizeof(portstr), "%u", (unsigned)port);
     if (getaddrinfo(host, portstr, &hints, &res) != 0) goto fail;
@@ -730,15 +1132,15 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
     for (ai = res; ai; ai = ai->ai_next) {
         p->fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (p->fd == BAD_SOCK) continue;
-        if (connect(p->fd, ai->ai_addr, SOCK_ADDRLEN(ai->ai_addrlen)) == 0)
+        if (sock_connect_timeout(p->fd, ai->ai_addr, ai->ai_addrlen,
+                                 CONNECT_TIMEOUT_MS))
             break;
         sock_close(p->fd);
         p->fd = BAD_SOCK;
     }
     freeaddrinfo(res);
     if (p->fd == BAD_SOCK) goto fail;
-    if (!sock_set_nonblock(p->fd)) goto fail;
-    sock_no_sigpipe(p->fd);
+    sock_tune(p->fd);          /* already non-blocking from the connect */
 
     memcpy(hello,     &ver,       4);
     memcpy(hello + 4, &resume_id, 4);
@@ -755,7 +1157,6 @@ fail:
 void net_close(NetSession *ns)
 {
     int i;
-    int had_sockets = 0;
 
     if (!ns) return;
 
@@ -768,19 +1169,27 @@ void net_close(NetSession *ns)
                 p->mem_peer->mem_peer    = NULL;
             }
         } else if (p->fd != BAD_SOCK) {
+            /* The goodbye is queued like everything else, so it needs
+             * one flush to actually leave. Best effort by design: if
+             * the socket will not take five bytes right now, the peer
+             * finds out the way it would from a yanked cable, and both
+             * paths are already handled. */
             send_msg(ns, p, MSG_BYE, NULL, 0);
+            peer_flush(p);
             sock_close(p->fd);
-            had_sockets = 1;
         }
         buf_free(&p->rbuf);
+        buf_free(&p->wbuf);
     }
 
-    if (ns->listen_fd != BAD_SOCK) {
-        sock_close(ns->listen_fd);
-        had_sockets = 1;
-    }
+    if (ns->listen_fd != BAD_SOCK) sock_close(ns->listen_fd);
+
+    /* Paired with the net_platform_init that this session did, not with
+     * whether it ever managed to open a socket: on Windows those calls
+     * are refcounted, and a session that failed between startup and its
+     * first socket used to leak one. */
+    if (ns->plat_init) net_platform_quit();
     free(ns);
-    if (had_sockets) net_platform_quit();
 }
 
 /* ---- the in-memory transport ------------------------------- */
@@ -834,7 +1243,8 @@ NetSession *net_join_mem(NetSession *host, uint32_t resume_id)
 
 int net_pump(NetSession *ns, GameState *gs)
 {
-    int i;
+    uint64_t now = net_now_ms();
+    int      i;
 
     if (!ns->alive) return 0;
 
@@ -848,7 +1258,7 @@ int net_pump(NetSession *ns, GameState *gs)
             c = accept(ns->listen_fd, NULL, NULL);
             if (c == BAD_SOCK) break;
             if (!sock_set_nonblock(c)) { sock_close(c); break; }
-            sock_no_sigpipe(c);
+            sock_tune(c);
 
             p = peer_alloc(ns);
             if (!p) { sock_close(c); break; }
@@ -858,8 +1268,18 @@ int net_pump(NetSession *ns, GameState *gs)
     }
 
     for (i = 0; i < NET_MAX_PEERS; i++) {
-        NetPeer *p = &ns->peers[i];
+        NetPeer    *p   = &ns->peers[i];
+        const char *why = NULL;
+
         if (!peer_live(p)) continue;
+
+        /* Push before pulling: whatever queued since the last pump —
+         * this tick's authorisation, a broadcast command, a world —
+         * goes out as far as the socket will take it. */
+        if (!peer_flush(p)) {
+            peer_drop(ns, p, "peer disconnected");
+            continue;
+        }
 
         if (!recv_into_buf(p)) {
             /* The peer is gone. Frames already buffered are real,
@@ -871,6 +1291,19 @@ int net_pump(NetSession *ns, GameState *gs)
         }
         parse_frames(ns, p, gs);
         if (!ns->alive) break;
+        if (!p->in_use) continue;      /* a frame cost it the connection */
+
+        if (peer_timed_out(ns, p, now, &why)) {
+            peer_drop(ns, p, why);
+            continue;
+        }
+
+        /* Say something before the far side's idle clock runs out. Two
+         * silent peers would otherwise each conclude the other had
+         * died, which is the one failure mode a keepalive exists to
+         * prevent. */
+        if (!p->is_mem && now - p->last_send_ms >= PING_INTERVAL_MS)
+            send_msg(ns, p, MSG_PING, NULL, 0);
     }
 
     return ns->alive;
@@ -888,38 +1321,48 @@ void net_after_update(NetSession *ns, GameState *gs)
 
         if (session_connected(ns))
             broadcast(ns, MSG_TICK_AUTH, &horizon, sizeof(horizon));
+    }
+}
 
-        /* Record my hash at each interval boundary crossed, for
-         * comparison when a (lagging) guest's report arrives. */
-        while (ns->last_hash_tick + NET_HASH_INTERVAL <= gs->sim_tick_no) {
-            int slot;
-            ns->last_hash_tick += NET_HASH_INTERVAL;
-            /* Hash only exactly AT the boundary; sim_hash covers
-             * sim_tick_no, so equality of tick implies comparability. */
-            if (ns->last_hash_tick != gs->sim_tick_no) continue;
-            slot = ns->hash_ring_n % HASH_RING;
-            ns->hash_ring[slot].tick = gs->sim_tick_no;
-            ns->hash_ring[slot].hash = sim_hash(gs);
-            if (ns->hash_ring_n < HASH_RING) ns->hash_ring_n++;
+void net_on_tick(NetSession *ns, GameState *gs)
+{
+    int i;
+
+    if (!ns || !ns->alive) return;
+
+    /* Refill submission allowances. Banked up to a burst so that a
+     * player clicking quickly, or a frame that delivered several
+     * commands at once, is never what this catches. */
+    if (ns->is_host) {
+        for (i = 0; i < NET_MAX_PEERS; i++) {
+            NetPeer *p = &ns->peers[i];
+            if (!peer_live(p)) continue;
+            p->cmd_budget += CMDS_PER_TICK;
+            if (p->cmd_budget > CMD_BURST) p->cmd_budget = CMD_BURST;
         }
+    }
+
+    if (gs->sim_tick_no % NET_HASH_INTERVAL != 0) return;
+
+    if (ns->is_host) {
+        int slot = (int)(ns->hash_ring_w % (uint64_t)HASH_RING);
+        ns->hash_ring[slot].tick = gs->sim_tick_no;
+        ns->hash_ring[slot].hash = sim_hash(gs);
+        ns->hash_ring_w++;
+        if (ns->hash_ring_n < HASH_RING) ns->hash_ring_n++;
     } else if (ns->world_installed && session_connected(ns)) {
-        /* Report my hash when I complete an interval boundary. */
-        while (ns->last_hash_tick + NET_HASH_INTERVAL <= gs->sim_tick_no) {
-            ns->last_hash_tick += NET_HASH_INTERVAL;
-            if (ns->last_hash_tick != gs->sim_tick_no) continue;
-            {
-                unsigned char p[16];
-                uint64_t t = gs->sim_tick_no, h = sim_hash(gs);
-                memcpy(p, &t, 8);
-                memcpy(p + 8, &h, 8);
-                broadcast(ns, MSG_HASH, p, sizeof(p));
-            }
-        }
+        unsigned char pl[16];
+        uint64_t      t = gs->sim_tick_no, h = sim_hash(gs);
+        memcpy(pl,     &t, 8);
+        memcpy(pl + 8, &h, 8);
+        broadcast(ns, MSG_HASH, pl, sizeof(pl));
     }
 }
 
 int net_submit_local(NetSession *ns, GameState *gs, const Command *c)
 {
+    NetPeer *p;
+
     if (!ns->alive) return 0;   /* fall back to offline stamping */
 
     if (ns->is_host) {
@@ -927,8 +1370,20 @@ int net_submit_local(NetSession *ns, GameState *gs, const Command *c)
         return host_stamp_log_send(ns, gs, c, gs->local_player_id);
     }
 
-    /* Guest: upstream to the authority; it returns stamped. */
-    return send_msg(ns, &ns->peers[0], MSG_CMD, c, (uint32_t)sizeof(*c));
+    /* Guest: upstream to the authority; it returns stamped.
+     *
+     * Claimed either way, even if the send failed. command_submit
+     * treats a 0 here as "the session declined, stamp it locally" —
+     * which on a guest means applying a command the host will never
+     * see, i.e. quietly forking the world off the authoritative log.
+     * A dropped click is a far smaller thing than a divergent world,
+     * and the failed write is not lost information: the next pump sees
+     * the dead socket, tears the session down, and submissions after
+     * that legitimately take the offline path. */
+    p = guest_peer(ns);
+    if (!p) return 0;                  /* session already torn down */
+    send_msg(ns, p, MSG_CMD, c, (uint32_t)sizeof(*c));
+    return 1;
 }
 
 /* ---- attach / detach ---------------------------------------

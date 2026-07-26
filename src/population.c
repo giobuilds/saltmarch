@@ -10,12 +10,25 @@
  * place) automatically changes what pop_update() requires next tick,
  * with zero other state to migrate. RES_COUNT in a needs[] slot means
  * "unused" — same sentinel convention as BuildingDef.consumes[]. */
+/* SUPPLY_CHAIN Phase 3: the two northern BASE tiers, with the needs
+ * the plan gives them. Two things changed from the old ladder.
+ *
+ * Grain stopped being eaten directly. It is milled into Flour and
+ * baked into Bread, which is what makes the Windmill and the Bakehouse
+ * worth building rather than decorative.
+ *
+ * Neither tier upgrades. They are the bottoms of two different lines —
+ * Marshfolk climb to Artisans (Phase 4) and Wrights to Engineers
+ * (Phase 6) — so next_tier is BUILDING_NONE for both, and the confirm
+ * popup correctly reports there is nowhere to go. The Cottage ->
+ * Wright's House edge that used to exist is gone: a Wright's House is
+ * now something you build. */
 static const TierDef TIER_DEFS[] = {
     { BUILDING_HOUSE,
-      { RES_FISH, RES_GRAIN, RES_COUNT, RES_COUNT, RES_COUNT },
-      BUILDING_HOUSE_WORKER, TIER_UPGRADE_COST_GOLD, BUILDING_NONE },
+      { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_NONE },
     { BUILDING_HOUSE_WORKER,
-      { RES_FISH, RES_GRAIN, RES_BEER, RES_COUNT, RES_COUNT },
+      { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))

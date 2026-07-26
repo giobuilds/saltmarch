@@ -371,7 +371,7 @@ already gives an empty category no tab; test_defs now asserts that
 *exactly* the categories known to be empty are, so filling it without
 updating that list fails rather than passes quietly.
 
-## Phase 3 — the two northern base tiers
+## Phase 3 — the two northern base tiers — **DONE**
 
 **Goal:** the first genuinely deep economy on the northern islands.
 
@@ -401,6 +401,44 @@ every good in its needs list is producible from what a
 `PROFILE_TEMPERATE` island plus one neighbour can grow. That assertion
 is the one that catches a chain specified but not reachable, which is
 the failure this plan is most likely to produce.
+
+### As built
+
+Thirteen buildings, thirteen goods, `SAVE_VERSION` 8 → 9. The
+determinism fixture moved as expected: `42affc4b13c29881` →
+`bd365d99e940a1b9`, the UI fixture `9014d728f7720ebc` →
+`2f8399c0b704c114`. Nothing about the save *format* changed — the
+vocabulary did. A v8 log's bytes still parse; its "resource 6" used to
+mean Gold and now means Bricks, which is the harder incompatibility to
+notice and the reason ground rule 5 exists.
+
+**`tests/test_chains.c` is the verify step, generalised.** Rather than
+hard-coding Wrights, it surveys which buildings the real validator will
+place on real generated maps, then takes a fixpoint over the def table
+to get the set of goods that economy can actually make, and asserts
+every tier's needs fall inside it. Five seeds. It also asserts the
+*negative* — a temperate island still cannot brew, so the highland is
+not scenery — and that no good is orphaned in either direction: every
+one has a producer somewhere, and every one is wanted by a tier, a
+building's inputs, or a building's cost. That last check is what will
+catch a half-finished chain in Phases 4-8.
+
+**A balance consequence worth stating plainly.** Marshfolk now want
+Fish, Oilskins and Marsh Gin — faithful to the notes, but it means the
+base tier needs five buildings behind it rather than two, and needs are
+all-or-nothing, so an under-supplied cottage loses a resident every
+`NEEDS_INTERVAL` and empties in about two and a half minutes. The
+intended reading is that you build the chains and *then* the housing,
+which is the lesson the phase exists to teach. It has not been played.
+If the opening turns out to be punishing, the knob is graduated
+happiness in `pop_update` rather than a shorter needs list.
+
+**The upgrade path is temporarily unexercised end-to-end.** Both base
+tiers are terminal until Artisans (Phase 4), so `sim_upgrade_house`'s
+accept path has no content to run on. The rule itself stays proven
+synthetically by `tier_upgrade_check_def`, and test_tier now asserts
+the refusal path jointly through both sim and UI — but the full
+accept wiring comes back under test in Phase 4.
 
 ## Phase 4 — iron, glass, and the Artisans
 

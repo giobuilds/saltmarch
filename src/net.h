@@ -27,7 +27,8 @@
  *     with MSG_WORLD — the full (seed, tick, log), the same shape as a
  *     v6 save — and the guest rebuilds by replay. Never state-patching.
  *   - Joining IS a resync: HELLO -> WELCOME (your player id) ->
- *     MSG_WORLD, then the host grants the joiner a starting island
+ *     MSG_WORLD (a snapshot of the world plus the commands stamped for
+ *     ticks that have not run yet), then the host grants the joiner a starting island
  *     through the funnel (CMD_GRANT_START) if it owns nothing. A client
  *     may ask to resume an identity it held before (net_join's
  *     resume_id, the client's --as N): honoured if that player owns an
@@ -58,8 +59,15 @@ typedef struct NetSession NetSession;
 /* 2: HELLO carries a resume id after the version (MMO Phase 6).
  * 3: Command gained a `seq` field (UI_PLAN M1), so the struct that
  *    crosses the wire is a different size — old and new peers must not
- *    try to talk. */
-#define NET_PROTO_VERSION     3u
+ *    try to talk.
+ * 4: MSG_PING. Liveness is no longer inferred from MSG_HASH, so a peer
+ *    that does not send pings now looks idle and gets dropped (see
+ *    SERVER.md's transport hardening plan).
+ * 5: MSG_WORLD carries a SNAPSHOT and the pending tail instead of the
+ *    seed and the whole command log, so joining costs what the world
+ *    weighs rather than how long it has existed (SERVER.md, "Log
+ *    truncation"). Same message, entirely different payload. */
+#define NET_PROTO_VERSION     5u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
@@ -122,8 +130,30 @@ void net_close(NetSession *ns);
 int net_pump(NetSession *ns, GameState *gs);
 
 /* Call once per frame AFTER client_update: the host broadcasts the new
- * tick authorisation and both sides emit any due hash report. */
+ * tick authorisation. */
 void net_after_update(NetSession *ns, GameState *gs);
+
+/* Call once per COMPLETED sim tick, from whichever loop is running them
+ * (client.c's fixed-timestep pump, the server's clock). Two jobs, both
+ * of which have to happen AT a tick rather than once a frame:
+ *
+ *   - the desync check. sim_hash describes the world as it is right
+ *     now, so a hash for tick T can only be taken while the world is at
+ *     T. This used to be attempted after the fact, by testing whether
+ *     the frame happened to land exactly on a boundary — and any frame
+ *     that ran two ticks stepped straight over one. The server's
+ *     accumulator is deliberately unclamped, so its catch-up bursts
+ *     skipped boundaries wholesale, which is precisely when a
+ *     divergence most wants catching. Boundaries are now
+ *     `tick % NET_HASH_INTERVAL == 0`: an absolute property of the
+ *     tick, identical on both sides, independent of when either joined.
+ *   - refilling each peer's command budget, which is denominated in
+ *     ticks because that is the rate the world actually runs at.
+ *
+ * Safe to call with ns == NULL. Not called during a join replay: that
+ * is catch-up, not live play, and a hash per 50 ticks of it would be
+ * reporting on a world the host already knows the shape of. */
+void net_on_tick(NetSession *ns, GameState *gs);
 
 /* Point `gs` at a session (or, with ns == NULL / net_detach, at none):
  * sets gs->net and installs the command-routing hook the sim calls
