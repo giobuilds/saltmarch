@@ -48,14 +48,17 @@ static void step(NetSession *sn, GameState *sg,
     if (an) net_pump(an, ag);
     if (bn) net_pump(bn, bg);
 
-    while (server_ticks-- > 0) sim_run_one_tick(sg);
+    /* net_on_tick per COMPLETED tick, exactly as both real loops do it
+     * (client.c's pump and the server's clock): it is where the desync
+     * hash is taken and where command budgets refill. */
+    while (server_ticks-- > 0) { sim_run_one_tick(sg); net_on_tick(sn, sg); }
 
     while (an && net_tick_allowed(an, ag->sim_tick_no) &&
            ag->sim_tick_no < sg->sim_tick_no)
-        sim_run_one_tick(ag);
+        { sim_run_one_tick(ag); net_on_tick(an, ag); }
     while (bn && net_tick_allowed(bn, bg->sim_tick_no) &&
            bg->sim_tick_no < sg->sim_tick_no)
-        sim_run_one_tick(bg);
+        { sim_run_one_tick(bg); net_on_tick(bn, bg); }
 
     if (sn) net_after_update(sn, sg);
     if (an) net_after_update(an, ag);

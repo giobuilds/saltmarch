@@ -66,6 +66,28 @@ if ! kill -0 "$HOST_PID" 2>/dev/null; then
 fi
 pass "server started and is listening"
 
+# ---- adversarial probes over a real socket -------------------
+# tests/test_net_hardening.c covers what the in-memory transport can
+# reach. These two cannot be expressed there: both are about a
+# connection MISbehaving, and the mem transport has neither a socket to
+# hold open nor a way to say "connect, then don't". Skipped rather than
+# failed where bash has no /dev/tcp.
+#
+# The protocol version is read out of the header so this cannot rot
+# into silently testing a version mismatch instead of what it means to.
+PROTO=$(sed -n 's/^#define NET_PROTO_VERSION *\([0-9]*\)u*.*/\1/p' \
+        "$(dirname "$0")/../src/net.h")
+RAW_OK=0
+
+# A connection that connects and says nothing, held open for the rest
+# of the run. It should be dropped at the handshake deadline instead of
+# occupying one of NET_MAX_PEERS slots until the world ends.
+if [ -n "$PROTO" ] && exec 9<>"/dev/tcp/127.0.0.1/$PORT" 2>/dev/null; then
+    RAW_OK=1
+else
+    echo "  skip: no /dev/tcp — raw socket probes not run"
+fi
+
 # A real client, headless. --as 1 claims the founding island, which is
 # the identity a fresh world leaves unheld on a dedicated server.
 SDL_VIDEODRIVER=dummy "$GAME_BIN" --join "127.0.0.1:$PORT" --as 1 \
@@ -75,8 +97,32 @@ sleep 6
 kill -TERM "$CLI_PID" 2>/dev/null
 wait "$CLI_PID" 2>/dev/null
 
+# One connection, two introductions. Each HELLO used to be answered
+# with a fresh identity, another copy of the whole command log, and
+# another starting island — so a single socket could take the entire
+# archipelago by repeating itself.
+if [ "$RAW_OK" -eq 1 ]; then
+    if exec 8<>"/dev/tcp/127.0.0.1/$PORT" 2>/dev/null; then
+        # [type=1][len=8 LE][proto u32 LE][resume u32 LE = PLAYER_NONE].
+        # Written straight to the fd in three pieces rather than built
+        # in a variable: the frame is mostly NUL bytes, and a shell
+        # variable cannot hold those — collecting it first sends a
+        # short, corrupt frame and tests the length guard by accident.
+        send_hello() {
+            printf '\x01\x08\x00\x00\x00'          >&8
+            printf "\\x$(printf '%02x' "$PROTO")"  >&8
+            printf '\x00\x00\x00\x00\x00\x00\x00'  >&8
+        }
+        send_hello 2>/dev/null || true
+        send_hello 2>/dev/null || true
+        sleep 2
+        exec 8<&- 2>/dev/null || true
+    fi
+fi
+
 wait "$HOST_PID" 2>/dev/null
 HOST_RC=$?
+exec 9<&- 2>/dev/null || true
 
 echo "--- server output ---"
 sed 's/^/  | /' "$SRVLOG"
@@ -106,6 +152,20 @@ if grep -q "stopping at tick 200" "$SRVLOG"; then
     pass "server kept ticking through the client's departure"
 else
     fail "server did not reach its tick target"
+fi
+
+if [ "$RAW_OK" -eq 1 ]; then
+    if grep -q "never introduced itself" "$SRVLOG"; then
+        pass "a connection that never says hello is dropped"
+    else
+        fail "a silent connection held its slot for the whole run"
+    fi
+
+    if grep -q "said hello twice" "$SRVLOG"; then
+        pass "a second HELLO on one connection is refused"
+    else
+        fail "one connection could introduce itself twice"
+    fi
 fi
 
 if [ -f "$WORLD" ]; then
