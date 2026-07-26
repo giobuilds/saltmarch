@@ -112,6 +112,43 @@ typedef enum {
     RES_LOBSTER,        /* Lobster Pots     (coast)                    */
     RES_BANQUET,        /* Lobster + Preserves -> Fine Kitchen (Eng.)  */
 
+    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ----
+     * The third line, both halves, and the phase where the southern
+     * islands stop being a novelty and become what the top of the
+     * economy runs on. Every Merchants good starts in the south.
+     *
+     * It also settles the plan's last loose ends: Sails, Wool Cloaks
+     * and Plantain Fry appear in the chains table but in no tier's
+     * needs. Rather than ship producers nothing consumes, Sails became
+     * what a Shipyard is built from, and the other two joined the
+     * Merchants list -- which took it to six and MAX_TIER_GOODS with
+     * it. */
+    RES_COFFEE_BEANS,   /* Coffee Grove      (jungle)                  */
+    RES_COFFEE,         /* Beans          -> Roastery      (Merchants) */
+    RES_CANE,           /* Cane Field        (plantation)              */
+    RES_SUGAR,          /* Cane           -> Sugar Refinery            */
+    RES_RUM,            /* Sugar + Planks -> Rum House     (Merchants) */
+    RES_MAIZE,          /* Maize Field       (plantation)              */
+    RES_FLATBREAD,      /* Maize + Cattle -> Flatbread Kit. (Merchants)*/
+    RES_ALPACA_WOOL,    /* Alpaca Pasture    (southern grazing)        */
+    RES_FELT,           /* Cotton + Alpaca -> Felt Works               */
+    RES_MARSH_HATS,     /* Felt           -> Hatter        (Merchants) */
+    RES_WOOL_CLOAKS,    /* Alpaca Wool    -> Darning House (Merchants) */
+    RES_PLANTAIN,       /* Plantain Grove    (jungle)                  */
+    RES_FISH_OIL,       /* Fish           -> Fish Oil Rendery          */
+    RES_PLANTAIN_FRY,   /* Plantain+Oil   -> Fry Kitchen   (Merchants) */
+    RES_SAILS,          /* Cloth          -> Sail Loft   (Shipyard cost)*/
+    RES_GRAPES,         /* Vineyard          (highland)                */
+    RES_SPARKLING_WINE, /* Grapes         -> Sparkling Cellar (Invest.)*/
+    RES_TOBACCO,        /* Tobacco Field     (plantation)              */
+    RES_CIGARS,         /* Tobacco+Planks -> Cigar House   (Investors) */
+    RES_COCOA,          /* Cocoa Grove       (jungle)                  */
+    RES_CHOCOLATE,      /* Cocoa + Sugar  -> Chocolate Hse (Investors) */
+    RES_PEARLS,         /* Pearl Beds        (atoll deposit)           */
+    RES_JEWELLERY,      /* Gold Ore+Pearls -> Jeweller     (Investors) */
+    RES_FLOWERS,        /* Flower Field      (temperate)               */
+    RES_PERFUME,        /* Flowers+Gin    -> Perfumery     (Investors) */
+
     RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;

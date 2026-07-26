@@ -204,6 +204,25 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
+    /* Merchants and Investors (Phase 7). Every Merchants good begins
+     * in the south, and Investors want the two rarest deposits there
+     * are, so both are asked of the whole archipelago. */
+    for (s = 0; s < sizeof(SEEDS) / sizeof(SEEDS[0]); s++) {
+        char msg[96];
+        int  unmet = 0;
+
+        survey(NORTH_SOUTH, (int)(sizeof NORTH_SOUTH / sizeof NORTH_SOUTH[0]),
+               SEEDS[s], placeable);
+        reachable_goods(placeable, makeable);
+        report_tier(tier_def_for(BUILDING_HOUSE_MERCHANT), makeable,
+                    "from the whole archipelago", &unmet);
+        report_tier(tier_def_for(BUILDING_HOUSE_INVESTOR), makeable,
+                    "from the whole archipelago", &unmet);
+        snprintf(msg, sizeof(msg),
+                 "seed %u: Merchants and Investors are satisfiable", SEEDS[s]);
+        CHECK(unmet == 0, msg);
+    }
+
     /* And the negatives, which are what make the other climates matter
      * rather than decorate. The home island alone must NOT be able to
      * brew, and the whole NORTH must not be able to make a Fur Coat —
@@ -246,6 +265,23 @@ static void test_tiers_are_satisfiable(void)
         reachable_goods(placeable, makeable);
         CHECK(!makeable[RES_GRAMOPHONES],
               "no jungle, no shellac, no Gramophones");
+        CHECK(!makeable[RES_COFFEE],
+              "and no jungle, no coffee, so no Merchants either");
+    }
+
+    /* Investors lean on the two rarest deposits in the world, one of
+     * which is the only argument for settling an atoll at all. */
+    {
+        static const MapProfile NO_ATOLL[] = {
+            PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND,
+            PROFILE_PLANTATION, PROFILE_JUNGLE
+        };
+        survey(NO_ATOLL, (int)(sizeof NO_ATOLL / sizeof NO_ATOLL[0]),
+               4242u, placeable);
+        reachable_goods(placeable, makeable);
+        CHECK(!makeable[RES_PEARLS] && !makeable[RES_JEWELLERY],
+              "no atoll, no pearls, no Jewellery — which is what an "
+              "atoll is for");
     }
 }
 

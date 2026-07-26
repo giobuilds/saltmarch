@@ -209,6 +209,15 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * PLACE_NEEDS_COAST for the obvious reason. */
     [BUILDING_SHIPYARD] = {
         .name = "Shipyard",
+        /* Sails since SUPPLY_CHAIN Phase 7, which is deliberately a
+         * soft gate rather than a hard one. Sails need Cloth, Cloth
+         * needs Cotton, and cotton grows only in the south -- which
+         * you need a ship to reach. The faction stocks every good, so
+         * a first Shipyard buys its canvas and every one after it can
+         * be fitted from a Sail Loft of your own. That is the
+         * gold-only escape hatch BUY_PRICE's comment describes, doing
+         * the most load-bearing job it has ever had: keep it stocked,
+         * or this becomes a deadlock rather than an expense. */
         .category = BCAT_MARITIME,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_NEEDS_COAST,
@@ -216,7 +225,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .produces = RES_COUNT, .produce_amt = 0,
         .consumes = { RES_COUNT, RES_COUNT, RES_COUNT }, .consume_amt = { 0, 0, 0 },
         .tick_seconds = 0.0f,
-        .cost = { [RES_WOOD] = 40, [RES_GOLD] = 250 },
+        .cost = { [RES_PLANKS] = 15, [RES_SAILS] = 4, [RES_GOLD] = 250 },
         .hud_placeable = 1
     },
     /* Was Worker's House, reachable only by upgrading a Marsh Cottage.
@@ -273,7 +282,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
 
     [BUILDING_SAWMILL] = {
         .name = "Sawmill",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 150, .col_g = 115, .col_b = 70,
@@ -408,7 +417,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_TALLOW_WORKS] = {
         .name = "Tallow Works",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 200, .col_g = 190, .col_b = 150,
@@ -434,7 +443,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_WINDMILL] = {
         .name = "Windmill",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 205, .col_g = 195, .col_b = 165,
@@ -620,7 +629,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_SPECTACLE_SHOP] = {
         .name = "Spectacle Shop",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_LUXURY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 205, .col_g = 190, .col_b = 120,
@@ -752,7 +761,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_SPINNING_MILL] = {
         .name = "Spinning Mill",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 200, .col_g = 195, .col_b = 175,
@@ -781,7 +790,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_FURRIER] = {
         .name = "Furrier",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_LUXURY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 150, .col_g = 110, .col_b = 120,
@@ -821,7 +830,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_WIRE_MILL] = {
         .name = "Wire Mill",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 165, .col_g = 165, .col_b = 175,
@@ -834,7 +843,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_SPRING_WORKS] = {
         .name = "Spring Works",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_REFINERY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 150, .col_g = 155, .col_b = 145,
@@ -863,7 +872,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * are on the shelf. */
     [BUILDING_WATCHMAKERS] = {
         .name = "Watchmaker's",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_LUXURY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 215, .col_g = 190, .col_b = 110,
@@ -919,7 +928,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_FINE_KITCHEN] = {
         .name = "Fine Kitchen",
-        .category = BCAT_WORKSHOP,
+        .category = BCAT_LUXURY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
         .col_r = 215, .col_g = 150, .col_b = 140,
@@ -944,6 +953,386 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_STEEL_BEAMS] = 8, [RES_GOLD] = 320 },
         .hud_placeable = 0
     },
+
+    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ----
+     *
+     * The third line, both halves. Every Merchants good begins in the
+     * south -- coffee and plantains in the jungle, cane, maize and
+     * alpaca on the plantations -- so the climate Phase 5 opened stops
+     * being a novelty and becomes what the top of the economy runs on.
+     *
+     * The Investors goods are the scarcity tier: grapes grow only on
+     * the highland, pearls lie only off an atoll, and Jewellery wants
+     * gold ore and pearls together, which is the two rarest deposits
+     * in the world in one building.
+     *
+     * Sails, Wool Cloaks and Plantain Fry are here because the plan
+     * listed their chains and no tier ever asked for them. A producer
+     * nothing consumes is a chain someone forgot to finish, so rather
+     * than leave three of those in the table, Sails became what a
+     * Shipyard is built from and the other two joined the Merchants
+     * list -- taking it to six needs, and MAX_TIER_GOODS with it. */
+    [BUILDING_COFFEE_GROVE] = {
+        .name = "Coffee Grove",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_COFFEE,
+        .col_r = 90, .col_g = 70, .col_b = 50,
+        .produces = RES_COFFEE_BEANS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_ROASTERY] = {
+        .name = "Roastery",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 110, .col_g = 80, .col_b = 60,
+        .produces = RES_COFFEE, .produce_amt = 1,
+        .consumes = { RES_COFFEE_BEANS, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 170 },
+        .hud_placeable = 1
+    },
+    [BUILDING_CANE_FIELD] = {
+        .name = "Cane Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_CANE,
+        .col_r = 170, .col_g = 190, .col_b = 90,
+        .produces = RES_CANE, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SUGAR_REFINERY] = {
+        .name = "Sugar Refinery",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 225, .col_g = 220, .col_b = 205,
+        .produces = RES_SUGAR, .produce_amt = 1,
+        .consumes = { RES_CANE, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 170 },
+        .hud_placeable = 1
+    },
+    [BUILDING_RUM_HOUSE] = {
+        .name = "Rum House",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 160, .col_g = 90, .col_b = 50,
+        .produces = RES_RUM, .produce_amt = 1,
+        .consumes = { RES_SUGAR, RES_PLANKS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 12.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 240 },
+        .hud_placeable = 1
+    },
+    [BUILDING_MAIZE_FIELD] = {
+        .name = "Maize Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_MAIZE,
+        .col_r = 210, .col_g = 190, .col_b = 80,
+        .produces = RES_MAIZE, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FLATBREAD_KITCHEN] = {
+        .name = "Flatbread Kitchen",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 220, .col_g = 180, .col_b = 130,
+        .produces = RES_FLATBREAD, .produce_amt = 1,
+        .consumes = { RES_MAIZE, RES_CATTLE, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 200 },
+        .hud_placeable = 1
+    },
+    [BUILDING_ALPACA_PASTURE] = {
+        .name = "Alpaca Pasture",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_ALPACA,
+        .col_r = 190, .col_g = 175, .col_b = 160,
+        .produces = RES_ALPACA_WOOL, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 12, [RES_GOLD] = 120 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FELT_WORKS] = {
+        .name = "Felt Works",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 180, .col_g = 170, .col_b = 180,
+        .produces = RES_FELT, .produce_amt = 1,
+        .consumes = { RES_COTTON, RES_ALPACA_WOOL, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 10.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 190 },
+        .hud_placeable = 1
+    },
+    [BUILDING_HATTER] = {
+        .name = "Hatter",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 120, .col_g = 100, .col_b = 110,
+        .produces = RES_MARSH_HATS, .produce_amt = 1,
+        .consumes = { RES_FELT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 13.0f,
+        .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 260 },
+        .hud_placeable = 1
+    },
+    [BUILDING_DARNING_HOUSE] = {
+        .name = "Darning House",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 170, .col_g = 140, .col_b = 150,
+        .produces = RES_WOOL_CLOAKS, .produce_amt = 1,
+        .consumes = { RES_ALPACA_WOOL, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 200 },
+        .hud_placeable = 1
+    },
+    [BUILDING_PLANTAIN_GROVE] = {
+        .name = "Plantain Grove",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_PLANTAIN,
+        .col_r = 140, .col_g = 180, .col_b = 90,
+        .produces = RES_PLANTAIN, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FISH_OIL_RENDERY] = {
+        .name = "Fish Oil Rendery",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 150, .col_g = 155, .col_b = 120,
+        .produces = RES_FISH_OIL, .produce_amt = 1,
+        .consumes = { RES_FISH, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_PLANKS] = 8, [RES_GOLD] = 150 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FRY_KITCHEN] = {
+        .name = "Fry Kitchen",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 215, .col_g = 175, .col_b = 95,
+        .produces = RES_PLANTAIN_FRY, .produce_amt = 1,
+        .consumes = { RES_PLANTAIN, RES_FISH_OIL, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 200 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SAIL_LOFT] = {
+        .name = "Sail Loft",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .col_r = 230, .col_g = 230, .col_b = 220,
+        .produces = RES_SAILS, .produce_amt = 1,
+        .consumes = { RES_CLOTH, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 11.0f,
+        .cost = { [RES_PLANKS] = 12, [RES_GOLD] = 210 },
+        .hud_placeable = 1
+    },
+    [BUILDING_VINEYARD] = {
+        .name = "Vineyard",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_GRAPES,
+        .col_r = 130, .col_g = 90, .col_b = 140,
+        .produces = RES_GRAPES, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 120 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SPARKLING_CELLAR] = {
+        .name = "Sparkling Cellar",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 190, .col_b = 215,
+        .produces = RES_SPARKLING_WINE, .produce_amt = 1,
+        .consumes = { RES_GRAPES, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 15.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 300 },
+        .hud_placeable = 1
+    },
+    [BUILDING_TOBACCO_FIELD] = {
+        .name = "Tobacco Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_TOBACCO,
+        .col_r = 150, .col_g = 160, .col_b = 80,
+        .produces = RES_TOBACCO, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_CIGAR_HOUSE] = {
+        .name = "Cigar House",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 120, .col_g = 90, .col_b = 60,
+        .produces = RES_CIGARS, .produce_amt = 1,
+        .consumes = { RES_TOBACCO, RES_PLANKS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 280 },
+        .hud_placeable = 1
+    },
+    [BUILDING_COCOA_GROVE] = {
+        .name = "Cocoa Grove",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_COCOA,
+        .col_r = 110, .col_g = 80, .col_b = 60,
+        .produces = RES_COCOA, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 110 },
+        .hud_placeable = 1
+    },
+    [BUILDING_CHOCOLATE_HOUSE] = {
+        .name = "Chocolate House",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 95, .col_g = 60, .col_b = 45,
+        .produces = RES_CHOCOLATE, .produce_amt = 1,
+        .consumes = { RES_COCOA, RES_SUGAR, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 280 },
+        .hud_placeable = 1
+    },
+    [BUILDING_PEARL_BEDS] = {
+        .name = "Pearl Beds",
+        .category = BCAT_EXTRACTION,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_COAST,
+        .needs_adjacent_deposit = DEPOSIT_PEARLS,
+        .col_r = 225, .col_g = 225, .col_b = 235,
+        .produces = RES_PEARLS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 240 },
+        .hud_placeable = 1
+    },
+    [BUILDING_JEWELLER] = {
+        .name = "Jeweller",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 235, .col_g = 205, .col_b = 110,
+        .produces = RES_JEWELLERY, .produce_amt = 1,
+        .consumes = { RES_GOLD_ORE, RES_PEARLS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 20.0f,
+        .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 420 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FLOWER_FIELD] = {
+        .name = "Flower Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_FLOWERS,
+        .col_r = 215, .col_g = 140, .col_b = 190,
+        .produces = RES_FLOWERS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_PERFUMERY] = {
+        .name = "Perfumery",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 230, .col_g = 180, .col_b = 210,
+        .produces = RES_PERFUME, .produce_amt = 1,
+        .consumes = { RES_FLOWERS, RES_MARSH_GIN, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 16.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 340 },
+        .hud_placeable = 1
+    },
+    [BUILDING_HOUSE_MERCHANT] = {
+        .name = "Merchant House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 215, .col_g = 200, .col_b = 155,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 320 },
+        .hud_placeable = 1
+    },
+    [BUILDING_HOUSE_INVESTOR] = {
+        .name = "Investor's House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 230, .col_g = 215, .col_b = 235,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 500 },
+        .hud_placeable = 0
+    },
 };
 
 const char *building_category_name(BuildingCategory c)
@@ -955,6 +1344,8 @@ const char *building_category_name(BuildingCategory c)
         [BCAT_EXTRACTION]     = "Extraction",
         [BCAT_WORKSHOP]       = "Workshops",
         [BCAT_FACTORY]        = "Factories",
+        [BCAT_REFINERY]       = "Refineries",
+        [BCAT_LUXURY]         = "Luxuries",
         [BCAT_HOUSING]        = "Housing",
         [BCAT_INFRASTRUCTURE] = "Infrastructure",
         [BCAT_MARITIME]       = "Maritime"

@@ -33,7 +33,12 @@
 #include "ui_kit.h"
 #include "ui_snapshot.h"
 
-#define HUD_MAX_ENTRIES  64
+/* Every placeable building, not every building that fits on screen:
+ * hud_view_build fills this and hud_build then pages a tab's worth out
+ * of it. SUPPLY_CHAIN Phase 7 took the table past 64 and silently
+ * truncated the tail, which is how test_hud noticed. Sized with room
+ * for Phase 8 rather than exactly. */
+#define HUD_MAX_ENTRIES  128
 #define HUD_ENTRY_NAME   24
 
 /* One placeable building, as the bar sees it. */

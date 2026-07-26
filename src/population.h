@@ -57,7 +57,11 @@
 
 /* Most goods any single population tier needs at once. Raised from 3
  * in SUPPLY_CHAIN Phase 2: Artisans and Investors both list five. */
-#define MAX_TIER_GOODS 5
+/* Six since SUPPLY_CHAIN Phase 7. Phase 2 set it to five from the
+ * widest list the plan then had; Merchants reached six when Wool
+ * Cloaks and Plantain Fry were given a tier rather than left as chains
+ * nothing eats. */
+#define MAX_TIER_GOODS 6
 
 /* One population tier's need-list, keyed by the house BuildingType
  * that represents it. RES_COUNT in a needs[] slot means "unused" —
