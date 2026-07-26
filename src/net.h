@@ -125,8 +125,30 @@ void net_close(NetSession *ns);
 int net_pump(NetSession *ns, GameState *gs);
 
 /* Call once per frame AFTER client_update: the host broadcasts the new
- * tick authorisation and both sides emit any due hash report. */
+ * tick authorisation. */
 void net_after_update(NetSession *ns, GameState *gs);
+
+/* Call once per COMPLETED sim tick, from whichever loop is running them
+ * (client.c's fixed-timestep pump, the server's clock). Two jobs, both
+ * of which have to happen AT a tick rather than once a frame:
+ *
+ *   - the desync check. sim_hash describes the world as it is right
+ *     now, so a hash for tick T can only be taken while the world is at
+ *     T. This used to be attempted after the fact, by testing whether
+ *     the frame happened to land exactly on a boundary — and any frame
+ *     that ran two ticks stepped straight over one. The server's
+ *     accumulator is deliberately unclamped, so its catch-up bursts
+ *     skipped boundaries wholesale, which is precisely when a
+ *     divergence most wants catching. Boundaries are now
+ *     `tick % NET_HASH_INTERVAL == 0`: an absolute property of the
+ *     tick, identical on both sides, independent of when either joined.
+ *   - refilling each peer's command budget, which is denominated in
+ *     ticks because that is the rate the world actually runs at.
+ *
+ * Safe to call with ns == NULL. Not called during a join replay: that
+ * is catch-up, not live play, and a hash per 50 ticks of it would be
+ * reporting on a world the host already knows the shape of. */
+void net_on_tick(NetSession *ns, GameState *gs);
 
 /* Point `gs` at a session (or, with ns == NULL / net_detach, at none):
  * sets gs->net and installs the command-routing hook the sim calls

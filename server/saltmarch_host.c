@@ -236,6 +236,11 @@ int main(int argc, char *argv[])
          * exactly why there is no separate "offline production" path. */
         while (acc_ns >= SIM_TICK_NS) {
             sim_run_one_tick(gs);
+            /* Inside the loop, not after it: catch-up here is
+             * unbounded by design, and hashing after the fact meant a
+             * burst of ticks recorded no desync baseline at all for the
+             * boundaries it flew past. */
+            net_on_tick(ns, gs);
             acc_ns -= SIM_TICK_NS;
 
             if (run_ticks && gs->sim_tick_no - start_tick >= run_ticks) {

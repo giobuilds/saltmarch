@@ -335,10 +335,18 @@ struct NetSession {
     uint32_t resume_id;       /* identity to ask for at join, 0 = any   */
 
     /* host: my hash at recent NET_HASH_INTERVAL boundaries, to compare
-     * against guests' reports (guests run behind us). */
+     * against guests' reports (guests run behind us).
+     *
+     * The write cursor is separate from the fill count on purpose: they
+     * were one field, and since the count stopped at HASH_RING the slot
+     * index stopped with it — every boundary after the sixteenth
+     * overwrote slot 0 while slots 1-15 kept ticks from the world's
+     * first eighty seconds forever. A ring of sixteen that remembers
+     * one is not a ring, and the reports that missed it were discarded
+     * as "too old" in silence. */
     struct { uint64_t tick, hash; } hash_ring[HASH_RING];
-    int      hash_ring_n;
-    uint64_t last_hash_tick;  /* both: last boundary hashed/reported    */
+    int      hash_ring_n;     /* how many slots hold anything yet       */
+    uint64_t hash_ring_w;     /* monotonic; the next slot to write      */
 
     char     status[64];
 };
@@ -346,6 +354,17 @@ struct NetSession {
 static int peer_live(const NetPeer *p)
 {
     return p->in_use && (p->is_mem || p->fd != BAD_SOCK);
+}
+
+/* A guest's one connection: the host. Was written as `&ns->peers[0]`,
+ * which is true only because a fresh session allocates slot 0 first —
+ * a fact nothing enforced and a reconnect need not preserve. */
+static NetPeer *guest_peer(NetSession *ns)
+{
+    int i;
+    for (i = 0; i < NET_MAX_PEERS; i++)
+        if (peer_live(&ns->peers[i])) return &ns->peers[i];
+    return NULL;
 }
 
 static int session_connected(const NetSession *ns)
@@ -808,7 +827,6 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
          * construction; later ticks wait for MSG_TICK_AUTH. */
         ns->authorized_tick = tick;
         ns->world_installed = 1;
-        ns->last_hash_tick  = tick;
         sim_log("net: world installed at tick %llu",
                 (unsigned long long)tick);
         break;
@@ -1125,38 +1143,34 @@ void net_after_update(NetSession *ns, GameState *gs)
 
         if (session_connected(ns))
             broadcast(ns, MSG_TICK_AUTH, &horizon, sizeof(horizon));
+    }
+}
 
-        /* Record my hash at each interval boundary crossed, for
-         * comparison when a (lagging) guest's report arrives. */
-        while (ns->last_hash_tick + NET_HASH_INTERVAL <= gs->sim_tick_no) {
-            int slot;
-            ns->last_hash_tick += NET_HASH_INTERVAL;
-            /* Hash only exactly AT the boundary; sim_hash covers
-             * sim_tick_no, so equality of tick implies comparability. */
-            if (ns->last_hash_tick != gs->sim_tick_no) continue;
-            slot = ns->hash_ring_n % HASH_RING;
-            ns->hash_ring[slot].tick = gs->sim_tick_no;
-            ns->hash_ring[slot].hash = sim_hash(gs);
-            if (ns->hash_ring_n < HASH_RING) ns->hash_ring_n++;
-        }
+void net_on_tick(NetSession *ns, GameState *gs)
+{
+    if (!ns || !ns->alive) return;
+
+    if (gs->sim_tick_no % NET_HASH_INTERVAL != 0) return;
+
+    if (ns->is_host) {
+        int slot = (int)(ns->hash_ring_w % (uint64_t)HASH_RING);
+        ns->hash_ring[slot].tick = gs->sim_tick_no;
+        ns->hash_ring[slot].hash = sim_hash(gs);
+        ns->hash_ring_w++;
+        if (ns->hash_ring_n < HASH_RING) ns->hash_ring_n++;
     } else if (ns->world_installed && session_connected(ns)) {
-        /* Report my hash when I complete an interval boundary. */
-        while (ns->last_hash_tick + NET_HASH_INTERVAL <= gs->sim_tick_no) {
-            ns->last_hash_tick += NET_HASH_INTERVAL;
-            if (ns->last_hash_tick != gs->sim_tick_no) continue;
-            {
-                unsigned char pl[16];
-                uint64_t t = gs->sim_tick_no, h = sim_hash(gs);
-                memcpy(pl, &t, 8);
-                memcpy(pl + 8, &h, 8);
-                broadcast(ns, MSG_HASH, pl, sizeof(pl));
-            }
-        }
+        unsigned char pl[16];
+        uint64_t      t = gs->sim_tick_no, h = sim_hash(gs);
+        memcpy(pl,     &t, 8);
+        memcpy(pl + 8, &h, 8);
+        broadcast(ns, MSG_HASH, pl, sizeof(pl));
     }
 }
 
 int net_submit_local(NetSession *ns, GameState *gs, const Command *c)
 {
+    NetPeer *p;
+
     if (!ns->alive) return 0;   /* fall back to offline stamping */
 
     if (ns->is_host) {
@@ -1164,8 +1178,20 @@ int net_submit_local(NetSession *ns, GameState *gs, const Command *c)
         return host_stamp_log_send(ns, gs, c, gs->local_player_id);
     }
 
-    /* Guest: upstream to the authority; it returns stamped. */
-    return send_msg(ns, &ns->peers[0], MSG_CMD, c, (uint32_t)sizeof(*c));
+    /* Guest: upstream to the authority; it returns stamped.
+     *
+     * Claimed either way, even if the send failed. command_submit
+     * treats a 0 here as "the session declined, stamp it locally" —
+     * which on a guest means applying a command the host will never
+     * see, i.e. quietly forking the world off the authoritative log.
+     * A dropped click is a far smaller thing than a divergent world,
+     * and the failed write is not lost information: the next pump sees
+     * the dead socket, tears the session down, and submissions after
+     * that legitimately take the offline path. */
+    p = guest_peer(ns);
+    if (!p) return 0;                  /* session already torn down */
+    send_msg(ns, p, MSG_CMD, c, (uint32_t)sizeof(*c));
+    return 1;
 }
 
 /* ---- attach / detach ---------------------------------------
