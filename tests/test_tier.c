@@ -216,14 +216,24 @@ static void test_real_table(void)
           tier_def_for(BUILDING_HOUSE)->next_tier == BUILDING_HOUSE_ARTISAN,
           "a Marsh Cottage climbs to Artisans");
     CHECK(tier_def_for(BUILDING_HOUSE_WORKER) != NULL &&
-          tier_def_for(BUILDING_HOUSE_WORKER)->next_tier == BUILDING_NONE,
-          "a Wright's House still has nowhere to climb — Engineers is Phase 6");
+          tier_def_for(BUILDING_HOUSE_WORKER)->next_tier ==
+              BUILDING_HOUSE_ENGINEER,
+          "a Wright's House climbs to Engineers (Phase 6)");
     CHECK(tier_def_for(BUILDING_HOUSE_ARTISAN) != NULL &&
           tier_def_for(BUILDING_HOUSE_ARTISAN)->next_tier == BUILDING_NONE,
-          "and Artisans is the top of that line for now");
-    CHECK(tier_def_for(BUILDING_HOUSE_WORKER) != NULL &&
-          tier_def_for(BUILDING_HOUSE_WORKER)->next_tier == BUILDING_NONE,
-          "nor a Wright's House — Engineers is Phase 6");
+          "and Artisans is the top of the first line");
+    CHECK(tier_def_for(BUILDING_HOUSE_ENGINEER) != NULL &&
+          tier_def_for(BUILDING_HOUSE_ENGINEER)->next_tier == BUILDING_NONE,
+          "as Engineers is of the second");
+    /* Both lines are now two deep and BOTH bases are still built
+     * rather than upgraded into — which is the three-line model's
+     * whole shape, and what a ladder would have quietly undone. */
+    CHECK(BUILDING_DEFS[BUILDING_HOUSE].hud_placeable &&
+          BUILDING_DEFS[BUILDING_HOUSE_WORKER].hud_placeable,
+          "and both base tiers are still things you build");
+    CHECK(!BUILDING_DEFS[BUILDING_HOUSE_ARTISAN].hud_placeable &&
+          !BUILDING_DEFS[BUILDING_HOUSE_ENGINEER].hud_placeable,
+          "while both upper tiers are only ever upgraded into");
     CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].hud_placeable,
           "which is why a Wright's House is something you build");
     CHECK(tier_def_for(BUILDING_WAREHOUSE) == NULL,

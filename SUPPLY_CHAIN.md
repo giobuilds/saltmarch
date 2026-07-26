@@ -568,7 +568,7 @@ the screen through the real hit-test and requires all eight nodes to
 own a region and all eight regions to be the same size, which is what
 catches partial occlusion that "everything has some area" would miss.
 
-## Phase 6 — Engineers
+## Phase 6 — Engineers — **DONE**
 
 Wire Mill, Spring Works, Lamp Works, **Watchmaker's (three inputs)**,
 Gramophone Works, Lobster Pots, Fine Kitchen. **Engineers** arrives as
@@ -576,6 +576,48 @@ the upgrade of a Wright's House, completing the second line.
 
 **Verify:** the three-input path in real content, and that Phase 2's
 `MAX_BUILDING_INPUTS` did not need raising again.
+
+### As built
+
+Ten buildings, nine goods, `SAVE_VERSION` 12 → 13 and
+`NET_PROTO_VERSION` 6 → 7. Fixtures: `8fb5de71e1b16549` →
+`f327814cce6d4a61`, UI `45aefaf14e428a94` → `d63fcd959b5afe9c`.
+
+**Engineers are the first tier that needs the whole archipelago.**
+Pocket Watches want highland gold ore, Gramophones want jungle shellac,
+a Banquet wants a coast for its lobster, and Lamps want the northern
+glass and iron behind everything else. `test_chains` asserts it from
+both ends: satisfiable across the archipelago on five seeds, and
+*unsatisfiable* with the highland removed (no Pocket Watches) or the
+jungle removed (no Gramophones).
+
+**The three-input path is exercised at last.** The Watchmaker's (Gold
+Ore + Glass + Springs) and the Gramophone Works (Planks + Brass +
+Shellac) are the first shipped buildings to fill all three slots.
+`building_missing_input`'s comment has said since Phase 2 that it was
+hoisted out of `island_tick_buildings` so a test could reach it,
+because the third slot would otherwise stay unproven — that debt is now
+paid, by withholding each of the three inputs in turn and requiring
+each alone to block the tick. A two-slot implementation passes the
+first two of those and fails the third. `MAX_BUILDING_INPUTS` did not
+need raising: the widest shipped building uses exactly three.
+
+**Lac Grove came forward from Phase 5.** It was deferred only because
+nothing consumed Shellac; the Gramophone Works does, so it arrives with
+its consumer and orphans nothing.
+
+**A real defect the phase produced, and the guard now standing over
+it.** Workshops reached 22 placeable buildings against the 21 slots
+that fit at 1920 — so exactly one building became unbuildable. The bar
+degrades by drawing a "+N" badge, which tells a player that buildings
+exist while giving them no way to reach one: a dead end, not a
+scrollbar. Three furnace-driven rows (Charcoal Kiln, Glassworks,
+Brickworks) moved to Factories, where `BCAT_FACTORY`'s own definition —
+"heavy industry: furnaces, machine shops" — always fitted them better
+than "one artisan's worth of processing". `test_hud` now fails, naming
+the category, if any tab holds more than the bar can show. **When Phase
+7 trips it, the answer is paging in the bar, not another
+recategorisation.**
 
 ## Phase 7 — Merchants and Investors
 

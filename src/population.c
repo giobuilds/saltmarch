@@ -31,9 +31,10 @@ static const TierDef TIER_DEFS[] = {
     { BUILDING_HOUSE,
       { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT },
       BUILDING_HOUSE_ARTISAN, 400, BUILDING_NONE },
+    /* SUPPLY_CHAIN Phase 6 completes the second line. */
     { BUILDING_HOUSE_WORKER,
       { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT },
-      BUILDING_NONE, 0, BUILDING_NONE },
+      BUILDING_HOUSE_ENGINEER, 600, BUILDING_NONE },
     /* Phase 4 shipped this tier with four needs because Fur Coats
      * needs Cloth, Cloth needs Cotton, and no northern profile grows
      * cotton. SUPPLY_CHAIN Phase 5 settles that debt: the fifth need
@@ -46,6 +47,15 @@ static const TierDef TIER_DEFS[] = {
     { BUILDING_HOUSE_ARTISAN,
       { RES_PRESERVES, RES_SEWING_MACHINES, RES_SPECTACLES, RES_WINDOWS,
         RES_FUR_COATS },
+      BUILDING_NONE, 0, BUILDING_NONE },
+    /* Engineers (Phase 6) are the deepest tier so far and the first
+     * that needs the WHOLE archipelago: Pocket Watches want highland
+     * gold ore, Gramophones want jungle shellac, a Banquet wants a
+     * coast for its lobster, and Lamps want the northern glass and
+     * iron behind everything else. */
+    { BUILDING_HOUSE_ENGINEER,
+      { RES_LAMPS, RES_POCKET_WATCHES, RES_GRAMOPHONES, RES_BANQUET,
+        RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))

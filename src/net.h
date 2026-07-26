@@ -71,8 +71,15 @@ typedef struct NetSession NetSession;
  *    shape, but a four-island client and an eight-island server
  *    disagree about what the world IS — the snapshot's island count is
  *    checked on decode, so they would fail to talk anyway; this makes
- *    them say why at the handshake instead. */
-#define NET_PROTO_VERSION     6u
+ *    them say why at the handshake instead.
+ * 7: nine more goods (SUPPLY_CHAIN Phase 6). A resource-vocabulary
+ *    change is a protocol change for the same reason it is a save
+ *    change: Command is the same size and parses fine, but a peer
+ *    built before it reads "sell 5 of resource 44" as a different
+ *    good. Phase 4 bumped only SAVE_VERSION for this and should have
+ *    bumped both; Phase 5's island-count bump closed that window by
+ *    accident rather than by design. */
+#define NET_PROTO_VERSION     7u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
