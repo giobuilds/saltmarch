@@ -230,11 +230,17 @@ int game_overlay_open(const GameState *gs)
  * sits on. The two are deliberately independent — Brinehold is a
  * settlement that happens to occupy highland, the way a real town name
  * says nothing about its geology. */
+/* Four northern, four southern (SUPPLY_CHAIN Phase 5). The order is
+ * load-bearing: island 0 is always the starting island, and the
+ * southern four sit at the end so an existing world's island indices
+ * keep meaning what they meant. */
 static const MapProfile ISLAND_PROFILES[MAX_ISLANDS] = {
-    PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL
+    PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL,
+    PROFILE_PLANTATION, PROFILE_PLANTATION, PROFILE_JUNGLE, PROFILE_JUNGLE
 };
 static const char *ISLAND_NAMES[MAX_ISLANDS] = {
-    "Saltford", "Brinehold", "Tidefast", "Marrowbay"
+    "Saltford", "Brinehold", "Tidefast", "Marrowbay",
+    "Canereach", "Palmfast", "Vinemarch", "Thornhollow"
 };
 
 /* ---- game_reset_world -----------------------------------
@@ -490,8 +496,13 @@ typedef struct {
  * v11 (SUPPLY_CHAIN Phase 4): sixteen more goods before RES_GOLD, for
  * iron, glass, preserves and sewing machines. Same shape as v9 and the
  * same hazard — a v10 log's bytes parse, but its "resource 20" was
- * Gold and now means Charcoal. */
-#define SAVE_VERSION 11u
+ * Gold and now means Charcoal.
+ *
+ * v12 (SUPPLY_CHAIN Phase 5): four more goods, and MAX_ISLANDS 4 -> 8.
+ * The second half is the one that matters — a v11 log describes a
+ * FOUR-island world, so its island indices, its grants and its
+ * voyages all mean something different in an eight-island one. */
+#define SAVE_VERSION 12u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

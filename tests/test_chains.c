@@ -125,6 +125,13 @@ static void test_tiers_are_satisfiable(void)
     static const uint32_t SEEDS[] = { 1u, 4242u, 777u, 12345u, 99991u };
     static const MapProfile HOME[]      = { PROFILE_TEMPERATE };
     static const MapProfile HOME_HIGH[] = { PROFILE_TEMPERATE, PROFILE_HIGHLAND };
+    static const MapProfile NORTH[] = {
+        PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL
+    };
+    static const MapProfile NORTH_SOUTH[] = {
+        PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL,
+        PROFILE_PLANTATION, PROFILE_JUNGLE
+    };
     int placeable[BUILDING_TYPE_COUNT], makeable[RES_COUNT];
     size_t s;
 
@@ -159,15 +166,43 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
-    /* And the negative: the home island alone must NOT be able to make
-     * Beer. If it could, the highland would be scenery and the game
-     * would have no reason to put a ship in the water. */
+    /* Artisans (SUPPLY_CHAIN Phase 4, completed in Phase 5) are the
+     * first tier that cannot be supplied by any one climate: iron and
+     * glass are northern, cotton is southern, and Fur Coats needs
+     * both. Asked of the whole archipelago. */
+    for (s = 0; s < sizeof(SEEDS) / sizeof(SEEDS[0]); s++) {
+        char msg[96];
+        int  unmet = 0;
+
+        survey(NORTH_SOUTH, (int)(sizeof NORTH_SOUTH / sizeof NORTH_SOUTH[0]),
+               SEEDS[s], placeable);
+        reachable_goods(placeable, makeable);
+        report_tier(tier_def_for(BUILDING_HOUSE_ARTISAN), makeable,
+                    "from a northern and a southern island", &unmet);
+        snprintf(msg, sizeof(msg),
+                 "seed %u: Artisans are satisfiable across the archipelago",
+                 SEEDS[s]);
+        CHECK(unmet == 0, msg);
+    }
+
+    /* And the negatives, which are what make the other climates matter
+     * rather than decorate. The home island alone must NOT be able to
+     * brew, and the whole NORTH must not be able to make a Fur Coat —
+     * the moment it can, the southern colony is optional and the
+     * shipping lane is scenery. */
     survey(HOME, 1, 4242u, placeable);
     reachable_goods(placeable, makeable);
     CHECK(!makeable[RES_BEER],
           "a temperate island still cannot brew — the highland is the point");
     CHECK(!placeable[BUILDING_HOP_FARM],
           "because it grows no hops");
+
+    survey(NORTH, (int)(sizeof NORTH / sizeof NORTH[0]), 4242u, placeable);
+    reachable_goods(placeable, makeable);
+    CHECK(!makeable[RES_COTTON] && !makeable[RES_CLOTH],
+          "no northern island can card cotton");
+    CHECK(!makeable[RES_FUR_COATS],
+          "so Artisans cannot be reached without sailing south");
 }
 
 /* ---- nothing in the table is orphaned --------------------- */
@@ -175,14 +210,18 @@ static void test_tiers_are_satisfiable(void)
 static void test_no_dead_goods(void)
 {
     int placeable[BUILDING_TYPE_COUNT], makeable[RES_COUNT];
+    /* The whole archipelago, north and south (SUPPLY_CHAIN Phase 5).
+     * "Somewhere in the world" has to mean the world as it actually
+     * is, or the check quietly stops covering the newest climate. */
     static const MapProfile ALL[] = {
-        PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL
+        PROFILE_TEMPERATE, PROFILE_HIGHLAND, PROFILE_WOODLAND, PROFILE_ATOLL,
+        PROFILE_PLANTATION, PROFILE_JUNGLE
     };
     int r, t, j, orphan = 0, unused = 0;
 
     printf("--- the def table hangs together ---\n");
 
-    survey(ALL, 4, 4242u, placeable);
+    survey(ALL, (int)(sizeof ALL / sizeof ALL[0]), 4242u, placeable);
     reachable_goods(placeable, makeable);
 
     /* Every good must be makeable somewhere in the world. A good

@@ -34,15 +34,18 @@ static const TierDef TIER_DEFS[] = {
     { BUILDING_HOUSE_WORKER,
       { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
-    /* Artisans want four, not the five the plan's table lists: Fur
-     * Coats needs Cloth, Cloth needs Cotton, and no northern profile
-     * grows cotton — the chain cannot close until Phase 5's southern
-     * islands exist. Deferring the whole Pelts line (Trapper's Lodge,
-     * Furrier) with it keeps every good consumed by something, which
-     * is the check test_chains makes and the one that caught this. */
+    /* Phase 4 shipped this tier with four needs because Fur Coats
+     * needs Cloth, Cloth needs Cotton, and no northern profile grows
+     * cotton. SUPPLY_CHAIN Phase 5 settles that debt: the fifth need
+     * arrives with the southern islands, and with it the property the
+     * whole climate exists for — an Artisans neighbourhood cannot be
+     * reached without a colony in the south and a ship between.
+     *
+     * Five is also MAX_TIER_GOODS exactly, so this row is the first
+     * real content to use the full width Phase 2 reserved. */
     { BUILDING_HOUSE_ARTISAN,
       { RES_PRESERVES, RES_SEWING_MACHINES, RES_SPECTACLES, RES_WINDOWS,
-        RES_COUNT },
+        RES_FUR_COATS },
       BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))

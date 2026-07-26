@@ -34,7 +34,13 @@
 /* Four is plenty for the intended archipelago and keeps GameState at
  * roughly its historical size — see MAX_AGENTS in agent.h, which was
  * reduced specifically so this multiplication stays affordable. */
-#define MAX_ISLANDS 4
+/* SUPPLY_CHAIN Phase 5 doubled this for the southern climates. It is a
+ * wider change than it looks: SAVE_VERSION (a v11 log describes a
+ * four-island world), NET_PROTO_VERSION (a four-island client and an
+ * eight-island server disagree about what the world IS), faction.h's
+ * lane table, world_ui.c's map positions, and every per-island array
+ * the snapshot writes. */
+#define MAX_ISLANDS 8
 
 #define ISLAND_NAME_LEN 16
 

@@ -31,7 +31,7 @@
 /* island.h includes this header, so the island count cannot come from
  * there without a cycle. Kept in step by a compile-time assert in
  * faction.c. */
-#define MAX_ISLANDS_FOR_LANES 4
+#define MAX_ISLANDS_FOR_LANES 8
 
 /* Baseline inventory the faction holds of each tradeable good, and the
  * elasticity scale (kept equal, which makes the quote curve exactly

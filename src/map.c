@@ -220,8 +220,13 @@ static float island_mask(int row, int col)
  * an island whose whole reason to exist is iron must actually have
  * iron.
  *
- * Southern crops appear in no palette here — the profiles that grow
- * them do not exist yet (Phase 5). Pepper (Phase 4) is northern and
+ * SUPPLY_CHAIN Phase 5 adds the two southern palettes. They carry the
+ * WHOLE southern crop list, not just the ones a building can use yet:
+ * terrain is the expensive half of a climate and the chains that eat
+ * cane, cocoa, coffee and tobacco arrive with their tiers in Phase 7.
+ * A jungle that only grows what today's buildings consume would have
+ * to be regenerated then, and every existing world's map would change
+ * underneath its save. Pepper (Phase 4) is northern and
  * sits in the temperate and woodland palettes: it is the Kitchen's
  * second input, and the Preserves chain is the one an Artisans
  * neighbourhood cannot do without. Deliberately NOT on the highland,
@@ -263,6 +268,21 @@ static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
     [PROFILE_ATOLL]     = { 0.30f, 0.50f, 0.80f, 256,   0,   0,  0,
         0,
         { [DEPOSIT_SAND] = 20, [DEPOSIT_PEARLS] = 10, [DEPOSIT_CLAY] = 3 } },
+    /* Plantation: broad open ground and almost no forest — the fields
+     * are the point. hop_elev_min 256 means no elevation can reach it,
+     * so southern grass is grain-fertile and never hop-fertile: beer
+     * stays a northern problem, which is what keeps the highland worth
+     * holding after the south is settled. */
+    [PROFILE_PLANTATION] = { 0.32f, 0.44f, 0.78f, 256,   0,  90,  6,
+        FERTILE_COTTON | FERTILE_CANE | FERTILE_TOBACCO | FERTILE_MAIZE,
+        { [DEPOSIT_CLAY] = 8, [DEPOSIT_SAND] = 8 } },
+    /* Jungle: forest starts low and takes most of the island, so its
+     * crops come in the gaps. Almost no minerals — the south is where
+     * things GROW, and an island that had cotton and iron both would
+     * make the northern chain optional. */
+    [PROFILE_JUNGLE]     = { 0.30f, 0.38f, 0.56f, 256,   0,  20, 70,
+        FERTILE_COCOA | FERTILE_COFFEE | FERTILE_PLANTAIN | FERTILE_LAC,
+        { [DEPOSIT_CLAY] = 5 } },
 };
 
 const char *deposit_name(Deposit d)

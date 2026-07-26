@@ -66,8 +66,13 @@ typedef struct NetSession NetSession;
  * 5: MSG_WORLD carries a SNAPSHOT and the pending tail instead of the
  *    seed and the whole command log, so joining costs what the world
  *    weighs rather than how long it has existed (SERVER.md, "Log
- *    truncation"). Same message, entirely different payload. */
-#define NET_PROTO_VERSION     5u
+ *    truncation"). Same message, entirely different payload.
+ * 6: MAX_ISLANDS 4 -> 8 (SUPPLY_CHAIN Phase 5). No message changed
+ *    shape, but a four-island client and an eight-island server
+ *    disagree about what the world IS — the snapshot's island count is
+ *    checked on decode, so they would fail to talk anyway; this makes
+ *    them say why at the handshake instead. */
+#define NET_PROTO_VERSION     6u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

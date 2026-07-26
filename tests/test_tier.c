@@ -264,11 +264,15 @@ static void test_real_table(void)
     stock[RES_PRESERVES]       = 1;
     stock[RES_SEWING_MACHINES] = 1;
     stock[RES_SPECTACLES]      = 1;
+    stock[RES_WINDOWS]         = 1;
+    /* Four of five, and the missing one is the southern good — which
+     * is the shape of the whole phase: everything a northern island
+     * can make, and still not enough. */
     CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
-          "three of the four goods is still not four");
-    stock[RES_WINDOWS] = 1;
+          "every northern good and no Fur Coats is still not enough");
+    stock[RES_FUR_COATS] = 1;
     CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_OK,
-          "with all four present it may climb");
+          "with all five present it may climb");
     CHECK(to == BUILDING_HOUSE_ARTISAN, "and Artisans is where it goes");
 
     stock[RES_GOLD] = 0;
@@ -369,11 +373,12 @@ static void test_sim_and_ui_agree(void)
     stockpile_add(&isl->stockpile, RES_SEWING_MACHINES, 2);
     stockpile_add(&isl->stockpile, RES_SPECTACLES, 2);
     stockpile_add(&isl->stockpile, RES_WINDOWS, 2);
+    stockpile_add(&isl->stockpile, RES_FUR_COATS, 2);
 
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
                                  &to_ui) == REJ_OK,
-          "supply the four and the UI says it may climb");
+          "supply all five and the UI says it may climb");
     CHECK(to_ui == BUILDING_HOUSE_ARTISAN, "and names Artisans as where");
 
     gs->confirm.open = 1;

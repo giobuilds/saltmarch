@@ -713,6 +713,67 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_BRICKS] = 10, [RES_GOLD] = 250 },
         .hud_placeable = 0
     },
+
+    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ----
+     * The chain Phase 4 could not finish. Cotton grows on no northern
+     * profile, so every Fur Coat in the archipelago starts as a voyage.
+     */
+    [BUILDING_COTTON_FIELD] = {
+        .name = "Cotton Field",
+        .category = BCAT_FARMING,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .needs_fertility = FERTILE_COTTON,
+        .col_r = 225, .col_g = 225, .col_b = 210,
+        .produces = RES_COTTON, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 7.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 100 },
+        .hud_placeable = 1
+    },
+    [BUILDING_SPINNING_MILL] = {
+        .name = "Spinning Mill",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 195, .col_b = 175,
+        .produces = RES_CLOTH, .produce_amt = 1,
+        .consumes = { RES_COTTON, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_PLANKS] = 12, [RES_GOLD] = 150 },
+        .hud_placeable = 1
+    },
+    /* Beside the forest, not on it — the same standing-next-to-what-it
+     * works rule as the Fisher's Hut and the pearl station. A lodge on
+     * a forest tile would be a lodge on a tile nothing can build on. */
+    [BUILDING_TRAPPERS_LODGE] = {
+        .name = "Trapper's Lodge",
+        .category = BCAT_EXTRACTION,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_NEEDS_FOREST,
+        .col_r = 125, .col_g = 95, .col_b = 65,
+        .produces = RES_PELTS, .produce_amt = 1,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_WOOD] = 10, [RES_GOLD] = 90 },
+        .hud_placeable = 1
+    },
+    [BUILDING_FURRIER] = {
+        .name = "Furrier",
+        .category = BCAT_WORKSHOP,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 150, .col_g = 110, .col_b = 120,
+        .produces = RES_FUR_COATS, .produce_amt = 1,
+        .consumes = { RES_PELTS, RES_CLOTH, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 13.0f,
+        .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 260 },
+        .hud_placeable = 1
+    },
 };
 
 const char *building_category_name(BuildingCategory c)

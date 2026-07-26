@@ -8,13 +8,24 @@
 #include <SDL3/SDL.h>
 
 /* Fixed node positions as a fraction of the screen, so the layout
- * scales with resolution without any procedural placement. Home sits
- * left-of-centre; the rest fan out around it. */
+ * scales with resolution without any procedural placement.
+ *
+ * SUPPLY_CHAIN Phase 5 doubled the archipelago, and the layout now
+ * says something: the four northern islands hold the upper band and
+ * the four southern ones the lower, with a clear gap between. A voyage
+ * from Saltford to Canereach is visibly a long way south, which is the
+ * whole argument for the shipping lanes. Kept well inside the margins
+ * so eight diamonds never overlap at 1920x1080 — test_world asserts
+ * exactly that rather than trusting these numbers. */
 static const struct { float fx, fy; } NODE_POS[MAX_ISLANDS] = {
-    { 0.28f, 0.50f },   /* Saltford  */
-    { 0.55f, 0.30f },   /* Brinehold */
-    { 0.72f, 0.62f },   /* Tidefast  */
-    { 0.44f, 0.76f },   /* Marrowbay */
+    { 0.20f, 0.24f },   /* Saltford    - temperate, home */
+    { 0.44f, 0.16f },   /* Brinehold   - highland        */
+    { 0.68f, 0.24f },   /* Tidefast    - woodland        */
+    { 0.86f, 0.40f },   /* Marrowbay   - atoll           */
+    { 0.18f, 0.68f },   /* Canereach   - plantation      */
+    { 0.42f, 0.80f },   /* Palmfast    - plantation      */
+    { 0.66f, 0.72f },   /* Vinemarch   - jungle          */
+    { 0.86f, 0.84f },   /* Thornhollow - jungle          */
 };
 
 /* Tint per profile, so an island reads as "the wooded one" at a
@@ -27,6 +38,10 @@ static SDL_Color profile_colour(MapProfile p, int settled)
     case PROFILE_HIGHLAND: c.r = 120; c.g = 175; c.b =  75; break;
     case PROFILE_WOODLAND: c.r =  48; c.g = 105; c.b =  50; break;
     case PROFILE_ATOLL:    c.r = 214; c.g = 198; c.b = 128; break;
+    /* The southern pair read warmer than anything northern, so the two
+     * halves of the map are told apart by colour before any label. */
+    case PROFILE_PLANTATION: c.r = 190; c.g = 180; c.b =  70; break;
+    case PROFILE_JUNGLE:     c.r =  36; c.g = 120; c.b =  62; break;
     case PROFILE_TEMPERATE:
     default:               c.r = 106; c.g = 168; c.b =  79; break;
     }
