@@ -61,6 +61,7 @@
 #  define sock_close(s)   closesocket(s)
 #  define sock_errno()    WSAGetLastError()
 #  define SOCK_EWOULDBLOCK WSAEWOULDBLOCK
+#  define SOCK_EINPROGRESS WSAEWOULDBLOCK
 static int sock_set_nonblock(sock_t s)
 {
     u_long on = 1;
@@ -95,11 +96,13 @@ static uint64_t net_now_ms(void)
 #  include <fcntl.h>
 #  include <errno.h>
 #  include <time.h>
+#  include <sys/select.h>
    typedef int sock_t;
 #  define BAD_SOCK        (-1)
 #  define sock_close(s)   close(s)
 #  define sock_errno()    errno
 #  define SOCK_EWOULDBLOCK EWOULDBLOCK
+#  define SOCK_EINPROGRESS EINPROGRESS
 static int sock_set_nonblock(sock_t s)
 {
     int fl = fcntl(s, F_GETFL, 0);
@@ -117,7 +120,7 @@ static uint64_t net_now_ms(void)
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 #  define SOCK_IOLEN(n)   (n)
-#  define SOCK_ADDRLEN(n) (n)
+#  define SOCK_ADDRLEN(n) ((socklen_t)(n))
 #endif
 
 /* A send() to a peer that vanished must report an error, not raise
@@ -153,6 +156,44 @@ static void sock_tune(sock_t s)
 #ifdef SO_NOSIGPIPE
     setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, (const char *)&yes, sizeof(yes));
 #endif
+}
+
+/* Connect without handing the game's frame loop to the network stack.
+ * A blocking connect() to a host that is simply not there returns when
+ * the OS gives up — over a minute on Linux — and that whole time the
+ * window is frozen with no indication why. The socket is made
+ * non-blocking first, so the wait is ours to bound.
+ *
+ * Returns 1 on a connected socket. `ms` is the whole budget. */
+static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
+                                size_t addrlen, unsigned ms)
+{
+    struct timeval tv;
+    fd_set         wfds;
+    int            err = 0, rc;
+#ifdef _WIN32
+    int            elen = (int)sizeof(err);
+#else
+    socklen_t      elen = (socklen_t)sizeof(err);
+#endif
+
+    if (!sock_set_nonblock(s)) return 0;
+
+    if (connect(s, addr, SOCK_ADDRLEN(addrlen)) == 0) return 1;
+    if (sock_errno() != SOCK_EINPROGRESS) return 0;
+
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    tv.tv_sec  = (long)(ms / 1000u);
+    tv.tv_usec = (long)(ms % 1000u) * 1000L;
+
+    rc = select((int)s + 1, NULL, &wfds, NULL, &tv);
+    if (rc <= 0) return 0;                       /* timed out or failed */
+
+    /* Writable only means the attempt finished; SO_ERROR says how. */
+    if (getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&err, &elen) != 0)
+        return 0;
+    return err == 0;
 }
 
 #include "net.h"
@@ -222,6 +263,27 @@ enum {
 /* A connection that has not introduced itself is holding a slot that a
  * real player wants; NET_MAX_PEERS of them is the whole server. */
 #define HANDSHAKE_MS    10000u
+
+/* How long net_join waits for a TCP handshake before reporting that the
+ * host is not there. (Name resolution ahead of it is still the
+ * resolver's to bound — getaddrinfo has no portable timeout, and
+ * putting it on a thread would drag a threading dependency into a file
+ * that deliberately has none.) */
+#define CONNECT_TIMEOUT_MS 5000u
+
+/* Command budget per peer: refilled every tick, allowed to bank up to a
+ * burst so that a player who clicks fast, or whose connection delivered
+ * a frame's worth at once, is never the one this catches. A peer that
+ * keeps overrunning an allowance this generous is not playing. */
+#define CMDS_PER_TICK    8
+#define CMD_BURST       64
+#define MAX_CMD_OVERRUNS 256
+
+/* The most world-time a client will replay to join. 50 million ticks is
+ * roughly eight weeks of continuous world at 10 ticks/sec — well past
+ * the point where SERVER.md's log truncation has to exist anyway, and
+ * the difference between a slow join and a hang. */
+#define MAX_INSTALL_TICKS 50000000ull
 
 /* ---- growable byte buffer ---------------------------------
  * Peers used to hold two fixed 256 KB arrays. That capped MSG_WORLD at
@@ -312,6 +374,13 @@ typedef struct NetPeer {
     uint64_t last_send_ms;
     uint64_t stall_since_ms; /* 0 while the outbound queue is moving     */
 
+    /* Submissions this peer may still make before the next tick refills
+     * it. Every accepted command is appended to the authoritative log
+     * forever and broadcast to everyone, so an unmetered client is a
+     * client that can permanently inflate the world. */
+    int      cmd_budget;
+    int      cmd_overruns;
+
     /* In-memory transport (net_pair_mem): sends append to mem_peer's
      * queue and recv drains our own; no sockets exist. A closed peer
      * sets mem_severed — we drain what is queued, then report the
@@ -326,6 +395,7 @@ struct NetSession {
     sock_t   listen_fd;       /* host only                              */
     int      alive;
     int      persistent;      /* host: outlive peers (the server does)  */
+    int      plat_init;       /* this session owns a platform startup   */
 
     NetPeer  peers[NET_MAX_PEERS];
 
@@ -397,6 +467,7 @@ static NetPeer *peer_alloc(NetSession *ns)
             p->created_ms   = now;
             p->last_recv_ms = now;   /* the clocks start on arrival, not */
             p->last_send_ms = now;   /* at zero — see peer_timed_out     */
+            p->cmd_budget   = CMD_BURST;
             return p;
         }
     return NULL;
@@ -771,6 +842,23 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             if (len == sizeof(Command) && p->said_hello) {
                 Command c;
 
+                /* Metered. Everything accepted here joins the
+                 * authoritative log — which is never truncated, is
+                 * replayed in full by every future joiner, and is what
+                 * a checkpoint consists of — and is broadcast to every
+                 * peer besides. An unmetered client is therefore a
+                 * client that can permanently inflate the world for
+                 * everyone, without exploiting anything: it need only
+                 * submit faster than people click. */
+                if (p->cmd_budget <= 0) {
+                    if (++p->cmd_overruns > MAX_CMD_OVERRUNS) {
+                        peer_drop(ns, p, "peer flooded the command log");
+                        return;
+                    }
+                    break;      /* over budget: dropped, not fatal yet */
+                }
+                p->cmd_budget--;
+
                 memcpy(&c, payload, sizeof(c));
                 /* Identity comes from the CONNECTION, never the wire. */
                 host_stamp_log_send(ns, gs, &c, p->player_id);
@@ -817,6 +905,25 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
         memcpy(&tick, payload + 4, 8);
         memcpy(&n,    payload + 12, 4);
         if (n < 0 || fixed + sizeof(Command) * (size_t)n != len) break;
+        /* game_install_world replays from tick 0 to `tick`, and `tick`
+         * came off the wire. Unbounded, a corrupt or hostile host sends
+         * 2^63 and this client never returns — the replay runs inside
+         * net_pump, so "never returns" means a frozen window with no
+         * way out. The ceiling is far past any world anyone will
+         * plausibly join and still finite. */
+        if (tick > MAX_INSTALL_TICKS) {
+            sim_log("net: host offered a world at tick %llu, past the "
+                    "%llu this client will replay — refusing",
+                    (unsigned long long)tick,
+                    (unsigned long long)MAX_INSTALL_TICKS);
+            peer_drop(ns, p, "world too far along to install");
+            break;
+        }
+        /* A long replay is a frozen frame with nothing on screen to
+         * explain it, so at least say so before it starts. */
+        if (tick > 20000)
+            sim_log("net: replaying %llu ticks to join — this will take "
+                    "a moment", (unsigned long long)tick);
         if (!game_install_world(gs, seed, tick,
                                 (const Command *)(payload + fixed), n)) {
             sim_log("net: failed to install world");
@@ -891,26 +998,57 @@ static NetSession *session_new(int is_host)
     return ns;
 }
 
+/* A bound listening socket, dual-stack where the platform allows it.
+ *
+ * One AF_INET6 socket with IPV6_V6ONLY cleared accepts both families,
+ * so which address a player reaches the server on stops being something
+ * anyone has to think about. Some platforms default that option on and
+ * refuse to clear it, which is what the IPv4 fallback is for. */
+static sock_t listen_socket(uint16_t port)
+{
+    struct sockaddr_in6 a6;
+    struct sockaddr_in  a4;
+    sock_t              s;
+    int                 yes = 1, no = 0;
+
+    s = socket(AF_INET6, SOCK_STREAM, 0);
+    if (s != BAD_SOCK) {
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
+                   (const char *)&yes, sizeof(yes));
+        setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY,
+                   (const char *)&no, sizeof(no));
+        memset(&a6, 0, sizeof(a6));
+        a6.sin6_family = AF_INET6;
+        a6.sin6_addr   = in6addr_any;
+        a6.sin6_port   = htons(port);
+        if (bind(s, (struct sockaddr *)&a6, sizeof(a6)) == 0) return s;
+        sock_close(s);
+    }
+
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == BAD_SOCK) return BAD_SOCK;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes));
+    memset(&a4, 0, sizeof(a4));
+    a4.sin_family      = AF_INET;
+    a4.sin_addr.s_addr = htonl(INADDR_ANY);
+    a4.sin_port        = htons(port);
+    if (bind(s, (struct sockaddr *)&a4, sizeof(a4)) == 0) return s;
+
+    sock_close(s);
+    return BAD_SOCK;
+}
+
 NetSession *net_host(uint16_t port)
 {
-    NetSession        *ns;
-    struct sockaddr_in a;
-    int                yes = 1;
+    NetSession *ns;
 
     if (!net_platform_init()) return NULL;
     ns = session_new(1);
-    if (!ns) return NULL;
+    if (!ns) { net_platform_quit(); return NULL; }
+    ns->plat_init = 1;
 
-    ns->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    ns->listen_fd = listen_socket(port);
     if (ns->listen_fd == BAD_SOCK) goto fail;
-    setsockopt(ns->listen_fd, SOL_SOCKET, SO_REUSEADDR,
-               (const char *)&yes, sizeof(yes));
-
-    memset(&a, 0, sizeof(a));
-    a.sin_family      = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
-    a.sin_port        = htons(port);
-    if (bind(ns->listen_fd, (struct sockaddr *)&a, sizeof(a)) != 0) goto fail;
     if (listen(ns->listen_fd, NET_MAX_PEERS) != 0) goto fail;
     if (!sock_set_nonblock(ns->listen_fd)) goto fail;
 
@@ -939,14 +1077,19 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
 
     if (!net_platform_init()) return NULL;
     ns = session_new(0);
-    if (!ns) return NULL;
+    if (!ns) { net_platform_quit(); return NULL; }
+    ns->plat_init = 1;
     ns->resume_id = resume_id;
 
     p = peer_alloc(ns);
     if (!p) goto fail;
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family   = AF_INET;
+    /* AF_UNSPEC, not AF_INET: an address family is not something a
+     * player should have to know they have. Whatever the name resolves
+     * to — v4, v6, or both in whatever order the resolver prefers — is
+     * tried in turn below. */
+    hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     snprintf(portstr, sizeof(portstr), "%u", (unsigned)port);
     if (getaddrinfo(host, portstr, &hints, &res) != 0) goto fail;
@@ -954,15 +1097,15 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
     for (ai = res; ai; ai = ai->ai_next) {
         p->fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (p->fd == BAD_SOCK) continue;
-        if (connect(p->fd, ai->ai_addr, SOCK_ADDRLEN(ai->ai_addrlen)) == 0)
+        if (sock_connect_timeout(p->fd, ai->ai_addr, ai->ai_addrlen,
+                                 CONNECT_TIMEOUT_MS))
             break;
         sock_close(p->fd);
         p->fd = BAD_SOCK;
     }
     freeaddrinfo(res);
     if (p->fd == BAD_SOCK) goto fail;
-    if (!sock_set_nonblock(p->fd)) goto fail;
-    sock_tune(p->fd);
+    sock_tune(p->fd);          /* already non-blocking from the connect */
 
     memcpy(hello,     &ver,       4);
     memcpy(hello + 4, &resume_id, 4);
@@ -979,7 +1122,6 @@ fail:
 void net_close(NetSession *ns)
 {
     int i;
-    int had_sockets = 0;
 
     if (!ns) return;
 
@@ -1000,18 +1142,19 @@ void net_close(NetSession *ns)
             send_msg(ns, p, MSG_BYE, NULL, 0);
             peer_flush(p);
             sock_close(p->fd);
-            had_sockets = 1;
         }
         buf_free(&p->rbuf);
         buf_free(&p->wbuf);
     }
 
-    if (ns->listen_fd != BAD_SOCK) {
-        sock_close(ns->listen_fd);
-        had_sockets = 1;
-    }
+    if (ns->listen_fd != BAD_SOCK) sock_close(ns->listen_fd);
+
+    /* Paired with the net_platform_init that this session did, not with
+     * whether it ever managed to open a socket: on Windows those calls
+     * are refcounted, and a session that failed between startup and its
+     * first socket used to leak one. */
+    if (ns->plat_init) net_platform_quit();
     free(ns);
-    if (had_sockets) net_platform_quit();
 }
 
 /* ---- the in-memory transport ------------------------------- */
@@ -1148,7 +1291,21 @@ void net_after_update(NetSession *ns, GameState *gs)
 
 void net_on_tick(NetSession *ns, GameState *gs)
 {
+    int i;
+
     if (!ns || !ns->alive) return;
+
+    /* Refill submission allowances. Banked up to a burst so that a
+     * player clicking quickly, or a frame that delivered several
+     * commands at once, is never what this catches. */
+    if (ns->is_host) {
+        for (i = 0; i < NET_MAX_PEERS; i++) {
+            NetPeer *p = &ns->peers[i];
+            if (!peer_live(p)) continue;
+            p->cmd_budget += CMDS_PER_TICK;
+            if (p->cmd_budget > CMD_BURST) p->cmd_budget = CMD_BURST;
+        }
+    }
 
     if (gs->sim_tick_no % NET_HASH_INTERVAL != 0) return;
 
