@@ -321,7 +321,20 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 /* ---- game_init ----------------------------------------- */
 GameState *game_init(void)
 {
-    GameState *gs = (GameState *)malloc(sizeof(GameState));
+    /* calloc, not malloc. The explicit initialisation below stays --
+     * it documents intent and sets the fields whose correct start is
+     * not zero -- but a field added to GameState and forgotten here
+     * must not be able to arrive as garbage.
+     *
+     * That is not hypothetical: history_floor_tick's `floor_snap`
+     * pointer was added without a line here, game_reset_world frees it
+     * before assigning, and free() on an uninitialised pointer is
+     * undefined. Linux and macOS hand out zeroed pages, so free(NULL)
+     * quietly did nothing and every test passed on both; MSVC's debug
+     * CRT fills fresh allocations with 0xCD, so the same code segfaulted
+     * at startup before it could log a single line. Zeroing first costs
+     * one memset at launch and removes the whole class. */
+    GameState *gs = (GameState *)calloc(1, sizeof(GameState));
     if (!gs) return NULL;
 
     /* Plain data, zeroed here rather than through input.c: the device
@@ -330,9 +343,8 @@ GameState *game_init(void)
     gs->last_tick  = 0;   /* seeded by client_update on its first frame */
     gs->delta_time = 0.0f;
 
-    /* The command log starts empty. Zero it before anything can push,
-     * since malloc does not, and game_reset_world resets the counters
-     * but relies on the pointer/cap being valid. */
+    /* The command log starts empty. game_reset_world resets the
+     * counters but relies on the pointer/cap being valid. */
     gs->cmd_log     = NULL;
     gs->cmd_count   = 0;
     gs->intent_log  = NULL;
@@ -351,6 +363,11 @@ GameState *game_init(void)
     gs->cmd_seq_last    = 0u;
     gs->scrub_active    = 0;
     gs->scrub_live_tick = 0;
+    /* Freed by game_reset_world below, so it has to be a real pointer
+     * before that runs -- see the calloc note above. */
+    gs->floor_snap         = NULL;
+    gs->floor_snap_len     = 0;
+    gs->history_floor_tick = 0;
     gs->result_count    = 0;
     gs->local_player_id = 1u;
     gs->net             = NULL;   /* attached by net_attach when hosting/joining */
