@@ -24,6 +24,23 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     [RES_FLOUR]     = "Flour",
     [RES_BREAD]     = "Bread",
 
+    [RES_CHARCOAL]        = "Charcoal",
+    [RES_IRON_ORE]        = "Iron Ore",
+    [RES_COAL]            = "Coal",
+    [RES_IRON]            = "Iron",
+    [RES_STEEL_BEAMS]     = "Steel Beams",
+    [RES_SAND]            = "Sand",
+    [RES_GLASS]           = "Glass",
+    [RES_BRASS]           = "Brass",
+    [RES_WINDOWS]         = "Windows",
+    [RES_SPECTACLES]      = "Spectacles",
+    [RES_CATTLE]          = "Cattle",
+    [RES_PEPPER]          = "Pepper",
+    [RES_POTTED_MEAT]     = "Potted Meat",
+    [RES_PRESERVES]       = "Preserves",
+    [RES_STEEL]           = "Steel",
+    [RES_SEWING_MACHINES] = "Sewing Machines",
+
     [RES_GOLD]  = "Gold",
 };
 
@@ -55,6 +72,25 @@ const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT] = {
     [RES_SOAP]      = RCAT_REFINED,
     [RES_FLOUR]     = RCAT_REFINED,
     [RES_BREAD]     = RCAT_REFINED,
+
+    /* Ore, coal, sand, cattle and pepper come out of the ground or off
+     * the grass; everything else in Phase 4 is made from them. */
+    [RES_IRON_ORE]        = RCAT_RAW,
+    [RES_COAL]            = RCAT_RAW,
+    [RES_SAND]            = RCAT_RAW,
+    [RES_CATTLE]          = RCAT_RAW,
+    [RES_PEPPER]          = RCAT_RAW,
+    [RES_CHARCOAL]        = RCAT_REFINED,
+    [RES_IRON]            = RCAT_REFINED,
+    [RES_STEEL_BEAMS]     = RCAT_REFINED,
+    [RES_GLASS]           = RCAT_REFINED,
+    [RES_BRASS]           = RCAT_REFINED,
+    [RES_WINDOWS]         = RCAT_REFINED,
+    [RES_SPECTACLES]      = RCAT_REFINED,
+    [RES_POTTED_MEAT]     = RCAT_REFINED,
+    [RES_PRESERVES]       = RCAT_REFINED,
+    [RES_STEEL]           = RCAT_REFINED,
+    [RES_SEWING_MACHINES] = RCAT_REFINED,
 
     [RES_GOLD]  = RCAT_CURRENCY,
 };
@@ -95,6 +131,26 @@ const int SELL_PRICE[RES_COUNT] = {
     [RES_SOAP]      = 9,
     [RES_FLOUR]     = 4,
     [RES_BREAD]     = 7,
+
+    /* Priced by depth: each step of a chain adds more than it consumes,
+     * so refining is worth doing and the four Artisans goods sit at the
+     * top of the table. */
+    [RES_CHARCOAL]        = 4,
+    [RES_IRON_ORE]        = 4,
+    [RES_COAL]            = 5,
+    [RES_IRON]            = 11,
+    [RES_STEEL_BEAMS]     = 18,
+    [RES_SAND]            = 2,
+    [RES_GLASS]           = 8,
+    [RES_BRASS]           = 17,
+    [RES_WINDOWS]         = 22,
+    [RES_SPECTACLES]      = 30,
+    [RES_CATTLE]          = 5,
+    [RES_PEPPER]          = 4,
+    [RES_POTTED_MEAT]     = 12,
+    [RES_PRESERVES]       = 20,
+    [RES_STEEL]           = 19,
+    [RES_SEWING_MACHINES] = 34,
     /* RES_GOLD left at 0 — unused, can't sell gold for gold */
 };
 
@@ -119,6 +175,23 @@ const int BUY_PRICE[RES_COUNT] = {
     [RES_SOAP]      = 18,
     [RES_FLOUR]     = 8,
     [RES_BREAD]     = 14,
+
+    [RES_CHARCOAL]        = 8,
+    [RES_IRON_ORE]        = 8,
+    [RES_COAL]            = 10,
+    [RES_IRON]            = 22,
+    [RES_STEEL_BEAMS]     = 36,
+    [RES_SAND]            = 4,
+    [RES_GLASS]           = 16,
+    [RES_BRASS]           = 34,
+    [RES_WINDOWS]         = 44,
+    [RES_SPECTACLES]      = 60,
+    [RES_CATTLE]          = 10,
+    [RES_PEPPER]          = 8,
+    [RES_POTTED_MEAT]     = 24,
+    [RES_PRESERVES]       = 40,
+    [RES_STEEL]           = 38,
+    [RES_SEWING_MACHINES] = 68,
     /* RES_GOLD left at 0 — unused */
 };
 

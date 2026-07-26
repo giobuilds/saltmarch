@@ -47,6 +47,11 @@ typedef enum {
     FERTILE_GRAPES   = 1 << 3,   /* Sparkling Cellar             */
     FERTILE_FLOWERS  = 1 << 4,   /* Perfumery                    */
     FERTILE_PASTURE  = 1 << 5,   /* grazing: sheep, cattle, pigs */
+    /* SUPPLY_CHAIN Phase 4: the Kitchen's second input. Northern, and
+     * appended here rather than beside the other temperate crops
+     * because inserting a bit would renumber the southern ones and
+     * change what an existing map's fertility mask means. */
+    FERTILE_PEPPER   = 1 << 14,  /* Cattle + Pepper -> Kitchen   */
     /* Southern crops — no northern profile grows these (Phase 5). */
     FERTILE_COTTON   = 1 << 6,
     FERTILE_CANE     = 1 << 7,

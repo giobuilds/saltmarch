@@ -221,7 +221,12 @@ static float island_mask(int row, int col)
  * iron.
  *
  * Southern crops appear in no palette here — the profiles that grow
- * them do not exist yet (Phase 5). */
+ * them do not exist yet (Phase 5). Pepper (Phase 4) is northern and
+ * sits in the temperate and woodland palettes: it is the Kitchen's
+ * second input, and the Preserves chain is the one an Artisans
+ * neighbourhood cannot do without. Deliberately NOT on the highland,
+ * which is metal country — a single island should not be able to feed
+ * and equip Artisans by itself. */
 typedef struct {
     float    water_max, sand_max, grass_max;
     int      hop_elev_min;
@@ -236,7 +241,7 @@ static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
      * for bricks and glass; a little iron, but not enough to build an
      * industry on. */
     [PROFILE_TEMPERATE] = { 0.30f, 0.40f, 0.72f, 256,   0, 120,  8,
-        FERTILE_POTATO | FERTILE_FLOWERS,
+        FERTILE_POTATO | FERTILE_FLOWERS | FERTILE_PEPPER,
         { [DEPOSIT_CLAY] = 14, [DEPOSIT_SAND] = 10, [DEPOSIT_IRON] = 6,
           [DEPOSIT_COAL] = 4 } },
     /* Highland: hop country. Grass sits high and splits into hop
@@ -249,7 +254,7 @@ static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
           [DEPOSIT_CLAY] = 4 } },
     /* Woodland: timber. Forest starts lower, squeezing farmland. */
     [PROFILE_WOODLAND]  = { 0.30f, 0.40f, 0.62f, 256,   0,  20, 60,
-        FERTILE_POTATO,
+        FERTILE_POTATO | FERTILE_PEPPER,
         { [DEPOSIT_CLAY] = 10, [DEPOSIT_COAL] = 8, [DEPOSIT_IRON] = 4,
           [DEPOSIT_SAND] = 4 } },
     /* Atoll: a wide beach ring and little else. Fish, sand, and the
