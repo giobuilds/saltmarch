@@ -52,6 +52,11 @@ typedef enum {
      * because inserting a bit would renumber the southern ones and
      * change what an existing map's fertility mask means. */
     FERTILE_PEPPER   = 1 << 14,  /* Cattle + Pepper -> Kitchen   */
+    /* SUPPLY_CHAIN Phase 7. Southern, and its own bit rather than
+     * reusing FERTILE_PASTURE: every grass tile anywhere is pasture,
+     * so an alpaca on that bit would graze the northern moors too, and
+     * Marsh Hats would stop needing the south. */
+    FERTILE_ALPACA   = 1 << 15,  /* Alpaca Pasture -> Alpaca Wool */
     /* Southern crops — no northern profile grows these (Phase 5). */
     FERTILE_COTTON   = 1 << 6,
     FERTILE_CANE     = 1 << 7,

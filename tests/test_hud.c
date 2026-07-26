@@ -50,8 +50,17 @@ static void synth(HudView *v, int n, int affordable_every)
         e->type       = (uint16_t)i;
         e->category   = (uint8_t)(BCAT_FARMING +
                                   (i % (BCAT_COUNT - BCAT_FARMING)));
+        /* Affordability counts WITHIN a category, not across the whole
+         * synthetic set. Spreading entries round-robin means a tab
+         * holds indices that are all multiples of the category count —
+         * so when SUPPLY_CHAIN Phase 7 took BCAT_COUNT to a multiple of
+         * this stride, every entry in the Farming tab came out
+         * affordable and the greyed-slot tests had nothing to look at.
+         * Dividing first makes the pattern independent of how many
+         * categories exist. */
         e->affordable = (uint8_t)(affordable_every == 0 ||
-                                  (i % affordable_every) == 0);
+                                  ((i / (BCAT_COUNT - BCAT_FARMING)) %
+                                   affordable_every) == 0);
         e->refuse     = (uint8_t)(e->affordable ? REJ_OK : REJ_CANT_AFFORD);
         e->cost_gold  = 50 + i;
         snprintf(e->name, sizeof(e->name), "Bldg%d", i);
@@ -373,6 +382,34 @@ static void test_real_defs(void)
         }
         CHECK(over == 0, "no category holds more buildings than the bar "
                          "can show");
+    }
+
+    /* The other half of that bargain. SUPPLY_CHAIN Phase 7 chose to
+     * split categories rather than page the bar, which trades a slot
+     * problem for a TAB problem: the tab strip grows rightwards from
+     * the left margin and the Islands/Demolish cluster grows leftwards
+     * from the right, and at ten tabs they meet. Splitting once more
+     * without checking would put a tab underneath a button. */
+    {
+        int    cat_i, tabs = 0;
+        float  end, cluster;
+
+        for (cat_i = BCAT_NONE + 1; cat_i < BCAT_COUNT; cat_i++) {
+            int n = 0, t2;
+            for (t2 = 0; t2 < BUILDING_TYPE_COUNT; t2++)
+                if ((int)BUILDING_DEFS[t2].category == cat_i &&
+                    BUILDING_DEFS[t2].hud_placeable) n++;
+            if (n > 0) tabs++;
+        }
+        end = (float)HUD_MARGIN_LEFT + (float)tabs * HUD_TAB_W +
+              (float)(tabs - 1) * HUD_TAB_GAP;
+        cluster = SCR_W - (float)HUD_MARGIN_LEFT -
+                  ((float)HUD_SLOT_SIZE * 3.0f + (float)HUD_SLOT_PAD * 2.0f);
+        if (end > cluster)
+            printf("  FAIL: %d tabs reach %.0f, past the button cluster at "
+                   "%.0f\n", tabs, end, cluster);
+        CHECK(end <= cluster,
+              "and the tab strip still clears the right-hand buttons");
     }
 
     /* With a rich island nothing is greyed; with a poor one, plenty is,

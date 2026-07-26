@@ -138,6 +138,35 @@ typedef enum {
     BUILDING_FINE_KITCHEN     = 55, /* Lobster+Preserves -> Banquet    */
     BUILDING_HOUSE_ENGINEER   = 56, /* upgrade of a Wright's House     */
 
+    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ---- */
+    BUILDING_COFFEE_GROVE     = 57, /* jungle soil    -> Coffee Beans  */
+    BUILDING_ROASTERY         = 58, /* Beans          -> Coffee        */
+    BUILDING_CANE_FIELD       = 59, /* cane soil      -> Cane          */
+    BUILDING_SUGAR_REFINERY   = 60, /* Cane           -> Sugar         */
+    BUILDING_RUM_HOUSE        = 61, /* Sugar + Planks -> Rum           */
+    BUILDING_MAIZE_FIELD      = 62, /* maize soil     -> Maize         */
+    BUILDING_FLATBREAD_KITCHEN= 63, /* Maize + Cattle -> Flatbread     */
+    BUILDING_ALPACA_PASTURE   = 64, /* alpaca grazing -> Alpaca Wool   */
+    BUILDING_FELT_WORKS       = 65, /* Cotton + Alpaca-> Felt          */
+    BUILDING_HATTER           = 66, /* Felt           -> Marsh Hats    */
+    BUILDING_DARNING_HOUSE    = 67, /* Alpaca Wool    -> Wool Cloaks   */
+    BUILDING_PLANTAIN_GROVE   = 68, /* plantain soil  -> Plantain      */
+    BUILDING_FISH_OIL_RENDERY = 69, /* Fish           -> Fish Oil      */
+    BUILDING_FRY_KITCHEN      = 70, /* Plantain + Oil -> Plantain Fry  */
+    BUILDING_SAIL_LOFT        = 71, /* Cloth          -> Sails         */
+    BUILDING_VINEYARD         = 72, /* grape soil     -> Grapes        */
+    BUILDING_SPARKLING_CELLAR = 73, /* Grapes         -> Sparkling Wine*/
+    BUILDING_TOBACCO_FIELD    = 74, /* tobacco soil   -> Tobacco       */
+    BUILDING_CIGAR_HOUSE      = 75, /* Tobacco+Planks -> Cigars        */
+    BUILDING_COCOA_GROVE      = 76, /* cocoa soil     -> Cocoa         */
+    BUILDING_CHOCOLATE_HOUSE  = 77, /* Cocoa + Sugar  -> Chocolate     */
+    BUILDING_PEARL_BEDS       = 78, /* beside a pearl bed -> Pearls    */
+    BUILDING_JEWELLER         = 79, /* Gold Ore+Pearls-> Jewellery     */
+    BUILDING_FLOWER_FIELD     = 80, /* flower soil    -> Flowers       */
+    BUILDING_PERFUMERY        = 81, /* Flowers + Gin  -> Perfume       */
+    BUILDING_HOUSE_MERCHANT   = 82, /* the third line's base           */
+    BUILDING_HOUSE_INVESTOR   = 83, /* upgrade of a Merchant House     */
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 
@@ -189,6 +218,14 @@ typedef enum {
     BCAT_EXTRACTION,     /* dug or felled: mines, pits, the forest    */
     BCAT_WORKSHOP,       /* one artisan's worth of processing         */
     BCAT_FACTORY,        /* heavy industry: furnaces, machine shops   */
+    /* Split out of Workshops in SUPPLY_CHAIN Phase 7, which would
+     * otherwise have put thirty buildings on a bar that shows
+     * twenty-one. The line is what a building is FOR, not how big it
+     * is: a Refinery turns one raw good into bulk stock that other
+     * buildings consume; a Luxury workshop makes a finished thing a
+     * household asks for and nothing else uses. */
+    BCAT_REFINERY,       /* raw good -> bulk stock for other buildings */
+    BCAT_LUXURY,         /* the finished things the upper tiers want   */
     BCAT_HOUSING,        /* where residents live                      */
     BCAT_INFRASTRUCTURE, /* roads, storage, the market                */
     BCAT_MARITIME,       /* everything about ships and other players  */

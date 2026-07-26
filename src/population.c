@@ -29,11 +29,13 @@ static const TierDef TIER_DEFS[] = {
      * accept path had no content to run on; this is the edge that puts
      * it back under test end to end. */
     { BUILDING_HOUSE,
-      { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT },
+      { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT,
+        RES_COUNT },
       BUILDING_HOUSE_ARTISAN, 400, BUILDING_NONE },
     /* SUPPLY_CHAIN Phase 6 completes the second line. */
     { BUILDING_HOUSE_WORKER,
-      { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT },
+      { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT,
+        RES_COUNT },
       BUILDING_HOUSE_ENGINEER, 600, BUILDING_NONE },
     /* Phase 4 shipped this tier with four needs because Fur Coats
      * needs Cloth, Cloth needs Cotton, and no northern profile grows
@@ -46,7 +48,7 @@ static const TierDef TIER_DEFS[] = {
      * real content to use the full width Phase 2 reserved. */
     { BUILDING_HOUSE_ARTISAN,
       { RES_PRESERVES, RES_SEWING_MACHINES, RES_SPECTACLES, RES_WINDOWS,
-        RES_FUR_COATS },
+        RES_FUR_COATS, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
     /* Engineers (Phase 6) are the deepest tier so far and the first
      * that needs the WHOLE archipelago: Pocket Watches want highland
@@ -55,7 +57,23 @@ static const TierDef TIER_DEFS[] = {
      * iron behind everything else. */
     { BUILDING_HOUSE_ENGINEER,
       { RES_LAMPS, RES_POCKET_WATCHES, RES_GRAMOPHONES, RES_BANQUET,
-        RES_COUNT },
+        RES_COUNT, RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_NONE },
+    /* The third line (Phase 7). Every one of these six begins in the
+     * south: coffee and plantains in the jungle, cane, maize and
+     * alpaca on the plantations. Six is MAX_TIER_GOODS, widened this
+     * phase so Wool Cloaks and Plantain Fry could have a tier instead
+     * of being chains nothing eats. */
+    { BUILDING_HOUSE_MERCHANT,
+      { RES_COFFEE, RES_RUM, RES_FLATBREAD, RES_MARSH_HATS,
+        RES_WOOL_CLOAKS, RES_PLANTAIN_FRY },
+      BUILDING_HOUSE_INVESTOR, 900, BUILDING_NONE },
+    /* Investors are the scarcity tier: grapes only on the highland,
+     * pearls only off an atoll, and Jewellery wanting both of the
+     * rarest deposits in the world at once. */
+    { BUILDING_HOUSE_INVESTOR,
+      { RES_SPARKLING_WINE, RES_CIGARS, RES_CHOCOLATE, RES_JEWELLERY,
+        RES_PERFUME, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))

@@ -274,14 +274,16 @@ static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
      * stays a northern problem, which is what keeps the highland worth
      * holding after the south is settled. */
     [PROFILE_PLANTATION] = { 0.32f, 0.44f, 0.78f, 256,   0,  90,  6,
-        FERTILE_COTTON | FERTILE_CANE | FERTILE_TOBACCO | FERTILE_MAIZE,
+        FERTILE_COTTON | FERTILE_CANE | FERTILE_TOBACCO | FERTILE_MAIZE |
+        FERTILE_ALPACA,
         { [DEPOSIT_CLAY] = 8, [DEPOSIT_SAND] = 8 } },
     /* Jungle: forest starts low and takes most of the island, so its
      * crops come in the gaps. Almost no minerals — the south is where
      * things GROW, and an island that had cotton and iron both would
      * make the northern chain optional. */
     [PROFILE_JUNGLE]     = { 0.30f, 0.38f, 0.56f, 256,   0,  20, 70,
-        FERTILE_COCOA | FERTILE_COFFEE | FERTILE_PLANTAIN | FERTILE_LAC,
+        FERTILE_COCOA | FERTILE_COFFEE | FERTILE_PLANTAIN | FERTILE_LAC |
+        FERTILE_ALPACA,
         { [DEPOSIT_CLAY] = 5 } },
 };
 

@@ -619,7 +619,7 @@ the category, if any tab holds more than the bar can show. **When Phase
 7 trips it, the answer is paging in the bar, not another
 recategorisation.**
 
-## Phase 7 — Merchants and Investors
+## Phase 7 — Merchants and Investors — **DONE**
 
 Vineyard → Sparkling Cellar, Pearl Beds (atoll deposit), Jeweller,
 Flower Field → Perfumery, Cigar House, Chocolate House.
@@ -629,6 +629,47 @@ placeable building wanting the colonial goods Phase 5 made shippable,
 upgrading to **Investors** on the luxuries this phase adds. This is the
 phase where the southern islands stop being a novelty and become the
 thing the top of the economy runs on.
+
+### As built
+
+Twenty-seven buildings, twenty-five goods, two new categories,
+`MAX_TIER_GOODS` 5 → 6, `SAVE_VERSION` 13 → 14, `NET_PROTO_VERSION`
+7 → 8. Fixtures: `f327814cce6d4a61` → `afe05df67c91bca9`, UI
+`d63fcd959b5afe9c` → `35c9ccbad003b974`.
+
+**The plan's last three loose ends are settled.** Sails, Wool Cloaks
+and Plantain Fry appear in the chains table and in no tier's needs — a
+producer nothing consumes being exactly what the orphan check exists to
+catch. Rather than drop them, Sails became what a Shipyard is built
+from, and the other two joined the Merchants list, which took it to six
+and `MAX_TIER_GOODS` with it.
+
+**The Shipyard's sails are a soft gate, and the market is what makes it
+soft.** Sails need Cloth, Cloth needs Cotton, cotton grows only in the
+south — and you need a ship to get there. The faction stocks every
+good, so a first Shipyard buys its canvas and every one after it can be
+fitted from a Sail Loft of your own. That is `BUY_PRICE`'s documented
+gold-only escape hatch doing the most load-bearing job it has ever had:
+**if the faction ever stops stocking everything, this becomes a
+deadlock rather than an expense.**
+
+**Two new categories rather than paging.** Workshops would have reached
+thirty against twenty-one slots. `BCAT_REFINERY` and `BCAT_LUXURY`
+split it on what a building is *for* — a refinery turns a raw good into
+bulk stock other buildings consume; a luxury workshop makes a finished
+thing a household asks for and nothing else uses. Nine tabs now, and
+the strip clears the right-hand buttons with one tab to spare: **ten is
+the ceiling**, and `test_hud` now asserts both halves — no tab over the
+slot count, and the strip not reaching the button cluster. Phase 8
+therefore has one category of headroom and no more.
+
+**Two bugs the phase produced.** `HudView.entries[]` held 64 and the
+table passed 81, silently truncating the tail. And `test_hud`'s
+synthetic data went degenerate: it spreads entries round-robin across
+`BCAT_COUNT`, so when that reached a multiple of the affordability
+stride every entry in the Farming tab came out affordable and the
+greyed-slot assertions had nothing to look at. The fix counts
+affordability *within* a tab, which is what it always meant.
 
 ## Phase 8 — the Academy and Scholars
 

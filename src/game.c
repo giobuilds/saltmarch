@@ -503,8 +503,12 @@ typedef struct {
  * FOUR-island world, so its island indices, its grants and its
  * voyages all mean something different in an eight-island one.
  *
- * v13 (SUPPLY_CHAIN Phase 6): nine more goods for the Engineers line. */
-#define SAVE_VERSION 13u
+ * v13 (SUPPLY_CHAIN Phase 6): nine more goods for the Engineers line.
+ *
+ * v14 (SUPPLY_CHAIN Phase 7): twenty-five more goods, and
+ * MAX_TIER_GOODS 5 -> 6. TierDef is not saved, but the resource
+ * vocabulary shifts again. */
+#define SAVE_VERSION 14u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

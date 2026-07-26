@@ -78,8 +78,10 @@ typedef struct NetSession NetSession;
  *    built before it reads "sell 5 of resource 44" as a different
  *    good. Phase 4 bumped only SAVE_VERSION for this and should have
  *    bumped both; Phase 5's island-count bump closed that window by
- *    accident rather than by design. */
-#define NET_PROTO_VERSION     7u
+ *    accident rather than by design.
+ * 8: twenty-five more goods (SUPPLY_CHAIN Phase 7), same reasoning
+ *    as 7. */
+#define NET_PROTO_VERSION     8u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
