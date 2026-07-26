@@ -86,7 +86,7 @@ int snapshot_has_building(const UiIsland *isl, BuildingType type);
  * looks up its own prerequisite, and returns tier_upgrade_check()'s
  * verdict. One call so no overlay reassembles the arguments itself. */
 RejectReason snapshot_upgrade_check(const UiIsland *isl, int idx,
-                                    BuildingType *out_to);
+                                    int branch, BuildingType *out_to);
 
 typedef struct {
     uint8_t  active;

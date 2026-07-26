@@ -112,60 +112,94 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
 
     case CONFIRM_UPGRADE: {
         int            idx  = cs->cmd.b;
-        BuildingType   from = BUILDING_NONE, to = BUILDING_NONE;
-        const TierDef *tier, *next;
-        RejectReason   why;
-        int            k, prereq_type, prereq_present;
+        BuildingType   from = BUILDING_NONE;
+        const TierDef *tier;
+        int            k, bi, shown = 0;
+        int            branch[2], nbranch;
 
         if (idx >= 0 && idx < isl->building_count)
             from = (BuildingType)isl->buildings[idx].type;
+        tier = tier_def_for(from);
 
-        tier        = tier_def_for(from);
-        prereq_type = (int)tier_upgrade_requires(from);
-        prereq_present = snapshot_has_building(isl,
-                                               (BuildingType)prereq_type);
+        /* SUPPLY_CHAIN Phase 8: a house may have TWO futures — its own
+         * line, and Scholars wherever an Academy stands. The popup
+         * offers whichever exist, in that order, and the command it
+         * submits carries the branch in `c`. `alt` was free here: for
+         * an upgrade it had no second payment option to hold.
+         *
+         * Both buttons are decided by the SAME shared rule the sim
+         * will apply, one branch at a time, so neither can offer
+         * something sim_apply then refuses (UI_PLAN decision 3). */
+        out->title[0] = '\0';
+        nbranch = tier_branches(from, branch);
+        for (bi = 0; bi < nbranch; bi++) {
+            int           b = branch[bi];
+            BuildingType  to = BUILDING_NONE;
+            RejectReason  why;
+            const TierDef *next;
+            int           prereq_type, prereq_present;
 
-        why  = snapshot_upgrade_check(isl, idx, &to);
-        next = tier_def_for(to != BUILDING_NONE
-                            ? to
-                            : (tier ? tier->next_tier : BUILDING_NONE));
+            prereq_type    = (int)tier_upgrade_requires(from, b);
+            prereq_present = snapshot_has_building(isl,
+                                                   (BuildingType)prereq_type);
+            why  = snapshot_upgrade_check(isl, idx, b, &to);
+            next = tier_def_for(to != BUILDING_NONE
+                                ? to : tier_branch_target(from, b));
 
-        snprintf(out->title, sizeof(out->title), "Upgrade to %s",
-                 next ? BUILDING_DEFS[next->house_type].name : "nothing");
-        snprintf(out->lines[out->line_count++], CONFIRM_LINE_LEN,
-                 "They will want all of this, every time:");
+            if (shown == 0) {
+                snprintf(out->title, sizeof(out->title), "Upgrade to %s",
+                         next ? BUILDING_DEFS[next->house_type].name
+                              : "nothing");
+                snprintf(out->lines[out->line_count++], CONFIRM_LINE_LEN,
+                         "They will want all of this, every time:");
 
-        /* One row per good the tier being entered will need. This is
-         * the whole point of the popup — the upgrade is not a price,
-         * it is a question about whether you can keep supplying them. */
-        if (next) {
-            for (k = 0; k < MAX_TIER_GOODS; k++) {
-                if (next->needs[k] == RES_COUNT) continue;
-                snprintf(out->needs[out->need_count].label,
-                         sizeof(out->needs[0].label), "%s",
-                         RESOURCE_NAMES[next->needs[k]]);
-                out->needs[out->need_count].met =
-                    (uint8_t)(isl->stock[next->needs[k]] > 0);
-                out->need_count++;
+                /* One row per good the tier being entered will need.
+                 * This is the whole point of the popup — the upgrade is
+                 * not a price, it is a question about whether you can
+                 * keep supplying them. Listed for the FIRST branch;
+                 * the second names its destination on its button. */
+                if (next) {
+                    for (k = 0; k < MAX_TIER_GOODS; k++) {
+                        if (next->needs[k] == RES_COUNT) continue;
+                        snprintf(out->needs[out->need_count].label,
+                                 sizeof(out->needs[0].label), "%s",
+                                 RESOURCE_NAMES[next->needs[k]]);
+                        out->needs[out->need_count].met =
+                            (uint8_t)(isl->stock[next->needs[k]] > 0);
+                        out->need_count++;
+                    }
+                }
+                if (prereq_type != BUILDING_NONE && !prereq_present &&
+                    out->need_count < MAX_TIER_GOODS) {
+                    snprintf(out->needs[out->need_count].label,
+                             sizeof(out->needs[0].label), "%s",
+                             BUILDING_DEFS[prereq_type].name);
+                    out->needs[out->need_count].met = 0;
+                    out->need_count++;
+                }
+                out->refusal = (int32_t)why;
             }
-        }
-        if (prereq_type != BUILDING_NONE && !prereq_present &&
-            out->need_count < MAX_TIER_GOODS) {
-            snprintf(out->needs[out->need_count].label,
-                     sizeof(out->needs[0].label), "%s",
-                     BUILDING_DEFS[prereq_type].name);
-            out->needs[out->need_count].met = 0;
-            out->need_count++;
+
+            snprintf(out->options[shown].label,
+                     sizeof(out->options[0].label), "%s: %d Gold",
+                     next ? BUILDING_DEFS[next->house_type].name : "Upgrade",
+                     tier ? tier->upgrade_gold : 0);
+            /* Affordability is the SHARED rule's verdict, not a
+             * separate gold check. */
+            out->options[shown].affordable = (uint8_t)(why == REJ_OK);
+            shown++;
+            if (shown >= 2) break;
         }
 
-        out->refusal = (int32_t)why;
-        snprintf(out->options[0].label, sizeof(out->options[0].label),
-                 "Pay %d Gold", tier ? tier->upgrade_gold : 0);
-        /* Affordability is the SHARED rule's verdict, not a separate
-         * gold check: the button a player can press and the command
-         * sim_apply will accept are decided by one function. */
-        out->options[0].affordable = (uint8_t)(why == REJ_OK);
-        out->option_count = 1;
+        if (shown == 0) {
+            snprintf(out->title, sizeof(out->title), "Upgrade to nothing");
+            out->refusal = (int32_t)REJ_UNAVAILABLE;
+            snprintf(out->options[0].label, sizeof(out->options[0].label),
+                     "Pay %d Gold", tier ? tier->upgrade_gold : 0);
+            out->options[0].affordable = 0;
+            shown = 1;
+        }
+        out->option_count = (int32_t)shown;
         break;
     }
 

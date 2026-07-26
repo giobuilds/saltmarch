@@ -130,7 +130,7 @@ int snapshot_has_building(const UiIsland *isl, BuildingType type)
 }
 
 RejectReason snapshot_upgrade_check(const UiIsland *isl, int idx,
-                                    BuildingType *out_to)
+                                    int branch, BuildingType *out_to)
 {
     BuildingType from;
     int          stock[RES_COUNT], r;
@@ -147,8 +147,8 @@ RejectReason snapshot_upgrade_check(const UiIsland *isl, int idx,
      * being true quietly. */
     for (r = 0; r < RES_COUNT; r++) stock[r] = (int)isl->stock[r];
 
-    return tier_upgrade_check(from, stock,
+    return tier_upgrade_check(from, branch, stock,
                               snapshot_has_building(isl,
-                                  tier_upgrade_requires(from)),
+                                  tier_upgrade_requires(from, branch)),
                               out_to);
 }

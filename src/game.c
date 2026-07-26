@@ -507,8 +507,13 @@ typedef struct {
  *
  * v14 (SUPPLY_CHAIN Phase 7): twenty-five more goods, and
  * MAX_TIER_GOODS 5 -> 6. TierDef is not saved, but the resource
- * vocabulary shifts again. */
-#define SAVE_VERSION 14u
+ * vocabulary shifts again.
+ *
+ * v15 (SUPPLY_CHAIN Phase 8): four more goods, and CMD_UPGRADE_HOUSE
+ * gained a meaning for `c` — a v14 log's upgrades all carry c = 0,
+ * which happens to be the branch they meant, but the field is no
+ * longer ignorable. */
+#define SAVE_VERSION 15u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1390,16 +1395,36 @@ void game_confirm_demolish(GameState *gs, int building_idx)
 void game_confirm_upgrade(GameState *gs, int building_idx)
 {
     const Island *isl = &gs->islands[gs->current_island];
-    Command       none;
+    Command       none, first, second;
+    BuildingType  type;
+    int           branch[2], n;
 
     if (building_idx < 0 || building_idx >= isl->building_count) return;
     if (!isl->buildings[building_idx].active) return;
-    if (isl->buildings[building_idx].type != BUILDING_HOUSE) return;
+
+    /* Any house type, not just a Marsh Cottage. This was
+     * `type != BUILDING_HOUSE` while Marsh Cottage was the only tier
+     * with anywhere to go; SUPPLY_CHAIN Phase 8 gives EVERY house a
+     * possible future through the Academy, so the question is whether
+     * this is a house at all — which pop_is_house_type answers, and
+     * which agents_sync once got wrong the same way. */
+    type = isl->buildings[building_idx].type;
+    if (!pop_is_house_type(type)) return;
+
+    /* One Command per available branch, in the same order the popup
+     * lists them (tier_branches), so button 0 submits branch 0. */
+    n = tier_branches(type, branch);
+    if (n == 0) return;              /* nowhere to go: no popup at all */
 
     memset(&none, 0, sizeof(none));
-    confirm_set(gs, CONFIRM_UPGRADE,
-                cmd_one_building(CMD_UPGRADE_HOUSE, gs->current_island,
-                                 building_idx), none, 0);
+    first = cmd_one_building(CMD_UPGRADE_HOUSE, gs->current_island,
+                             building_idx);
+    first.c = branch[0];
+    if (n > 1) {
+        second   = first;
+        second.c = branch[1];
+    }
+    confirm_set(gs, CONFIRM_UPGRADE, first, n > 1 ? second : none, n > 1);
 }
 
 void game_confirm_ship(GameState *gs)
@@ -1668,7 +1693,8 @@ int island_has_building(const Island *isl, BuildingType type)
     return 0;
 }
 
-static RejectReason sim_upgrade_house(GameState *gs, int island, int idx)
+static RejectReason sim_upgrade_house(GameState *gs, int island, int idx,
+                                      int branch)
 {
     Island       *isl = &gs->islands[island];
     BuildingType  from, to;
@@ -1677,28 +1703,36 @@ static RejectReason sim_upgrade_house(GameState *gs, int island, int idx)
 
     if (idx < 0 || idx >= isl->building_count) return REJ_UNAVAILABLE;
     if (!isl->buildings[idx].active) return REJ_UNAVAILABLE;
+    if (branch != TIER_BRANCH_LINE && branch != TIER_BRANCH_ACADEMY)
+        return REJ_UNAVAILABLE;
 
     from = isl->buildings[idx].type;
     tier = tier_def_for(from);
     if (!tier) return REJ_UNAVAILABLE;   /* not a house at all */
 
-    why = tier_upgrade_check(from, isl->stockpile.amount,
+    why = tier_upgrade_check(from, branch, isl->stockpile.amount,
                              island_has_building(isl,
-                                 tier_upgrade_requires(from)),
+                                 tier_upgrade_requires(from, branch)),
                              &to);
     if (why != REJ_OK) return why;
 
+    /* Both branches cost the same: upgrade_gold belongs to the tier
+     * being LEFT, and tier_upgrade_check_def charges it. Deliberately
+     * not split per branch — the gate on Scholars is the Academy and
+     * four goods, not a bigger number, which is the rule this whole
+     * mechanic exists to teach. */
     stockpile_add(&isl->stockpile, RES_GOLD, -tier->upgrade_gold);
     isl->buildings[idx].type = to;
     return REJ_OK;
 }
 
-void game_upgrade_house(GameState *gs, int idx)
+void game_upgrade_house(GameState *gs, int idx, int branch)
 {
     Command c = {0};
     c.kind = CMD_UPGRADE_HOUSE;
     c.a    = gs->current_island;
     c.b    = idx;
+    c.c    = branch;
     command_submit(gs, &c);
 }
 
@@ -2208,7 +2242,7 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         return sim_buy(gs, c->a, (ResourceType)c->b, c->c, c->d);
     case CMD_UPGRADE_HOUSE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_upgrade_house(gs, c->a, c->b);
+        return sim_upgrade_house(gs, c->a, c->b, c->c);
     case CMD_BUILD_SHIP:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_build_ship(gs, c->a, c->player_id) >= 0 ? REJ_OK : REJ_UNAVAILABLE;
