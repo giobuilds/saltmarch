@@ -1333,6 +1333,90 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 500 },
         .hud_placeable = 0
     },
+
+    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ---- */
+    [BUILDING_INK_WORKS] = {
+        .name = "Ink Works",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 60, .col_g = 55, .col_b = 75,
+        .produces = RES_INK, .produce_amt = 1,
+        .consumes = { RES_SHELLAC, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 9.0f,
+        .cost = { [RES_BRICKS] = 8, [RES_GOLD] = 170 },
+        .hud_placeable = 1
+    },
+    [BUILDING_PAPER_MILL] = {
+        .name = "Paper Mill",
+        .category = BCAT_REFINERY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 235, .col_g = 232, .col_b = 220,
+        .produces = RES_PAPER, .produce_amt = 1,
+        .consumes = { RES_WOOD, RES_COUNT, RES_COUNT },
+        .consume_amt = { 1, 0, 0 },
+        .tick_seconds = 8.0f,
+        .cost = { [RES_PLANKS] = 10, [RES_GOLD] = 160 },
+        .hud_placeable = 1
+    },
+    [BUILDING_BINDERY] = {
+        .name = "Bindery",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 140, .col_g = 70, .col_b = 60,
+        .produces = RES_BOOKS, .produce_amt = 1,
+        .consumes = { RES_INK, RES_PAPER, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 15.0f,
+        .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 300 },
+        .hud_placeable = 1
+    },
+    [BUILDING_CHART_HOUSE] = {
+        .name = "Chart House",
+        .category = BCAT_LUXURY,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 175, .col_g = 195, .col_b = 200,
+        .produces = RES_CHARTS, .produce_amt = 1,
+        .consumes = { RES_PAPER, RES_GLASS, RES_COUNT },
+        .consume_amt = { 1, 1, 0 },
+        .tick_seconds = 14.0f,
+        .cost = { [RES_STEEL_BEAMS] = 6, [RES_GOLD] = 290 },
+        .hud_placeable = 1
+    },
+    /* Produces nothing. Its whole output is that, while it stands and
+     * is road-connected, every house on the island may take a second
+     * road upward -- which is why it is INFRASTRUCTURE rather than a
+     * workshop, and why demolishing one demotes nobody. */
+    [BUILDING_ACADEMY] = {
+        .name = "Academy",
+        .category = BCAT_INFRASTRUCTURE,
+        .tile_w = 2, .tile_h = 2,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 200, .col_g = 200, .col_b = 225,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_BRICKS] = 20, [RES_STEEL_BEAMS] = 10, [RES_GOLD] = 600 },
+        .hud_placeable = 1
+    },
+    [BUILDING_HOUSE_SCHOLAR] = {
+        .name = "Scholar's House",
+        .category = BCAT_HOUSING,
+        .tile_w = 1, .tile_h = 1,
+        .placement_flags = PLACE_ANY_LAND,
+        .col_r = 195, .col_g = 205, .col_b = 230,
+        .produces = RES_COUNT, .produce_amt = 0,
+        .consumes = { RES_COUNT, RES_COUNT, RES_COUNT },
+        .consume_amt = { 0, 0, 0 },
+        .tick_seconds = 0.0f,
+        .cost = { [RES_BRICKS] = 12, [RES_GOLD] = 450 },
+        .hud_placeable = 0
+    },
 };
 
 const char *building_category_name(BuildingCategory c)

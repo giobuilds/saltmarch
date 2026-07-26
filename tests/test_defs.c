@@ -166,9 +166,18 @@ int main(void)
         for (t = 0; t < BUILDING_TYPE_COUNT; t++) {
             int u, is_upgrade_target = 0;
             if (BUILDING_DEFS[t].hud_placeable) continue;
+            /* Over BOTH branches. SUPPLY_CHAIN Phase 8 made Scholars
+             * reachable from every house via the Academy rather than
+             * through any tier's next_tier, so a guard that only knew
+             * about lines called the Scholar's House unreachable —
+             * correctly, by its own lights, and wrongly about the
+             * world. */
             for (u = 0; u < BUILDING_TYPE_COUNT && !is_upgrade_target; u++) {
-                const TierDef *tier = tier_def_for((BuildingType)u);
-                if (tier && (int)tier->next_tier == t) is_upgrade_target = 1;
+                int br;
+                if (!tier_def_for((BuildingType)u)) continue;
+                for (br = TIER_BRANCH_LINE; br <= TIER_BRANCH_ACADEMY; br++)
+                    if ((int)tier_branch_target((BuildingType)u, br) == t)
+                        is_upgrade_target = 1;
             }
             if (is_upgrade_target) continue;
             printf("  FAIL: %s is on no HUD tab and reachable no other "

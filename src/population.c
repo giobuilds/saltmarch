@@ -75,6 +75,14 @@ static const TierDef TIER_DEFS[] = {
       { RES_SPARKLING_WINE, RES_CIGARS, RES_CHOCOLATE, RES_JEWELLERY,
         RES_PERFUME, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
+    /* Scholars (Phase 8) are on no line: reached from ANY house, and
+     * only where an Academy stands. requires_building is what carries
+     * that -- the existing prerequisite mechanism, given its first
+     * real content after being proven synthetically since Phase 3. */
+    { BUILDING_HOUSE_SCHOLAR,
+      { RES_BOOKS, RES_CHARTS, RES_COFFEE, RES_SPECTACLES,
+        RES_COUNT, RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_ACADEMY },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
 
@@ -87,21 +95,47 @@ const TierDef *tier_def_for(BuildingType type)
     return NULL;   /* not a house type pop_update recognizes */
 }
 
-BuildingType tier_upgrade_requires(BuildingType from)
+BuildingType tier_branch_target(BuildingType from, int branch)
 {
     const TierDef *tier = tier_def_for(from);
+
+    if (!tier) return BUILDING_NONE;   /* not a house at all */
+
+    if (branch == TIER_BRANCH_ACADEMY) {
+        /* Open to every house type, which is the whole point of it —
+         * except to a Scholar's House, which has nowhere further to
+         * go and must not be offered a promotion to itself. */
+        return from == BUILDING_HOUSE_SCHOLAR ? BUILDING_NONE
+                                              : BUILDING_HOUSE_SCHOLAR;
+    }
+    return tier->next_tier;
+}
+
+int tier_branches(BuildingType from, int out[2])
+{
+    int b, n = 0;
+
+    for (b = TIER_BRANCH_LINE; b <= TIER_BRANCH_ACADEMY; b++)
+        if (tier_branch_target(from, b) != BUILDING_NONE)
+            out[n++] = b;
+    return n;
+}
+
+BuildingType tier_upgrade_requires(BuildingType from, int branch)
+{
+    BuildingType   to = tier_branch_target(from, branch);
     const TierDef *next;
 
-    if (!tier || tier->next_tier == BUILDING_NONE) return BUILDING_NONE;
+    if (to == BUILDING_NONE) return BUILDING_NONE;
 
     /* The prerequisite belongs to the tier being entered, not the one
      * being left: it is the Academy that makes Scholars possible, and
      * a Marsh Cottage is not waiting on anything to become Artisans. */
-    next = tier_def_for(tier->next_tier);
+    next = tier_def_for(to);
     return next ? next->requires_building : BUILDING_NONE;
 }
 
-RejectReason tier_upgrade_check(BuildingType from,
+RejectReason tier_upgrade_check(BuildingType from, int branch,
                                 const int stock[RES_COUNT],
                                 int prereq_present,
                                 BuildingType *out_to)
@@ -112,7 +146,8 @@ RejectReason tier_upgrade_check(BuildingType from,
     if (!tier) return REJ_UNAVAILABLE;
 
     return tier_upgrade_check_def(tier,
-                                  tier_def_for(tier->next_tier),
+                                  tier_def_for(tier_branch_target(from,
+                                                                  branch)),
                                   stock, prereq_present, out_to);
 }
 
@@ -125,7 +160,13 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
 
     if (out_to) *out_to = BUILDING_NONE;
 
-    if (!tier || tier->next_tier == BUILDING_NONE) return REJ_UNAVAILABLE;
+    /* Both of these used to consult tier->next_tier, which was the
+     * same thing as `next` while a house had exactly one edge. Since
+     * SUPPLY_CHAIN Phase 8 it is not: a terminal tier still has an
+     * Academy branch, and asking about that branch must not be refused
+     * because its LINE goes nowhere. `next` is the edge being asked
+     * about; nothing here may reach past it. */
+    if (!tier) return REJ_UNAVAILABLE;
     if (!next) return REJ_UNAVAILABLE;   /* an edge to nowhere */
 
     if (next->requires_building != BUILDING_NONE && !prereq_present)
@@ -142,7 +183,10 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
 
     if (stock[RES_GOLD] < tier->upgrade_gold) return REJ_CANT_AFFORD;
 
-    if (out_to) *out_to = tier->next_tier;
+    /* The destination is the edge's, not the line's — the bug this
+     * pair replaced would promote an Academy upgrade to whatever the
+     * house's own line pointed at. */
+    if (out_to) *out_to = next->house_type;
     return REJ_OK;
 }
 

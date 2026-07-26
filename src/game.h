@@ -666,7 +666,9 @@ void game_demolish_building(GameState *gs, int idx);
  * assignment all already look up BUILDING_DEFS live by the (now
  * different) type. No-op if idx is out of range, inactive, not a
  * house, or tier_upgrade_check() refuses. */
-void game_upgrade_house(GameState *gs, int idx);
+/* `branch` is a TierBranch (population.h): the house's own line, or
+ * Scholars where an Academy stands. */
+void game_upgrade_house(GameState *gs, int idx, int branch);
 
 /* Gold cost of laying down a new ship at a Shipyard. */
 #define SHIP_BUILD_COST_GOLD 350

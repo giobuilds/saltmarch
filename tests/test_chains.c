@@ -223,6 +223,25 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
+    /* Scholars (Phase 8) sit on no line, so they are asked of the
+     * whole archipelago like the other late tiers. Their goods lean on
+     * what already existed — ink from jungle lac, paper from timber —
+     * rather than on new ground. */
+    for (s = 0; s < sizeof(SEEDS) / sizeof(SEEDS[0]); s++) {
+        char msg[96];
+        int  unmet = 0;
+
+        survey(NORTH_SOUTH, (int)(sizeof NORTH_SOUTH / sizeof NORTH_SOUTH[0]),
+               SEEDS[s], placeable);
+        reachable_goods(placeable, makeable);
+        report_tier(tier_def_for(BUILDING_HOUSE_SCHOLAR), makeable,
+                    "from the whole archipelago", &unmet);
+        snprintf(msg, sizeof(msg),
+                 "seed %u: Scholars are satisfiable across the archipelago",
+                 SEEDS[s]);
+        CHECK(unmet == 0, msg);
+    }
+
     /* And the negatives, which are what make the other climates matter
      * rather than decorate. The home island alone must NOT be able to
      * brew, and the whole NORTH must not be able to make a Fur Coat —

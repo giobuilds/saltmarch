@@ -149,6 +149,18 @@ typedef enum {
     RES_FLOWERS,        /* Flower Field      (temperate)               */
     RES_PERFUME,        /* Flowers+Gin    -> Perfumery     (Investors) */
 
+    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ----
+     * Invented outright: the source notes name a Scholars tier and
+     * stop, giving it no needs and no chains. These are the plan's
+     * proposal, and they lean on what already exists rather than
+     * adding terrain -- ink from the jungle's lac, paper from timber,
+     * and the two things a scholar's household actually wants made
+     * from those. */
+    RES_INK,       /* Shellac        -> Ink Works                      */
+    RES_PAPER,     /* Wood           -> Paper Mill                     */
+    RES_BOOKS,     /* Ink + Paper    -> Bindery       (Scholars)       */
+    RES_CHARTS,    /* Paper + Glass  -> Chart House   (Scholars)       */
+
     RES_GOLD,
     RES_COUNT          /* always last */
 } ResourceType;

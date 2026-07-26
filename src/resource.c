@@ -82,6 +82,11 @@ const char *RESOURCE_NAMES[RES_COUNT] = {
     [RES_FLOWERS]        = "Flowers",
     [RES_PERFUME]        = "Perfume",
 
+    [RES_INK]    = "Ink",
+    [RES_PAPER]  = "Paper",
+    [RES_BOOKS]  = "Books",
+    [RES_CHARTS] = "Charts",
+
     [RES_GOLD]  = "Gold",
 };
 
@@ -175,6 +180,11 @@ const ResourceCategory RESOURCE_CATEGORIES[RES_COUNT] = {
     [RES_JEWELLERY]      = RCAT_REFINED,
     [RES_FLOWERS]        = RCAT_RAW,
     [RES_PERFUME]        = RCAT_REFINED,
+
+    [RES_INK]    = RCAT_REFINED,
+    [RES_PAPER]  = RCAT_REFINED,
+    [RES_BOOKS]  = RCAT_REFINED,
+    [RES_CHARTS] = RCAT_REFINED,
 
     [RES_GOLD]  = RCAT_CURRENCY,
 };
@@ -280,6 +290,11 @@ const int SELL_PRICE[RES_COUNT] = {
     [RES_JEWELLERY]      = 62,
     [RES_FLOWERS]        = 4,
     [RES_PERFUME]        = 44,
+
+    [RES_INK]    = 12,
+    [RES_PAPER]  = 7,
+    [RES_BOOKS]  = 33,
+    [RES_CHARTS] = 29,
     /* RES_GOLD left at 0 — unused, can't sell gold for gold */
 };
 
@@ -362,6 +377,11 @@ const int BUY_PRICE[RES_COUNT] = {
     [RES_JEWELLERY]      = 124,
     [RES_FLOWERS]        = 8,
     [RES_PERFUME]        = 88,
+
+    [RES_INK]    = 24,
+    [RES_PAPER]  = 14,
+    [RES_BOOKS]  = 66,
+    [RES_CHARTS] = 58,
     /* RES_GOLD left at 0 — unused */
 };
 

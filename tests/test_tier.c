@@ -238,7 +238,7 @@ static void test_real_table(void)
           "which is why a Wright's House is something you build");
     CHECK(tier_def_for(BUILDING_WAREHOUSE) == NULL,
           "a warehouse is not a tier");
-    CHECK(tier_upgrade_requires(BUILDING_HOUSE) == BUILDING_NONE,
+    CHECK(tier_upgrade_requires(BUILDING_HOUSE, TIER_BRANCH_LINE) == BUILDING_NONE,
           "no tier needs a building yet — the Academy is Phase 8");
 
     /* The needs the plan gives them. Grain is conspicuously absent: it
@@ -268,7 +268,7 @@ static void test_real_table(void)
      * chains that will keep feeding it. */
     for (r = 0; r < RES_COUNT; r++) stock[r] = 0;
     stock[RES_GOLD] = 10000;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_NEEDS_GOODS,
           "however rich the island, an unsupplied cottage cannot climb");
 
     stock[RES_PRESERVES]       = 1;
@@ -278,16 +278,171 @@ static void test_real_table(void)
     /* Four of five, and the missing one is the southern good — which
      * is the shape of the whole phase: everything a northern island
      * can make, and still not enough. */
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_NEEDS_GOODS,
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_NEEDS_GOODS,
           "every northern good and no Fur Coats is still not enough");
     stock[RES_FUR_COATS] = 1;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_OK,
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_OK,
           "with all five present it may climb");
     CHECK(to == BUILDING_HOUSE_ARTISAN, "and Artisans is where it goes");
 
     stock[RES_GOLD] = 0;
-    CHECK(tier_upgrade_check(BUILDING_HOUSE, stock, 1, &to) == REJ_CANT_AFFORD,
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_CANT_AFFORD,
           "the goods are necessary but the Gold is still required too");
+}
+
+/* ---- 4b. the Academy: a second future for every house ------
+ * SUPPLY_CHAIN Phase 8's verify step. The prerequisite mechanism has
+ * been proven synthetically since Phase 3 (T_GATED); this is the same
+ * rule with real content behind it, and the first time a house has had
+ * more than one place to go. */
+static void test_academy(void)
+{
+    static const BuildingType HOUSES[] = {
+        BUILDING_HOUSE, BUILDING_HOUSE_WORKER, BUILDING_HOUSE_ARTISAN,
+        BUILDING_HOUSE_ENGINEER, BUILDING_HOUSE_MERCHANT,
+        BUILDING_HOUSE_INVESTOR
+    };
+    int          stock[RES_COUNT], r;
+    size_t       h;
+    BuildingType to;
+
+    printf("--- the Academy ---\n");
+
+    for (r = 0; r < RES_COUNT; r++) stock[r] = 0;
+    stock[RES_GOLD]       = 100000;
+    stock[RES_BOOKS]      = 1;
+    stock[RES_CHARTS]     = 1;
+    stock[RES_COFFEE]     = 1;
+    stock[RES_SPECTACLES] = 1;
+
+    for (h = 0; h < sizeof(HOUSES) / sizeof(HOUSES[0]); h++) {
+        char msg[96];
+
+        CHECK(tier_upgrade_requires(HOUSES[h], TIER_BRANCH_ACADEMY) ==
+              BUILDING_ACADEMY,
+              "every house type names the Academy as what it waits on");
+
+        /* Without one: refused, and refused for the RIGHT reason. A
+         * plain "no" would not tell a player to go and build it. */
+        snprintf(msg, sizeof(msg), "%s cannot reach Scholars with no Academy",
+                 BUILDING_DEFS[HOUSES[h]].name);
+        CHECK(tier_upgrade_check(HOUSES[h], TIER_BRANCH_ACADEMY, stock, 0,
+                                 &to) == REJ_NEEDS_BUILDING, msg);
+
+        snprintf(msg, sizeof(msg), "...and can with one");
+        CHECK(tier_upgrade_check(HOUSES[h], TIER_BRANCH_ACADEMY, stock, 1,
+                                 &to) == REJ_OK, msg);
+        CHECK(to == BUILDING_HOUSE_SCHOLAR, "...arriving at Scholars");
+    }
+
+    /* A Scholar's House is the end of that road, not a loop. */
+    CHECK(tier_branch_target(BUILDING_HOUSE_SCHOLAR, TIER_BRANCH_ACADEMY) ==
+          BUILDING_NONE,
+          "a Scholar's House is not offered a promotion to itself");
+
+    /* The goods still matter: the Academy is a prerequisite, not a
+     * shortcut past the tier's needs. */
+    stock[RES_BOOKS] = 0;
+    CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_ACADEMY, stock, 1,
+                             &to) == REJ_NEEDS_GOODS,
+          "an Academy does not excuse a household from wanting Books");
+
+    /* And the two branches are genuinely different roads: a Marsh
+     * Cottage with an Academy has two futures, and the popup's button
+     * order is the shared list both sides read. */
+    {
+        int br[2], n = tier_branches(BUILDING_HOUSE, br);
+        CHECK(n == 2, "a Marsh Cottage has two possible futures");
+        CHECK(br[0] == TIER_BRANCH_LINE && br[1] == TIER_BRANCH_ACADEMY,
+              "its own line first, the Academy second");
+        n = tier_branches(BUILDING_HOUSE_INVESTOR, br);
+        CHECK(n == 1 && br[0] == TIER_BRANCH_ACADEMY,
+              "a terminal tier offers only the Academy");
+    }
+}
+
+/* ---- 4c. an Academy is a prerequisite, not a patron ---------
+ * The other half of Phase 8's verify step, and the one that needs a
+ * real world rather than the rule alone: demolishing an Academy must
+ * demote nobody. Scholars keep their standing because the
+ * prerequisite is checked when a house CLIMBS, not every needs tick —
+ * so this asserts an absence, which is exactly the kind of thing that
+ * breaks silently if pop_update ever learns about requires_building. */
+static void test_academy_demolition(void)
+{
+    GameState *gs = game_init();
+    Island    *isl;
+    int        r, c, house = -1, academy = -1;
+
+    printf("--- an Academy is a prerequisite, not a patron ---\n");
+    if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
+    game_new_seeded(gs, 4242u);
+    isl = game_cur_island(gs);
+    isl->stockpile.amount[RES_GOLD] = 500000;
+
+    /* A Warehouse, an Academy, a house, and roads over everything that
+     * is left. The road carpet is not decoration: island_has_building
+     * requires the Academy be road-CONNECTED, which is the plan's
+     * wording and the difference between a prerequisite and a
+     * decoration. A first attempt at this test placed the two
+     * buildings alone and the upgrade was refused, correctly. */
+    for (r = 0; r < MAP_ROWS; r++)
+        for (c = 0; c < MAP_COLS; c++)
+            if (building_can_place(&isl->map, BUILDING_WAREHOUSE, r, c)) {
+                building_place(isl->buildings, &isl->building_count,
+                               &isl->map, BUILDING_WAREHOUSE, r, c);
+                r = MAP_ROWS;
+                break;
+            }
+    for (r = 0; r < MAP_ROWS && academy < 0; r++)
+        for (c = 0; c < MAP_COLS && academy < 0; c++)
+            if (building_can_place(&isl->map, BUILDING_ACADEMY, r, c))
+                academy = building_place(isl->buildings,
+                                         &isl->building_count, &isl->map,
+                                         BUILDING_ACADEMY, r, c);
+    for (r = 0; r < MAP_ROWS && house < 0; r++)
+        for (c = 0; c < MAP_COLS && house < 0; c++)
+            if (building_can_place(&isl->map, BUILDING_HOUSE, r, c))
+                house = building_place(isl->buildings, &isl->building_count,
+                                       &isl->map, BUILDING_HOUSE, r, c);
+    for (r = 0; r < MAP_ROWS; r++)
+        for (c = 0; c < MAP_COLS; c++)
+            if (building_can_place(&isl->map, BUILDING_ROAD, r, c))
+                building_place(isl->buildings, &isl->building_count,
+                               &isl->map, BUILDING_ROAD, r, c);
+
+    if (house < 0 || academy < 0) {
+        printf("  FAIL: could not place a house and an Academy\n");
+        failures++;
+        game_free(gs);
+        return;
+    }
+    pop_init(&isl->pop_data[house]);
+    sim_run_one_tick(gs);            /* connectivity_update runs here */
+    CHECK(isl->buildings[academy].connected,
+          "the Academy is road-connected, which the rule requires");
+
+    stockpile_add(&isl->stockpile, RES_BOOKS, 2);
+    stockpile_add(&isl->stockpile, RES_CHARTS, 2);
+    stockpile_add(&isl->stockpile, RES_COFFEE, 2);
+    stockpile_add(&isl->stockpile, RES_SPECTACLES, 2);
+
+    game_upgrade_house(gs, house, TIER_BRANCH_ACADEMY);
+    while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
+    CHECK(isl->buildings[house].type == BUILDING_HOUSE_SCHOLAR,
+          "a Marsh Cottage climbs straight to Scholars beside an Academy");
+
+    /* Now take it away. */
+    game_demolish_building(gs, academy);
+    while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
+    CHECK(!isl->buildings[academy].active, "the Academy is demolished");
+
+    for (r = 0; r < 200; r++) sim_run_one_tick(gs);
+    CHECK(isl->buildings[house].type == BUILDING_HOUSE_SCHOLAR,
+          "and the household it made is still a Scholar's, two hundred "
+          "ticks later");
+
+    game_free(gs);
 }
 
 /* ---- 5. sim and UI answer identically ---------------------- */
@@ -351,7 +506,7 @@ static void test_sim_and_ui_agree(void)
     stockpile_add(&isl->stockpile, RES_MARSH_GIN, 3);
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
-                                 &to_ui) == REJ_NEEDS_GOODS,
+                                 TIER_BRANCH_LINE, &to_ui) == REJ_NEEDS_GOODS,
           "the UI refuses a cottage that has none of what Artisans want");
     CHECK(to_ui == BUILDING_NONE, "and names no destination while refusing");
 
@@ -370,7 +525,7 @@ static void test_sim_and_ui_agree(void)
     /* The sim refuses identically, and changes nothing when it does. */
     before = isl->stockpile.amount[RES_GOLD];
     gs->confirm.open = 0;
-    game_upgrade_house(gs, idx);
+    game_upgrade_house(gs, idx, TIER_BRANCH_LINE);
     while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
 
     CHECK(isl->buildings[idx].type == BUILDING_HOUSE,
@@ -387,7 +542,7 @@ static void test_sim_and_ui_agree(void)
 
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
-                                 &to_ui) == REJ_OK,
+                                 TIER_BRANCH_LINE, &to_ui) == REJ_OK,
           "supply all five and the UI says it may climb");
     CHECK(to_ui == BUILDING_HOUSE_ARTISAN, "and names Artisans as where");
 
@@ -403,7 +558,7 @@ static void test_sim_and_ui_agree(void)
 
     before = isl->stockpile.amount[RES_GOLD];
     gs->confirm.open = 0;
-    game_upgrade_house(gs, idx);
+    game_upgrade_house(gs, idx, TIER_BRANCH_LINE);
     while (gs->cmd_applied < gs->cmd_count) sim_run_one_tick(gs);
 
     CHECK(isl->buildings[idx].type == BUILDING_HOUSE_ARTISAN,
@@ -440,6 +595,8 @@ int main(void)
     test_three_inputs();
     test_upgrade_rule();
     test_real_table();
+    test_academy();
+    test_academy_demolition();
     test_sim_and_ui_agree();
 
     if (failures) {

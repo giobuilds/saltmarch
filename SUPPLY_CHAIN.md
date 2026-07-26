@@ -671,7 +671,7 @@ stride every entry in the Farming tab came out affordable and the
 greyed-slot assertions had nothing to look at. The fix counts
 affordability *within* a tab, which is what it always meant.
 
-## Phase 8 — the Academy and Scholars
+## Phase 8 — the Academy and Scholars — **DONE**
 
 The **Academy**: a building that, while active and road-connected, lets
 any house on its island upgrade to **Scholars** regardless of which
@@ -686,6 +686,50 @@ Its goods are invented, since the notes name the tier and stop: **Ink**
 Scholars with an Academy present and none without it — the
 `REJ_NEEDS_BUILDING` path — and demolishing the Academy demotes
 nobody.
+
+### As built
+
+Six buildings, four goods, `SAVE_VERSION` 14 → 15, `NET_PROTO_VERSION`
+8 → 9. Fixtures: `afe05df67c91bca9` → `64527a2c7a8be0b9`, UI
+`35c9ccbad003b974` → `1d1c2b21ec2cdc84`.
+
+**A house now has two possible futures, which Phase 3 predicted it
+would.** Its own line, and Scholars wherever an Academy stands. That
+made "upgrade" a choice rather than a destination, so
+`CMD_UPGRADE_HOUSE` carries a `TierBranch` in `c`, `tier_upgrade_check`
+takes one, and the confirm popup offers a button per available branch
+— using the `alt` slot that, for an upgrade, had always been empty.
+
+Draw order and submit order come from **one shared list**
+(`tier_branches`). They were separate for about ten minutes, and the
+bug that would have shipped is precise: a terminal tier like Investors
+has only its Academy branch, so button 0 would have submitted branch 0
+and promoted it along a line that does not exist.
+
+**The bug this phase found in the rule it inherited.**
+`tier_upgrade_check_def` takes the destination tier as a parameter and
+then consulted `tier->next_tier` anyway — for its "is there an edge"
+guard *and* for the destination it returned. That was invisible while a
+house had exactly one edge and wrong the moment it had two: every
+Academy upgrade was refused for terminal tiers, and every one that
+succeeded promoted the house along its **line** instead. Both now read
+`next`, which is the edge actually being asked about.
+
+**`game_confirm_upgrade` was hardcoded to `BUILDING_HOUSE`**, from when
+a Marsh Cottage was the only tier with anywhere to go. It asks
+`pop_is_house_type` now — the same predicate `agents_sync` once got
+wrong in the same way.
+
+**The Academy is a prerequisite, not a patron**, and the test asserts
+the absence: demolish it and the Scholars it made stay Scholars, two
+hundred ticks later. That holds because the prerequisite is checked
+when a house *climbs*, not every needs tick — which is a property that
+would break silently if `pop_update` ever learned about
+`requires_building`.
+
+Its goods are the plan's invention and lean on what already existed:
+ink from the jungle's lac, paper from timber, and the two things a
+scholar's household wants made from those. No new terrain.
 
 ---
 

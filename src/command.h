@@ -31,7 +31,11 @@
  *   CMD_SELL_RESOURCE   a=island b=resource c=qty d=limit price
  *   CMD_BUY_RESOURCE    a=island b=resource c=qty d=limit price
  *                        (c<0 => "max"; d==0 => no limit)
- *   CMD_UPGRADE_HOUSE   a=island b=building index
+ *   CMD_UPGRADE_HOUSE   a=island b=building index c=TierBranch
+ *                        (0 = the house's own line, 1 = Scholars via
+ *                        an Academy — SUPPLY_CHAIN Phase 8 gave a
+ *                        house two possible futures, so which one is
+ *                        part of the command)
  *   CMD_BUILD_SHIP      a=island b=shipyard index (unused today)
  *   CMD_SHIP_TRANSFER   a=ship   b=resource c=qty (sign=load/unload) d=island
  *   CMD_SHIP_DEPART     a=ship   b=destination island c=insure (0/1)

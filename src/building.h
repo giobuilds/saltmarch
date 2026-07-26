@@ -167,6 +167,18 @@ typedef enum {
     BUILDING_HOUSE_MERCHANT   = 82, /* the third line's base           */
     BUILDING_HOUSE_INVESTOR   = 83, /* upgrade of a Merchant House     */
 
+    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ----
+     * The Academy is a PREREQUISITE, not an action: it converts
+     * nobody by itself, and demolishing it demotes nobody. While one
+     * stands, road-connected, every house on the island gains a
+     * second possible future. */
+    BUILDING_INK_WORKS        = 84, /* Shellac        -> Ink           */
+    BUILDING_PAPER_MILL       = 85, /* Wood           -> Paper         */
+    BUILDING_BINDERY          = 86, /* Ink + Paper    -> Books         */
+    BUILDING_CHART_HOUSE      = 87, /* Paper + Glass  -> Charts        */
+    BUILDING_ACADEMY          = 88, /* the Scholars prerequisite       */
+    BUILDING_HOUSE_SCHOLAR    = 89, /* reachable from ANY house tier   */
+
     BUILDING_TYPE_COUNT
 } BuildingType;
 

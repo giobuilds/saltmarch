@@ -80,8 +80,11 @@ typedef struct NetSession NetSession;
  *    bumped both; Phase 5's island-count bump closed that window by
  *    accident rather than by design.
  * 8: twenty-five more goods (SUPPLY_CHAIN Phase 7), same reasoning
- *    as 7. */
-#define NET_PROTO_VERSION     8u
+ *    as 7.
+ * 9: four more goods, and CMD_UPGRADE_HOUSE's `c` now selects which
+ *    way up (SUPPLY_CHAIN Phase 8). A peer that ignores it would
+ *    apply every Scholars upgrade as a line upgrade. */
+#define NET_PROTO_VERSION     9u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

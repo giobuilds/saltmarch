@@ -101,11 +101,42 @@ typedef struct {
  * decision 3 exists to prevent. */
 const TierDef *tier_def_for(BuildingType type);
 
+/* ---- the two ways up (SUPPLY_CHAIN Phase 8) ----------------
+ * A house on a line climbs to its own next tier. An island with an
+ * Academy offers a SECOND future to every house on it, skipping
+ * whatever line it was on — a scholar's household need not have been a
+ * merchant's first.
+ *
+ * So an upgrade is no longer "the" upgrade: it is a choice of branch,
+ * which is why CMD_UPGRADE_HOUSE carries one and the confirm popup can
+ * offer two buttons. SUPPLY_CHAIN Phase 3 predicted this exactly when
+ * it noted that a second edge "would mean a Marsh Cottage has two
+ * possible futures, and the confirm popup would need to ask which". */
+typedef enum {
+    TIER_BRANCH_LINE    = 0,   /* the tier's own next_tier          */
+    TIER_BRANCH_ACADEMY = 1    /* Scholars, from any house at all   */
+} TierBranch;
+
+/* Where `branch` leads from `from`, or BUILDING_NONE if it leads
+ * nowhere (a terminal line, or the Academy branch asked of a house
+ * that is already a Scholar's). */
+BuildingType tier_branch_target(BuildingType from, int branch);
+
+/* The branches that lead ANYWHERE from `from`, in the order the
+ * confirm popup shows them; returns how many (0-2) and fills `out`.
+ *
+ * Shared on purpose. The popup builds one button per branch and
+ * game_confirm_upgrade stores one Command per branch, and if those two
+ * enumerated them separately the second button could submit the first
+ * branch the moment a house had only its Academy future left. Draw
+ * order and submit order are the same list. */
+int tier_branches(BuildingType from, int out[2]);
+
 /* What `from` must have alongside it before it can upgrade, or
  * BUILDING_NONE. The caller looks the building up in its own world —
  * the sim in GameState, the UI in its snapshot — because that lookup
  * is the one part of the rule that genuinely differs between them. */
-BuildingType tier_upgrade_requires(BuildingType from);
+BuildingType tier_upgrade_requires(BuildingType from, int branch);
 
 /* May a house of type `from` upgrade, given this island's stock and
  * whether tier_upgrade_requires()'s building is present?
@@ -125,7 +156,7 @@ BuildingType tier_upgrade_requires(BuildingType from);
  * will want every needs tick from then on, so requiring them is
  * asking "can you keep this neighbourhood supplied", not charging a
  * one-off price. */
-RejectReason tier_upgrade_check(BuildingType from,
+RejectReason tier_upgrade_check(BuildingType from, int branch,
                                 const int stock[RES_COUNT],
                                 int prereq_present,
                                 BuildingType *out_to);
