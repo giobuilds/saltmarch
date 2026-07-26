@@ -44,6 +44,14 @@
  * recorded it.
  */
 
+/* Before the platform shim, because the shim itself uses uint64_t (the
+ * monotonic clock) and nothing below is guaranteed to provide it. The
+ * POSIX socket headers happen to drag the fixed-width types in, which
+ * is exactly why this was invisible on Linux and a hard syntax error
+ * on MSVC — winsock2.h has no such side effect. */
+#include <stdint.h>
+#include <stddef.h>
+
 /* ---- platform shim ----------------------------------------
  * Included BEFORE net.h: winsock2.h must be seen before anything that
  * might drag in windows.h (which would pull the incompatible winsock 1
@@ -184,10 +192,20 @@ static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
 
     FD_ZERO(&wfds);
     FD_SET(s, &wfds);
+    /* tv_usec is `int` on macOS and `long` on Linux and Windows, so the
+     * only assignment that narrows nowhere is one from a type narrower
+     * than all three. The value is under a million by construction. */
     tv.tv_sec  = (long)(ms / 1000u);
-    tv.tv_usec = (long)(ms % 1000u) * 1000L;
+    tv.tv_usec = (int)((ms % 1000u) * 1000u);
 
-    rc = select((int)s + 1, NULL, &wfds, NULL, &tv);
+#ifdef _WIN32
+    /* Winsock ignores nfds entirely, and a SOCKET is a pointer-width
+     * handle — computing `s + 1` for it would be inventing a narrowing
+     * conversion to satisfy an argument nobody reads. */
+    rc = select(0, NULL, &wfds, NULL, &tv);
+#else
+    rc = select(s + 1, NULL, &wfds, NULL, &tv);
+#endif
     if (rc <= 0) return 0;                       /* timed out or failed */
 
     /* Writable only means the attempt finished; SO_ERROR says how. */
@@ -759,9 +777,10 @@ static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
     send_msg(ns, p, MSG_WORLD, buf, (uint32_t)total);
     free(buf);
     free(snap);
-    sim_log("net: world sent to player %u (tick %llu, %zu-byte snapshot, "
+    sim_log("net: world sent to player %u (tick %llu, %llu-byte snapshot, "
             "%d pending commands)",
-            p->player_id, (unsigned long long)gs->sim_tick_no, snap_len, n);
+            p->player_id, (unsigned long long)gs->sim_tick_no,
+            (unsigned long long)snap_len, n);
 }
 
 /* A freshly joined player that owns nothing gets a starting island —

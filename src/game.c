@@ -526,10 +526,10 @@ static int save_write(const GameState *gs, const char *path,
     }
 
     if (snap)
-        sim_log("Checkpoint written to %s (tick %llu, %zu-byte snapshot, "
+        sim_log("Checkpoint written to %s (tick %llu, %llu-byte snapshot, "
                 "%d pending commands, %d intents)",
-                path, (unsigned long long)gs->sim_tick_no, snap_len, n,
-                gs->intent_count);
+                path, (unsigned long long)gs->sim_tick_no,
+                (unsigned long long)snap_len, n, gs->intent_count);
     else
         sim_log("Game saved to %s (seed %u, tick %llu, %d commands, %d intents)",
                 path, gs->world_seed,
