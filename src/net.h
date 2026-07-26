@@ -27,7 +27,8 @@
  *     with MSG_WORLD — the full (seed, tick, log), the same shape as a
  *     v6 save — and the guest rebuilds by replay. Never state-patching.
  *   - Joining IS a resync: HELLO -> WELCOME (your player id) ->
- *     MSG_WORLD, then the host grants the joiner a starting island
+ *     MSG_WORLD (a snapshot of the world plus the commands stamped for
+ *     ticks that have not run yet), then the host grants the joiner a starting island
  *     through the funnel (CMD_GRANT_START) if it owns nothing. A client
  *     may ask to resume an identity it held before (net_join's
  *     resume_id, the client's --as N): honoured if that player owns an
@@ -61,8 +62,12 @@ typedef struct NetSession NetSession;
  *    try to talk.
  * 4: MSG_PING. Liveness is no longer inferred from MSG_HASH, so a peer
  *    that does not send pings now looks idle and gets dropped (see
- *    SERVER.md's transport hardening plan). */
-#define NET_PROTO_VERSION     4u
+ *    SERVER.md's transport hardening plan).
+ * 5: MSG_WORLD carries a SNAPSHOT and the pending tail instead of the
+ *    seed and the whole command log, so joining costs what the world
+ *    weighs rather than how long it has existed (SERVER.md, "Log
+ *    truncation"). Same message, entirely different payload. */
+#define NET_PROTO_VERSION     5u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

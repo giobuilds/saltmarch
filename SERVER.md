@@ -49,10 +49,16 @@ The client cannot tell a dedicated server from a friend running
   no separate "offline production" formula, and there must never be one
   — divergent offline and online rates would break the promise that
   logging off is safe and fair.
-- **Restart is not a rollback.** A checkpoint is `(seed, tick, command
-  log)` — an ordinary `.smlog`. `saltmarch_replay --replay world.smlog`
-  reconstructs the same world and prints the same hash, so the server's
-  state format is verifiable with the same tool CI uses.
+- **Restart is not a rollback.** A checkpoint is a full-state snapshot
+  plus the commands stamped for ticks that had not run yet — still an
+  ordinary `.smlog`, still read by `saltmarch_replay --replay
+  world.smlog`, which restores it and prints its hash. The snapshot
+  carries a checksum over its bytes and the `sim_hash` of the world it
+  captured, and refuses to load if either disagrees, so a damaged
+  checkpoint fails loudly instead of quietly becoming a different
+  world. What it no longer does is re-derive the world from its whole
+  history: see "Log truncation" below for why, and for what that
+  costs.
 - **Identity survives disconnects.** Each connection is assigned a
   player id at join; a client may ask for one back with `--as N`, which
   is honoured if that player owns an island and nobody is currently
@@ -68,14 +74,111 @@ The client cannot tell a dedicated server from a friend running
   an id can claim it while its owner is away. Fine for friends, not fine
   for a public server. This is the first thing to fix before opening one
   up.
-- **No log truncation.** Join transfers the entire command log and the
-  client replays it, so join cost grows with world age. The plan's
-  answer is a checkpoint containing state rather than history, which
-  needs a full-state serialisation format the save file deliberately
-  does not have today. At 10 ticks/sec on a 64x64 grid there is a lot of
-  headroom before this bites, and `NET_MAX_PEERS` connections is a small
-  world anyway.
 - **No sharding.** One process, one archipelago, one thread.
+
+## Log truncation: the snapshot format
+
+Join used to transfer the whole command log and replay it from tick 0,
+so the cost of joining grew with the world's age forever. It no longer
+does: installing a snapshot is flat in age, measured at ~3 ms for a
+29 KB world whether that world is at tick 10,000 or 1,000,000.
+
+Two measurements decided the shape of the fix, and both are worth
+keeping because they point away from the obvious design.
+
+**The cost is replay time, not log bytes.** `game_install_world` runs
+every tick from 0. A populated island ticks at roughly 575k ticks/sec,
+so a week-old world costs about ten seconds of frozen client at join,
+a month about a minute, a year around nine — and it accrues whether or
+not anybody played, because the server ticks regardless. Log *size* was
+never the binding constraint; tick *count* was.
+
+**A naive state dump would be a regression.** `GameState` is 2.6 MB, of
+which ~2.1 MB is `Agent.path[]` arrays that are empty most of the time
+and 328 KB is four `Map`s. At 40 bytes per `Command` that only pays for
+itself past ~65,000 commands — so a dump-the-structs snapshot would
+make every ordinary world *bigger*, not smaller. The snapshot therefore
+writes **live data only**: `agent_count` agents each with `path_len`
+waypoints, and `building_count` buildings.
+
+The maps turned out not to need writing at all. Terrain is immutable
+once generated — outside `map.c`'s own generation passes nothing in the
+tree writes `map.tiles`, and placement marks no tiles because occupancy
+is derived from `buildings[]` — so a map is a pure function of its
+`(seed, profile)` and is regenerated on load. That deleted 32 KB per
+island, nine tenths of the first draft's bytes. If terrain ever becomes
+mutable (terraforming, a depleted deposit) the tiles have to come back,
+and `put_island` is the one line that has to change.
+
+A busy 40-house island with 117 agents and 600 buildings encodes to
+**29.6 KB**.
+
+### What landed
+
+1. **`src/snapshot.c/h`**, in the sim library and SDL-free, encoding to
+   and from a byte buffer so the file and the wire share one
+   implementation. Explicit little-endian, field by field — *not* a
+   struct dump. Raw structs would carry padding (the same class of bug
+   that once leaked four stack bytes into every save) and would let a
+   reordered field silently change a world. The snapshot carries the
+   `sim_hash` of the world it captured; decode recomputes it and
+   refuses a mismatch, so a corrupt checkpoint fails loudly at load
+   rather than quietly becoming a different world.
+
+2. **Save format v10** gains an optional snapshot section. This is the
+   part that has to be got right: the determinism gate
+   (`--record` then `--replay`, CI's central guarantee) works precisely
+   *because* a save is `(seed, full log)` and replaying re-derives the
+   world. If every save became a snapshot, "replay" would degrade to
+   "load", and the gate would stop testing anything. So both live in
+   one format behind a flag — fixtures keep full history and keep
+   proving determinism; server checkpoints carry a snapshot and a tail.
+
+3. **Snapshot plus tail, never snapshot alone.** Commands are stamped
+   `NET_CMD_DELAY_TICKS` into the future, so at any instant the log has
+   an unapplied tail. A checkpoint at tick T stores the state at T and
+   every command stamped `>= T`; dropping that tail would lose commands
+   that had been accepted and acknowledged but not yet applied.
+
+4. **The wire.** `MSG_WORLD` carries a snapshot and tail instead of
+   seed and full history, which is what actually makes join O(state)
+   rather than O(age). Another wire change, so `NET_PROTO_VERSION`
+   goes to 5.
+
+5. **Truncation, and keeping the scrubber honest.** The server drops
+   the applied log prefix each time it checkpoints, which bounds the
+   file *and* the process — a server up for months would otherwise hold
+   every command of those months in memory and hand all of them to the
+   next joiner.
+
+   That breaks the F8 scrubber, which rebuilds a past tick by replaying
+   from tick 0. Below the cut there is no tick 0 — and the failure mode
+   is not an error, it is a plausible lie: replaying the surviving tail
+   against a fresh seed builds a world in which none of the discarded
+   history ever happened, and shows it as the past. So the world keeps
+   the snapshot its floor stands on (`GameState.floor_snap`) and
+   rebuilds from *that* plus the surviving tail. The scrubber works
+   normally inside the retained window and clamps at the floor instead
+   of fabricating anything below it; the slider is scaled to that
+   window, since a track running from zero would squeeze every
+   reachable tick into its last pixel.
+
+**What this trades away**, stated plainly because it is a real loss.
+"Restart is not a rollback" stops being
+witnessed by re-deriving the world from its whole history and starts
+being witnessed by the hash the snapshot carries. That is a weaker
+claim — it verifies the state was stored faithfully, not that the state
+was reachable by legal play — and it is the price of a world that can
+run for years. Fixtures and the determinism gate keep the stronger
+property, which is why they keep full logs.
+
+`saltmarch_replay --replay` on a checkpoint therefore reports its
+self-check as **n/a** rather than as a failure — a file cannot be
+faulted for not containing something it was never meant to contain.
+`ghost_faction` refuses a checkpoint outright for the same reason: it
+wants somebody's recorded play, and a checkpoint holds state plus the
+four commands that had not been applied yet, which would seed a ghost
+that does nothing.
 
 ## Transport hardening plan
 

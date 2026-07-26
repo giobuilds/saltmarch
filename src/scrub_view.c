@@ -3,7 +3,8 @@
 #include "scrub_view.h"
 #include <stdio.h>
 
-void scrub_build(UiList *out, uint64_t tick, uint64_t max_tick,
+void scrub_build(UiList *out, uint64_t tick,
+                 uint64_t min_tick, uint64_t max_tick,
                  float screen_w, float screen_h)
 {
     UiRect bar, track, handle, live;
@@ -26,9 +27,16 @@ void scrub_build(UiList *out, uint64_t tick, uint64_t max_tick,
     ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_PREV), track,
                  NULL, 0, 0);
 
-    /* The handle is where we are, proportionally. A zero-length world
-     * puts it at the far end rather than dividing by zero. */
-    frac = (max_tick > 0) ? (float)tick / (float)max_tick : 1.0f;
+    /* The handle is where we are, proportionally ACROSS THE RETAINED
+     * WINDOW. The track starts at min_tick, not at zero: once a
+     * server's history has been truncated the reachable past is a
+     * hundred ticks at the end of five million, and a track scaled from
+     * zero would put every reachable tick inside the last pixel. A
+     * zero-length window puts the handle at the far end rather than
+     * dividing by zero. */
+    frac = (max_tick > min_tick)
+         ? (float)(tick - min_tick) / (float)(max_tick - min_tick)
+         : 1.0f;
     if (frac < 0.0f) frac = 0.0f;
     if (frac > 1.0f) frac = 1.0f;
 
@@ -50,7 +58,8 @@ void scrub_build(UiList *out, uint64_t tick, uint64_t max_tick,
                  "Back to now", 0, 0);
 }
 
-ScrubHit scrub_hit(const UiList *list, uint64_t max_tick, float x, float y)
+ScrubHit scrub_hit(const UiList *list, uint64_t min_tick,
+                   uint64_t max_tick, float x, float y)
 {
     ScrubHit        hit;
     const UiWidget *w;
@@ -73,7 +82,8 @@ ScrubHit scrub_hit(const UiList *list, uint64_t max_tick, float x, float y)
         if (frac < 0.0f) frac = 0.0f;
         if (frac > 1.0f) frac = 1.0f;
         hit.kind = SCRUB_HIT_SEEK;
-        hit.tick = (uint64_t)((double)max_tick * (double)frac);
+        hit.tick = min_tick +
+            (uint64_t)((double)(max_tick - min_tick) * (double)frac);
         return hit;
     }
     return hit;

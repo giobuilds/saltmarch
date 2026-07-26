@@ -12,9 +12,13 @@
 #   2. a real client connects over TCP and is given an identity and the
 #      world;
 #   3. the server keeps ticking after that client leaves;
-#   4. the checkpoint it writes replays to the same hash in
-#      saltmarch_replay -- i.e. the server's world is an ordinary
-#      (seed, log) world, not a private format.
+#   4. the checkpoint it writes loads in saltmarch_replay -- i.e. the
+#      server's world is a file the ordinary tools read, not a private
+#      format. Since SERVER.md's log truncation that checkpoint is
+#      STATE rather than history, so what is verified is the snapshot's
+#      own checksum and stored hash rather than a replay from tick 0;
+#      the determinism gate proper runs on --record fixtures, which
+#      keep their full logs precisely so it can.
 #
 # Usage: ci/host-smoke.sh <build-dir> [port]
 
@@ -171,9 +175,15 @@ fi
 if [ -f "$WORLD" ]; then
     pass "server wrote a checkpoint"
     if "$REPLAY_BIN" --replay "$WORLD" >"$WORK/replay.log" 2>&1; then
-        pass "the checkpoint replays to the same hash"
+        pass "the checkpoint loads in the ordinary replay tool"
+        if grep -q "restored to tick" "$WORK/replay.log"; then
+            pass "...as a snapshot, restored rather than replayed"
+        else
+            fail "the checkpoint was not a snapshot"
+            sed 's/^/  | /' "$WORK/replay.log"
+        fi
     else
-        fail "the checkpoint failed to replay:"
+        fail "the checkpoint failed to load:"
         sed 's/^/  | /' "$WORK/replay.log"
     fi
 else

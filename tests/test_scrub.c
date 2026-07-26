@@ -102,7 +102,7 @@ int main(void)
         ScrubHit hit;
         int      j, inside = 1;
 
-        scrub_build(&list, 500, 1000, 1920.0f, 1080.0f);
+        scrub_build(&list, 500, 0, 1000, 1920.0f, 1080.0f);
         for (j = 0; j < list.count; j++) {
             UiRect r = list.items[j].rect;
             if (r.x < 0.0f || r.y < 0.0f ||
@@ -116,14 +116,14 @@ int main(void)
                                         ui_id(UI_GROUP_ACTION, UI_ACTION_PREV));
             CHECK(track != NULL, "the track is there to click");
             if (track) {
-                hit = scrub_hit(&list, 1000,
+                hit = scrub_hit(&list, 0, 1000,
                                 track->rect.x + track->rect.w * 0.5f,
                                 track->rect.y + track->rect.h * 0.5f);
                 CHECK(hit.kind == SCRUB_HIT_SEEK &&
                       hit.tick > 450 && hit.tick < 550,
                       "clicking halfway asks for halfway, in ticks not pixels");
 
-                hit = scrub_hit(&list, 1000, track->rect.x + 1.0f,
+                hit = scrub_hit(&list, 0, 1000, track->rect.x + 1.0f,
                                 track->rect.y + track->rect.h * 0.5f);
                 CHECK(hit.kind == SCRUB_HIT_SEEK && hit.tick < 20,
                       "and the left end is the beginning");
@@ -135,14 +135,14 @@ int main(void)
                                        ui_id(UI_GROUP_ACTION, UI_ACTION_ACCEPT));
             CHECK(live != NULL, "there is a way back to now");
             if (live) {
-                hit = scrub_hit(&list, 1000, live->rect.x + 4.0f,
+                hit = scrub_hit(&list, 0, 1000, live->rect.x + 4.0f,
                                 live->rect.y + 4.0f);
                 CHECK(hit.kind == SCRUB_HIT_LIVE, "and it says so");
             }
         }
 
         /* A world with no history yet does not divide by zero. */
-        scrub_build(&list, 0, 0, 1920.0f, 1080.0f);
+        scrub_build(&list, 0, 0, 0, 1920.0f, 1080.0f);
         CHECK(list.count > 0, "a world at tick zero still draws a bar");
     }
 

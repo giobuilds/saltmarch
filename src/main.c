@@ -268,7 +268,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     island_bar_build(&app->island_list, &app->snap, (float)SCREEN_W);
 
     if (game_scrubbing(gs))
-        scrub_build(&app->scrub_list, gs->sim_tick_no, game_scrub_max(gs),
+        scrub_build(&app->scrub_list, gs->sim_tick_no,
+                    game_scrub_min(gs), game_scrub_max(gs),
                     (float)SCREEN_W, (float)SCREEN_H);
 
     if (gs->confirm.open) {
@@ -368,7 +369,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         /* The scrubber is modal over everything: while you are looking
          * at the past, the only thing a click can do is move you
          * through it or bring you back. */
-        ScrubHit sh = scrub_hit(&app->scrub_list, game_scrub_max(gs),
+        ScrubHit sh = scrub_hit(&app->scrub_list, game_scrub_min(gs),
+                                game_scrub_max(gs),
                                 (float)gs->input.logical_x,
                                 (float)gs->input.logical_y);
         if (sh.kind == SCRUB_HIT_SEEK)      game_scrub_to(gs, sh.tick);

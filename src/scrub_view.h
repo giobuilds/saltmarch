@@ -27,7 +27,8 @@
 
 /* Build the bar for `tick` out of `max_tick`. The track is pushed
  * first, then the handle, then the "back to now" button. */
-void scrub_build(UiList *out, uint64_t tick, uint64_t max_tick,
+void scrub_build(UiList *out, uint64_t tick,
+                 uint64_t min_tick, uint64_t max_tick,
                  float screen_w, float screen_h);
 
 typedef enum {
@@ -44,6 +45,7 @@ typedef struct {
 /* Decode a click. Seeking is proportional across the track, so the
  * answer is a tick rather than a pixel — the caller never has to know
  * how wide the bar was. */
-ScrubHit scrub_hit(const UiList *list, uint64_t max_tick, float x, float y);
+ScrubHit scrub_hit(const UiList *list, uint64_t min_tick,
+                   uint64_t max_tick, float x, float y);
 
 #endif /* SCRUB_VIEW_H */

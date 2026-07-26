@@ -4,6 +4,15 @@ The one-line version: **the world is a pure function of
 (world seed, ordered command log)**, and everything else in the design is a
 consequence of defending that property.
 
+One deliberate exception, added once worlds started outliving the
+patience required to replay them: a server checkpoint stores state
+rather than history, and a world resumed from one begins at that
+snapshot instead of at tick 0 (SERVER.md, "Log truncation"). The
+property still holds *above* the snapshot, which is what the scrubber,
+the desync detector and lockstep all actually need. Fixtures and the
+determinism gate keep full logs, so the stronger claim is still the one
+CI proves on every platform.
+
 This document describes the architecture as a whole — what exists today and
 where it is headed. The execution detail lives in two companion documents:
 [MMO_PLAN.md](MMO_PLAN.md) (the deterministic-sim and multiplayer phases)

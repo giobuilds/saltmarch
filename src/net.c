@@ -198,6 +198,7 @@ static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
 
 #include "net.h"
 #include "simlog.h"
+#include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -278,12 +279,6 @@ enum {
 #define CMDS_PER_TICK    8
 #define CMD_BURST       64
 #define MAX_CMD_OVERRUNS 256
-
-/* The most world-time a client will replay to join. 50 million ticks is
- * roughly eight weeks of continuous world at 10 ticks/sec — well past
- * the point where SERVER.md's log truncation has to exist anyway, and
- * the difference between a slow join and a hang. */
-#define MAX_INSTALL_TICKS 50000000ull
 
 /* ---- growable byte buffer ---------------------------------
  * Peers used to hold two fixed 256 KB arrays. That capped MSG_WORLD at
@@ -716,27 +711,57 @@ static int host_stamp_log_send(NetSession *ns, GameState *gs,
     return 1;
 }
 
+/* MSG_WORLD is a SNAPSHOT plus the commands that follow it, not the
+ * seed and the whole history (SERVER.md, "Log truncation").
+ *
+ * It used to be the latter, and the cost of joining was therefore
+ * proportional to the world's AGE: game_install_world replayed every
+ * tick from zero, inside net_pump, with the client's window frozen for
+ * the duration. A month-old server was a minute of that; a year was
+ * nine. It accrued whether or not anybody had played, because the
+ * server ticks regardless — nothing a player did made it better and
+ * nothing they could do made it stop.
+ *
+ * A snapshot is tens of KB and installs in the time it takes to decode:
+ * the join cost stops tracking how long the world has existed and
+ * starts tracking how big it is, which is bounded. */
 static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
 {
-    /* {seed, tick, n, Command[n]} — the same information as a v6 save. */
-    size_t  fixed = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(int32_t);
-    size_t  total = fixed + sizeof(Command) * (size_t)gs->cmd_count;
-    unsigned char *buf = (unsigned char *)malloc(total);
-    size_t  off = 0;
-    int32_t n = gs->cmd_count;
+    size_t         fixed = sizeof(uint64_t) + sizeof(int32_t) + sizeof(int32_t);
+    unsigned char *snap = NULL, *buf;
+    size_t         snap_len = 0, total, off = 0;
+    int32_t        n = gs->cmd_count - gs->cmd_applied;
+    int32_t        snap32;
 
-    if (!buf) return;
-    memcpy(buf + off, &gs->world_seed, sizeof(uint32_t));  off += sizeof(uint32_t);
+    if (n < 0) n = 0;
+
+    if (!snapshot_encode(gs, &snap, &snap_len)) {
+        sim_log("net: could not snapshot the world for player %u",
+                p->player_id);
+        return;
+    }
+    snap32 = (int32_t)snap_len;
+
+    total = fixed + snap_len + sizeof(Command) * (size_t)n;
+    buf   = (unsigned char *)malloc(total);
+    if (!buf) { free(snap); return; }
+
     memcpy(buf + off, &gs->sim_tick_no, sizeof(uint64_t)); off += sizeof(uint64_t);
+    memcpy(buf + off, &snap32, sizeof(int32_t));           off += sizeof(int32_t);
     memcpy(buf + off, &n, sizeof(int32_t));                off += sizeof(int32_t);
+    memcpy(buf + off, snap, snap_len);                     off += snap_len;
+    /* Only the unapplied tail: the snapshot already contains the effect
+     * of everything before it. */
     if (n > 0)
-        memcpy(buf + off, gs->cmd_log, sizeof(Command) * (size_t)n);
+        memcpy(buf + off, gs->cmd_log + gs->cmd_applied,
+               sizeof(Command) * (size_t)n);
 
     send_msg(ns, p, MSG_WORLD, buf, (uint32_t)total);
     free(buf);
-    sim_log("net: world sent to player %u (seed %u, tick %llu, %d commands)",
-            p->player_id, gs->world_seed,
-            (unsigned long long)gs->sim_tick_no, n);
+    free(snap);
+    sim_log("net: world sent to player %u (tick %llu, %zu-byte snapshot, "
+            "%d pending commands)",
+            p->player_id, (unsigned long long)gs->sim_tick_no, snap_len, n);
 }
 
 /* A freshly joined player that owns nothing gets a starting island —
@@ -896,36 +921,27 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
         }
         break;
     case MSG_WORLD: {
-        uint32_t seed;
         uint64_t tick;
-        int32_t  n;
-        size_t   fixed = sizeof(uint32_t) + sizeof(uint64_t) + sizeof(int32_t);
+        int32_t  snap32, n;
+        size_t   fixed = sizeof(uint64_t) + sizeof(int32_t) + sizeof(int32_t);
+        size_t   snap_len;
+
         if (len < fixed) break;
-        memcpy(&seed, payload, 4);
-        memcpy(&tick, payload + 4, 8);
-        memcpy(&n,    payload + 12, 4);
-        if (n < 0 || fixed + sizeof(Command) * (size_t)n != len) break;
-        /* game_install_world replays from tick 0 to `tick`, and `tick`
-         * came off the wire. Unbounded, a corrupt or hostile host sends
-         * 2^63 and this client never returns — the replay runs inside
-         * net_pump, so "never returns" means a frozen window with no
-         * way out. The ceiling is far past any world anyone will
-         * plausibly join and still finite. */
-        if (tick > MAX_INSTALL_TICKS) {
-            sim_log("net: host offered a world at tick %llu, past the "
-                    "%llu this client will replay — refusing",
-                    (unsigned long long)tick,
-                    (unsigned long long)MAX_INSTALL_TICKS);
-            peer_drop(ns, p, "world too far along to install");
-            break;
-        }
-        /* A long replay is a frozen frame with nothing on screen to
-         * explain it, so at least say so before it starts. */
-        if (tick > 20000)
-            sim_log("net: replaying %llu ticks to join — this will take "
-                    "a moment", (unsigned long long)tick);
-        if (!game_install_world(gs, seed, tick,
-                                (const Command *)(payload + fixed), n)) {
+        memcpy(&tick,   payload, 8);
+        memcpy(&snap32, payload + 8, 4);
+        memcpy(&n,      payload + 12, 4);
+        if (snap32 <= 0 || n < 0) break;
+        snap_len = (size_t)snap32;
+        if (fixed + snap_len + sizeof(Command) * (size_t)n != len) break;
+
+        /* No replay from zero any more, so no unbounded loop to bound:
+         * the snapshot IS the starting point, and installing it costs
+         * the same whatever tick it claims. The only remaining work is
+         * the pending tail, which is a handful of commands by
+         * construction (NET_CMD_DELAY_TICKS of them). */
+        if (!game_install_from_snapshot(gs, payload + fixed, snap_len, tick,
+                                        (const Command *)(payload + fixed +
+                                                          snap_len), n)) {
             sim_log("net: failed to install world");
             peer_drop(ns, p, "could not install the host's world");
             break;

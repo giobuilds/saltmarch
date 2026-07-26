@@ -25,6 +25,7 @@
  * ========================================================= */
 
 #include <stdint.h>
+#include <stddef.h>
 #include "map.h"
 #include "camera.h"      /* also provides SCREEN_W / SCREEN_H */
 #include "input.h"
@@ -285,6 +286,26 @@ typedef struct GameState {
     int       scrub_active;
     uint64_t  scrub_live_tick;
 
+    /* The earliest tick this process can still rebuild (SERVER.md,
+     * "Log truncation"). Zero for a world that still has its whole
+     * history; the checkpoint tick for one restored from a snapshot or
+     * whose log has been truncated behind it.
+     *
+     * Everything that reconstructs a past tick does so by replaying
+     * from the beginning, so below this line there is no beginning to
+     * replay from — and replaying the surviving tail against a fresh
+     * seed would silently produce a DIFFERENT world rather than fail.
+     * The scrubber clamps to it; F9 stands down above it. */
+    uint64_t  history_floor_tick;
+
+    /* The snapshot the floor stands on, kept so the scrubber still
+     * works INSIDE the retained window: rebuilding a tick above the
+     * floor means decoding this and replaying the surviving tail,
+     * rather than replaying from a seed whose history is gone. Owned
+     * here, freed by game_free, NULL whenever history_floor_tick is 0. */
+    unsigned char *floor_snap;
+    size_t         floor_snap_len;
+
     /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
      * replay_valid is 1 while the live world is exactly what replaying
      * (world_seed, cmd_log) from tick 0 produces — true after
@@ -442,6 +463,31 @@ int  game_scrubbing(const GameState *gs);
 /* The furthest tick the scrubber can reach — the live world's tick. */
 uint64_t game_scrub_max(const GameState *gs);
 
+/* The earliest tick the scrubber can reach: 0 normally, the checkpoint
+ * tick once history below it has been discarded. */
+uint64_t game_scrub_min(const GameState *gs);
+
+/* Install a world from a snapshot plus the commands that follow it,
+ * running forward to `tick`. The snapshot-based counterpart of
+ * game_install_world, and how a client joins a server whose history has
+ * been truncated. Records the snapshot as this world's history floor. */
+int game_install_from_snapshot(GameState *gs, const unsigned char *snap,
+                               size_t snap_len, uint64_t tick,
+                               const Command *cmds, int n);
+
+/* Adopt (a copy of) `buf` as the world's history floor, or drop it. */
+int  game_set_history_floor(GameState *gs, const unsigned char *buf,
+                            size_t len, uint64_t tick);
+void game_clear_history_floor(GameState *gs);
+
+/* Drop every command already applied, keeping only the pending tail,
+ * and record that history below the current tick is gone. This is what
+ * bounds a persistent server's log and checkpoint; pair it with
+ * game_save_checkpoint, which writes the state the dropped commands
+ * had produced. Costs the scrubber and F9 their reach below this tick
+ * — see history_floor_tick. */
+void game_truncate_log(GameState *gs);
+
 /* The island currently being viewed — the one every placement, UI
  * action and *_idx field in GameState refers to. Never NULL:
  * current_island is always a valid index. */
@@ -473,11 +519,25 @@ void game_new(GameState *gs);
  * --record CLI so a session can be reproduced exactly. */
 void game_new_seeded(GameState *gs, uint32_t seed);
 
-/* Serialize gs (map seed, buildings, population, stockpile, camera)
- * to `path`. Returns 1 on success, 0 on failure (see SDL_GetError()).
- * The map itself is not written — map_init(seed) regenerates it
- * deterministically. Used by the "Save" menu button. */
+/* Write the world as HISTORY: (seed, full command log, tick). Loading
+ * one re-derives the world by replaying it, which is why this is what
+ * fixtures and the determinism gate use — the replay is the proof.
+ * Returns 1 on success. Used by the "Save" menu button. */
 int  game_save(const GameState *gs, const char *path);
+
+/* Write the world as STATE: a full snapshot plus only the commands not
+ * yet applied. Loading one restores rather than replays, so its cost is
+ * the size of the world instead of its age — which is what lets a
+ * server that has been up for months restart, and a client join it,
+ * without walking every tick since the beginning (SERVER.md, "Log
+ * truncation"). Returns 1 on success.
+ *
+ * The trade is deliberate and it is not free: a checkpoint cannot prove
+ * its world was reachable by legal play, only that it was stored
+ * faithfully, and a world loaded from one cannot be scrubbed or F9'd
+ * back past the checkpoint because the history is gone. Prefer
+ * game_save() anywhere that history is affordable. */
+int  game_save_checkpoint(const GameState *gs, const char *path);
 
 /* Inverse of game_save(): restores buildings, population,
  * stockpile and camera from `path`, regenerating the map from
