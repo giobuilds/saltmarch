@@ -279,6 +279,16 @@ SeaPos sea_route_point(const Sea *sea, const Route *route, uint32_t elapsed)
 
     if (!route) { from.x = 0; from.y = 0; return from; }
 
+    /* Seeded with the crossing's ends before the walk, so the tail
+     * `return to` is right by construction rather than because the
+     * loop is guaranteed to have run at least once. It is guaranteed —
+     * legs is waypoint_count + 1, so never zero — but MSVC cannot see
+     * that and warned, and it was right to: a function whose result
+     * depends on a loop having executed is one refactor away from
+     * returning a stack value. */
+    from = sea->island[route->from_island];
+    to   = sea->island[route->to_island];
+
     legs = route->waypoint_count + 1;
 
     for (leg = 0; leg < legs; leg++) {
