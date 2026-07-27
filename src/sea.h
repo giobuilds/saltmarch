@@ -42,18 +42,26 @@
 
 /* Sea units a ship covers in one sim tick.
  *
- * Measured rather than guessed: across eight seeds the mean generated
- * path is ~4288 units, so 21 units per tick puts the AVERAGE crossing
- * at the 200 ticks SHIP_VOYAGE_TICKS used to impose on every crossing
- * alike. This phase is meant to change the SHAPE of the world, not its
- * pace — voyages now differ from each other (roughly 70 to 400 ticks)
- * around the same centre, so a route being long is information rather
- * than a slower game.
+ * Measured rather than guessed, and RE-measured whenever the generator
+ * changes shape. Across eight seeds the mean PUBLIC crossing comes out
+ * at 198.6 ticks — the same centre SHIP_VOYAGE_TICKS used to impose on
+ * every crossing alike, so voyages differ from each other (roughly 100
+ * to 350 ticks) without the game as a whole getting slower.
  *
- * The first value here was 15, which quietly made the average voyage
- * half again as long and made this comment untrue. If the generator's
- * scale changes, re-measure. */
-#define SEA_UNITS_PER_TICK  21
+ * The value has moved twice, both times because something upstream
+ * changed the average path and the constant had to absorb it:
+ *
+ *   15 -> 21  Phase 1. The first value quietly made the average voyage
+ *             half again as long and made this comment untrue.
+ *   21 -> 26  Phase 3. Three routes per pair: the public lane now
+ *             threads a slightly wider waypoint and carries a convoy
+ *             penalty, which together took the mean to 246 before this
+ *             was re-fitted.
+ *
+ * If the generator's scale changes again, re-measure. The failure mode
+ * is not a wrong number, it is every voyage in the game silently
+ * getting slower while nothing says so. */
+#define SEA_UNITS_PER_TICK  26
 
 /* How far apart things are kept. Islands and waypoints have different
  * requirements and used to share one number, which was too small.
@@ -84,10 +92,20 @@
 #define SEA_MAX_ROUTE_WAYPOINTS 2
 #define SEA_MAX_ROUTE_LEGS      (SEA_MAX_ROUTE_WAYPOINTS + 1)
 
-/* One route per island pair today: N*(N-1)/2, which is 28 at eight
- * islands. Sized with room for the private routes MARITIME_PLAN Phase
- * 3 adds and for more islands than eight. */
-#define SEA_MAX_ROUTES      256
+/* Three routes per island pair (MARITIME_PLAN Phase 3): one public and
+ * two private. 3 * N*(N-1)/2, which is 84 at eight islands. */
+#define SEA_ROUTES_PER_PAIR 3
+#define SEA_MAX_ROUTES      512
+
+/* Which of a pair's three this is. Variant 0 is the lane everybody
+ * knows; 1 and 2 are the passages a chart buys you.
+ *
+ * PUBLIC IS ALWAYS THE SLOWEST OF THE THREE, and that is a guarantee
+ * the generator has to make rather than hope for, because the whole
+ * trade-off — "public are slow but protected, private are faster but
+ * unsafe" — collapses if a pair ever generates a private route that is
+ * the long way round. See the convoy penalty in sea.c. */
+#define SEA_ROUTE_PUBLIC    0
 
 typedef struct {
     int32_t x, y;
@@ -104,6 +122,8 @@ typedef struct {
 typedef struct {
     int      from_island;
     int      to_island;
+    int      variant;           /* 0 public, 1..2 private            */
+    int      is_private;        /* concealed until charted           */
     int      waypoint[SEA_MAX_ROUTE_WAYPOINTS];
     int      waypoint_count;
     uint32_t leg_ticks[SEA_MAX_ROUTE_LEGS];
@@ -125,11 +145,31 @@ typedef struct {
  * and durations, on every platform. */
 void sea_init(Sea *sea, uint32_t seed, int island_count);
 
-/* The route joining two islands, or NULL. Order-independent — a route
- * is a piece of water, not a direction of travel. */
+/* The PUBLIC route joining two islands, or NULL. Order-independent — a
+ * route is a piece of water, not a direction of travel.
+ *
+ * This is deliberately the public one rather than the best one: a
+ * caller that has not been taught about charts must never accidentally
+ * route a cargo down a passage the player has not discovered. Code that
+ * means "the fastest route this player may use" asks for it by name. */
 const Route *sea_route_between(const Sea *sea, int island_a, int island_b);
 
-/* How long that crossing takes, in whole ticks. Falls back to a
+/* One of a pair's three routes by variant, or NULL. Variant 0 is
+ * public; 1 and 2 are private. */
+const Route *sea_route_variant(const Sea *sea, int island_a, int island_b,
+                               int variant);
+
+/* How many routes join the pair — SEA_ROUTES_PER_PAIR for any real
+ * pair, 0 for a pair that has none (an island with itself). */
+int sea_route_count_between(const Sea *sea, int island_a, int island_b);
+
+/* The index of `route` within `sea->route[]`. This is the id a chart
+ * names and the id a route trades under, so it has to be stable for a
+ * given seed — which it is, because generation order is. Returns -1 if
+ * the route is not part of this sea. */
+int sea_route_id(const Sea *sea, const Route *route);
+
+/* How long the PUBLIC crossing takes, in whole ticks. Falls back to a
  * sensible constant if the pair has no route, so a caller that has not
  * been taught about routes yet cannot divide by zero. */
 uint32_t sea_crossing_ticks(const Sea *sea, int island_a, int island_b);

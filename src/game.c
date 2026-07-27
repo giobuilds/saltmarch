@@ -548,8 +548,14 @@ typedef struct {
  * last two islands as home ports from tick 0 and posts standing orders
  * there every FACTION_QUOTE_INTERVAL_TICKS. A v17 log describes a world
  * with two more colonisable islands and no NPC orders in the book, so
- * its colonisations and its fills are both about somewhere else. */
-#define SAVE_VERSION 18u
+ * its colonisations and its fills are both about somewhere else.
+ *
+ * v19 (MARITIME_PLAN Phase 3): three routes per island pair, and
+ * SEA_UNITS_PER_TICK re-fitted from 21 to 26 to hold the pace. The Sea
+ * is regenerated rather than saved, which is exactly why this is a log
+ * break and not merely a format one: a v18 log replayed against this
+ * generator has every voyage arriving on a different tick. */
+#define SAVE_VERSION 19u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

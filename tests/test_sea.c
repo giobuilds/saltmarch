@@ -125,6 +125,63 @@ int main(void)
         CHECK(named == total && total > 0, "every route has a name");
     }
 
+    printf("\n=== three routes join every pair, and two are secret ===\n");
+    {
+        int wrong_count = 0, wrong_split = 0, identical = 0;
+        int private_not_faster = 0, bad_id = 0, i, j, v;
+
+        for (s = 0; s < SEED_COUNT; s++) {
+            Sea sea;
+            sea_init(&sea, SEEDS[s], MAX_ISLANDS);
+
+            for (i = 0; i < MAX_ISLANDS; i++)
+                for (j = i + 1; j < MAX_ISLANDS; j++) {
+                    const Route *r[SEA_ROUTES_PER_PAIR];
+                    int pub = 0, priv = 0;
+
+                    if (sea_route_count_between(&sea, i, j) !=
+                        SEA_ROUTES_PER_PAIR) { wrong_count++; continue; }
+
+                    for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+                        r[v] = sea_route_variant(&sea, i, j, v);
+                        if (!r[v]) { wrong_count++; break; }
+                        if (r[v]->is_private) priv++; else pub++;
+                        if (sea_route_id(&sea, r[v]) < 0) bad_id++;
+                    }
+                    if (v < SEA_ROUTES_PER_PAIR) continue;
+
+                    /* One public, two private. */
+                    if (pub != 1 || priv != 2) wrong_split++;
+
+                    /* The three must be different water. Two routes
+                     * that threaded the same waypoint would be one
+                     * route sold twice — a chart for the second would
+                     * buy nothing. */
+                    for (v = 1; v < SEA_ROUTES_PER_PAIR; v++) {
+                        int k;
+                        for (k = 0; k < v; k++)
+                            if (r[v]->waypoint_count == r[k]->waypoint_count &&
+                                (r[v]->waypoint_count == 0 ||
+                                 r[v]->waypoint[0] == r[k]->waypoint[0]))
+                                identical++;
+                    }
+
+                    /* The trade-off itself: every private passage beats
+                     * the patrolled lane. If this ever stops holding,
+                     * charts are a cost with no benefit. */
+                    for (v = 1; v < SEA_ROUTES_PER_PAIR; v++)
+                        if (r[v]->total_ticks >= r[SEA_ROUTE_PUBLIC]->total_ticks)
+                            private_not_faster++;
+                }
+        }
+        CHECK(wrong_count == 0, "every pair has exactly three routes");
+        CHECK(wrong_split == 0, "one of them public, two private");
+        CHECK(identical == 0, "and no two of them are the same water");
+        CHECK(private_not_faster == 0,
+              "every private passage is faster than the public lane");
+        CHECK(bad_id == 0, "every route has an id in its own sea");
+    }
+
     printf("\n=== places are places ===\n");
     {
         int too_near = 0, i, j;
@@ -147,6 +204,40 @@ int main(void)
          * that explains why it matters. */
         CHECK(SEA_MIN_ISLAND_SEPARATION >= 1226,
               "and that minimum clears the map projection's worst case");
+    }
+
+    printf("\n=== the sea has not silently got slower ===\n");
+    {
+        /* SEA_UNITS_PER_TICK is fitted to the generator so that the
+         * average PUBLIC crossing stays near the 200 ticks every
+         * voyage used to take. Nothing enforces that fit, and the
+         * failure mode is not a wrong number — it is every voyage in
+         * the game getting slower while nothing says so. It has
+         * happened twice. So the fit is asserted.
+         *
+         * The band is deliberately wide: this is a guard against a
+         * generator change moving the centre by half, not a golden
+         * value that fails on a one-tick rounding difference. */
+        double   sum = 0.0;
+        int      pairs = 0, i, j;
+        double   mean;
+
+        for (s = 0; s < SEED_COUNT; s++) {
+            Sea sea;
+            sea_init(&sea, SEEDS[s], MAX_ISLANDS);
+
+            for (i = 0; i < MAX_ISLANDS; i++)
+                for (j = i + 1; j < MAX_ISLANDS; j++) {
+                    const Route *r = sea_route_between(&sea, i, j);
+                    if (!r) continue;
+                    sum += (double)r->total_ticks;
+                    pairs++;
+                }
+        }
+        mean = pairs ? sum / pairs : 0.0;
+        printf("       (mean public crossing: %.1f ticks)\n", mean);
+        CHECK(mean > 160.0 && mean < 250.0,
+              "the average public crossing is still about 200 ticks");
     }
 
     printf("\n=== the distance function ===\n");
