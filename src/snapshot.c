@@ -586,6 +586,10 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
         goto bad;
     }
 
+    /* The sea is a pure function of the seed, like every Map, so it is
+     * regenerated rather than carried in the buffer. */
+    sea_init(&tmp->sea, tmp->world_seed, MAX_ISLANDS);
+
     /* Commit. The world moves across; everything the caller owns that
      * is NOT world state (its command log, its net session, its
      * identity, its UI) is deliberately left alone. */
@@ -593,6 +597,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     memcpy(gs->ships,   tmp->ships,   sizeof(gs->ships));
     gs->ship_count     = tmp->ship_count;
     gs->faction        = tmp->faction;
+    gs->sea            = tmp->sea;
     gs->sim_tick_no    = tmp->sim_tick_no;
     gs->world_seed     = tmp->world_seed;
     gs->current_island = tmp->current_island;

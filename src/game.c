@@ -283,6 +283,11 @@ static void game_reset_world(GameState *gs, uint32_t seed)
             i * AGENT_ASSIGN_INTERVAL_TICKS / MAX_ISLANDS;
     }
 
+    /* The sea is generated from the same seed as the islands it
+     * separates, so an archipelago and the water around it are one
+     * deterministic object. */
+    sea_init(&gs->sea, seed, MAX_ISLANDS);
+
     gs->current_island = 0;
     gs->world_open     = 0;
     memset(gs->ships, 0, sizeof(gs->ships));
