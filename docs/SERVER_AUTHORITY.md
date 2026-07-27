@@ -94,8 +94,29 @@ production.
 trades and are a price signal, not a secret. This is the honest,
 intended channel through which strangers affect one another.
 
-**Ships: only what is observed.** The crux, and the part that needs a
-game design rather than a filter — see below.
+**Ships and shipments: the lane, not the cargo.** This was left open as
+"the crux, and the part that needs a game design rather than a filter".
+Settled now, and the maritime work turned out to have answered most of
+it:
+
+- A foreign ship at sea shows its **existence, owner and endpoints**.
+  Its **hold does not**. That is what keeps interception a gamble
+  rather than a shopping trip — you attack a ship because of where it
+  is going, not because you have read its manifest.
+- A booked shipment on the **public lane** publishes that lane, which
+  is what MARITIME_PLAN already says: a convoy route is patrolled and
+  its traffic is known.
+- A booked shipment on a **private passage** publishes nothing. To a
+  rival it is reported as though it took the lane.
+
+That last rule is the one worth stating out loud, because it is a
+synthesis rather than a filter decision: **a chart buys concealment as
+well as speed.** Nothing was designed to do that — it falls out of
+"private routes publish no window" meeting "the server decides what you
+are told" — but it is exactly the right shape. It gives charts a second
+reason to be worth their cost and their risk, and it means a rival who
+sees your traffic vanish from the lanes knows only that you found
+something, not what.
 
 ## Discovery — answered elsewhere
 
@@ -222,11 +243,32 @@ is the actual concealment (Phase 3 below).
 **Phase 2 — local prediction.** The client simulates the islands it
 owns and reconciles against the server. Placement feels instant again.
 
-**Phase 3 — filtering.** The server builds a per-client view: own
-islands in full, others by their public face, ships by observation.
-Concealment begins here, and it is the phase that closes the hole
-VISIBILITY.md describes. It follows the maritime work, which decides
-what a ship's public projection contains.
+**Phase 3 — filtering.** ~~The server builds a per-client view~~
+**Done.** `snapshot_encode_for()` redacts a copy of the world and
+encodes that, so a view is byte-for-byte the same format as a full
+snapshot and no decoder ever learns that views exist. An authoritative
+server sends views; a lockstep co-op host still sends the whole world,
+because a guest computing the world itself needs all of it —
+concealment and lockstep are alternatives, not layers.
+
+What a rival no longer holds: your stockpile, your buildings and
+population, your expeditions, your trade and research capacity, your
+insurance arrangements, your ships' holds, and — the one that matters
+most — your charts and your memory of the sea. What survives: that the
+island exists, who holds it, what it is called, whether it will let you
+dock, the harbour escrow you trade across, and the order book.
+
+`tests/test_visibility.c` asks the question the only honest way: it
+inspects the client's own `GameState` after a push rather than what the
+UI chose to draw. Ten of its assertions were checked against a build
+with redaction disabled and fail there.
+
+**Still open.** The client's local prediction now runs on a redacted
+world, so it simulates foreign islands that have no buildings and no
+stock. Nothing accumulates — the next push overwrites it — but the
+client is wasting work on islands it cannot see and could, in a bad
+frame, draw a half-invented foreign harbour. The fix is for prediction
+to skip what it does not own, which is the remainder of Phase 2.
 
 ~~**Phase 4 — discovery.**~~ Answered by
 [MARITIME_PLAN.md](MARITIME_PLAN.md): the order book is the

@@ -60,7 +60,7 @@ int main(void)
 {
     GameState  *hg = game_init(), *gg = game_init();
     NetSession *hn = NULL, *gn = NULL;
-    int         i;
+    int         i, mine = -1;
 
     if (!hg || !gg) { printf("game_init failed\n"); return 1; }
     game_new_seeded(hg, 4242u);
@@ -92,14 +92,24 @@ int main(void)
 
         /* Let them settle so a push has certainly landed. */
         for (i = 0; i < 40; i++) step(hn, hg, gn, gg, 1);
+
+        /* Corrupt an island the client OWNS. A foreign one would come
+         * back redacted rather than corrected (SERVER_AUTHORITY.md
+         * Phase 3), which is a different property and has its own
+         * test — asserting equality on somebody else's books here
+         * would be asserting that concealment does not work. */
+        for (i = 0; i < MAX_ISLANDS; i++)
+            if (gg->islands[i].owner == 2u) { mine = i; break; }
+        if (mine < 0) { printf("  FAIL: the client owns nothing\n"); return 1; }
+
         before = sim_hash(gg);
 
         /* Now vandalise the client's world. Not a plausible drift — a
          * blatant one, of the kind a modified client or a memory error
          * would produce. Under lockstep this was a fatal desync needing
          * a resync handshake. Here it should simply not survive. */
-        gg->islands[0].stockpile.amount[RES_PLANKS] += 99999;
-        gg->islands[0].stockpile.amount[RES_GOLD]   += 555555;
+        gg->islands[mine].stockpile.amount[RES_PLANKS] += 99999;
+        gg->islands[mine].stockpile.amount[RES_GOLD]   += 555555;
         CHECK(sim_hash(gg) != before, "the client's world is corrupted");
         CHECK(sim_hash(gg) != sim_hash(hg),
               "and disagrees with the server");
@@ -107,11 +117,11 @@ int main(void)
         /* One push interval is enough. */
         for (i = 0; i < 40; i++) step(hn, hg, gn, gg, 1);
 
-        CHECK(gg->islands[0].stockpile.amount[RES_PLANKS] ==
-              hg->islands[0].stockpile.amount[RES_PLANKS],
+        CHECK(gg->islands[mine].stockpile.amount[RES_PLANKS] ==
+              hg->islands[mine].stockpile.amount[RES_PLANKS],
               "the pushed state overwrites what the client invented");
-        CHECK(gg->islands[0].stockpile.amount[RES_GOLD] ==
-              hg->islands[0].stockpile.amount[RES_GOLD],
+        CHECK(gg->islands[mine].stockpile.amount[RES_GOLD] ==
+              hg->islands[mine].stockpile.amount[RES_GOLD],
               "all of it, not just the field somebody thought to check");
     }
 
@@ -128,11 +138,11 @@ int main(void)
             int j;
 
             for (j = 0; j < i + 1; j++) step(hn, hg, gn, gg, 1);
-            gg->islands[0].stockpile.amount[RES_FISH] += 1234 + i;
+            gg->islands[mine].stockpile.amount[RES_FISH] += 1234 + i;
             for (j = 0; j < 40; j++) step(hn, hg, gn, gg, 1);
 
-            if (gg->islands[0].stockpile.amount[RES_FISH] ==
-                hg->islands[0].stockpile.amount[RES_FISH]) corrected++;
+            if (gg->islands[mine].stockpile.amount[RES_FISH] ==
+                hg->islands[mine].stockpile.amount[RES_FISH]) corrected++;
         }
         CHECK(corrected == 6,
               "wherever in the cadence the damage falls, it is undone");
