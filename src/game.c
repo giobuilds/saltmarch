@@ -1049,6 +1049,26 @@ void sim_run_one_tick(GameState *gs)
         gs->cmd_applied++;
     }
 
+    /* A predicting client stops here with the rest of the world
+     * (SERVER_AUTHORITY.md Phase 2). Everything below that is not this
+     * player's own island belongs to the server: the market, other
+     * people's harbours, every ship, the charters. Guessing at them
+     * buys nothing — the next push overwrites it — and since Phase 3
+     * those islands arrive REDACTED, so a prediction would be running
+     * production on an empty harbour and drawing the answer.
+     *
+     * What is still predicted is exactly what makes the game feel
+     * responsive: a command you just issued, applied above, and the
+     * pipeline of the island you are looking at. Placement is the verb
+     * of a city builder and it cannot wait for a round trip. */
+    if (gs->predict_only != 0u) {
+        for (i = 0; i < MAX_ISLANDS; i++)
+            if (gs->islands[i].owner == gs->predict_only)
+                island_update(&gs->islands[i]);
+        gs->sim_tick_no++;
+        return;
+    }
+
     /* 2. The order book: deliver what has arrived, then match what
      * crosses. Before the islands tick, so goods delivered this tick
      * are available to production this tick rather than next — a

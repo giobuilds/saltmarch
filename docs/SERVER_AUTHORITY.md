@@ -240,8 +240,24 @@ Not yet done, and next: the client rendering foreign islands from a
 view rather than from its own copy, then the per-client filtering that
 is the actual concealment (Phase 3 below).
 
-**Phase 2 — local prediction.** The client simulates the islands it
-owns and reconciles against the server. Placement feels instant again.
+**Phase 2 — local prediction.** ~~The client simulates the islands it
+owns~~ **Done.** `GameState.predict_only` names the player a client is
+guessing for; when set, a tick runs the command log and that player's
+own islands and stops. The market, other people's harbours, every ship
+and the charters belong to the server.
+
+It is client state and must stay that way — never hashed, never saved,
+never snapshotted, set in exactly one place (client.c, from
+`net_server_authoritative`). Non-zero on a server or in a replay and
+the sim stops being a pure function of `(seed, log)`, which is the
+sentence everything else here is built on. `test_authority` asserts it
+is zero on a fresh world and on the authoritative host, because that is
+the failure worth guarding rather than the feature.
+
+Reconciliation is still the blunt kind: the next push overwrites
+whatever the client guessed. Per-island resync using `snapshot.c`'s
+primitive, rather than replacing the world wholesale, is the obvious
+refinement and is not needed until pushes get expensive.
 
 **Phase 3 — filtering.** ~~The server builds a per-client view~~
 **Done.** `snapshot_encode_for()` redacts a copy of the world and
@@ -263,12 +279,8 @@ inspects the client's own `GameState` after a push rather than what the
 UI chose to draw. Ten of its assertions were checked against a build
 with redaction disabled and fail there.
 
-**Still open.** The client's local prediction now runs on a redacted
-world, so it simulates foreign islands that have no buildings and no
-stock. Nothing accumulates — the next push overwrites it — but the
-client is wasting work on islands it cannot see and could, in a bad
-frame, draw a half-invented foreign harbour. The fix is for prediction
-to skip what it does not own, which is the remainder of Phase 2.
+**Closed** by Phase 2 above: prediction now skips what it does not
+own, so a client no longer runs production on a harbour it cannot see.
 
 ~~**Phase 4 — discovery.**~~ Answered by
 [MARITIME_PLAN.md](MARITIME_PLAN.md): the order book is the
