@@ -103,6 +103,17 @@ command-log order so a replay reproduces every fill. The matcher runs
 at tick boundaries like everything else. Orders, the book and open
 bookings are all hashed.
 
+**The hash may not depend on where in the array an order sits.** This
+is the one thing about the book that is not obvious and did break in
+development. Orders are addressed by id, never by slot, so a checkpoint
+compacts the dead slots out — which means a book holding one live order
+in slot 5 must hash identically to the same order in slot 0. Hashing a
+dead slot's `active` flag, the way the ship array legitimately does,
+makes "how many orders have ever been cancelled here" part of the world
+and desyncs a restore on nothing at all. Ships get away with it because
+they *are* addressed by index and their snapshot preserves slots; the
+book is the opposite case and needs the opposite rule.
+
 **A booking reserves a merchant, a boat and the goods**, and the
 merchant and the boat **return to the island they set out from** when
 the trade completes. They are capital, not fuel: what is consumed is
@@ -282,8 +293,21 @@ retrofitting it after combat exists means touching combat too.
    they all used to take. The Sea is a pure function of the world seed
    and is regenerated like a Map, so it needed no save, snapshot or
    protocol change.
-2. **The order book.** Orders, deterministic matching, bookings,
-   merchants as a reserved resource. The faction as market maker.
+2. ~~**The order book.**~~ **Partly done.** `src/orderbook.c` plus the
+   rules in `game.c`: `CMD_PLACE_ORDER` / `CMD_CANCEL_ORDER`, reservation
+   at posting, deterministic matching at every tick boundary, and a
+   match becoming a `Booking` that lands after `sea_crossing_ticks`. A
+   trade identity is a `(kind, id)` pair rather than a `ResourceType`,
+   which settles one of the open questions below and is what lets a
+   route chart be tradeable in phase 3 without growing `RES_COUNT`.
+
+   **Still outstanding from this phase:** merchants as a reserved
+   resource, and the faction posting orders as market maker. A booking
+   currently costs the water and nothing else — no merchant is consumed
+   and no hull is held — so a player can have unlimited trades in
+   flight. That is the next increment, and it is what makes the return
+   leg ("merchants and boats return to the island they set out from")
+   mean anything.
 3. **Routes and charts.** Public and private, chart consumption,
    per-route insurance, Scholars research.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
@@ -314,6 +338,16 @@ upgrades it rather than gating it.
 - **Waypoints and routes are named**, in lore rather than coordinates.
 - **Routes are discovered by research *or* by survey.** A survey
   dispatches one scholar, one research boat and one chart.
+- **A tradeable thing is a `(kind, id)` pair, not a `ResourceType`**
+  (phase 2, as built). A chart for one passage is a different object
+  from a chart for another, so they cannot share an enum slot, and
+  giving each generated route its own would grow `RES_COUNT` — which
+  sizes every stockpile, price table and snapshot field — with the size
+  of the world. The pair packs into one `Command` payload slot.
+- **You cannot trade with yourself, and trying does not wedge the
+  book.** A self-crossing top of book steps aside rather than ending
+  the pass; otherwise a player could shut every other trader out of a
+  good, for free, by posting a bid and an ask nobody would take.
 
 ## Still open
 
@@ -324,10 +358,6 @@ upgrades it rather than gating it.
   spent either way — that is the gamble — but whether the scholar and
   the hull come home, or can be lost with the mission, is a different
   question and a much sharper one.
-- **Does the order book carry a kind and an id, or only a
-  `ResourceType`?** Route charts are the first tradeable thing that is
-  not a fungible good, and the answer decides whether they can be
-  bought at all. Worth settling before the matcher exists.
 - **How many route charts may an island hold**, and do they expire? An
   unbounded stock of passages makes a route permanently open once
   surveyed, which may or may not be wanted.

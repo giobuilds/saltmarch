@@ -17,6 +17,7 @@
  */
 
 #include "game.h"
+#include "orderbook.h"
 #include "simlog.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,7 +28,7 @@ static const char *const KIND_NAMES[CMD_COUNT] = {
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
     "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
     "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING",
-    "INTERCEPT"
+    "INTERCEPT", "PLACE_ORDER", "CANCEL_ORDER"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -109,6 +110,15 @@ void command_describe(const Command *c, char *out, size_t n)
     case CMD_INTERCEPT:
         snprintf(out, n, "INTERCEPT  ship %d -> ship %d  (departed %d)",
                  c->a, c->b, c->c);
+        break;
+    case CMD_PLACE_ORDER:
+        snprintf(out, n, "%s  island %d  kind %u id %u  qty %d  at %d",
+                 c->c >= 0 ? "BUY ORDER" : "SELL ORDER", c->a,
+                 (unsigned)TRADE_KIND_OF(c->b), (unsigned)TRADE_ID_OF(c->b),
+                 c->c >= 0 ? c->c : -c->c, c->d);
+        break;
+    case CMD_CANCEL_ORDER:
+        snprintf(out, n, "CANCEL_ORDER  %d", c->a);
         break;
     default:
         snprintf(out, n, "%s  %d %d %d %d", command_kind_name(c->kind),

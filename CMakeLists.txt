@@ -70,6 +70,7 @@ set(SALTMARCH_SIM_SOURCES
     src/ghost_faction.c
     src/snapshot.c
     src/sea.c
+    src/orderbook.c
 )
 
 add_library(saltmarch_sim STATIC ${SALTMARCH_SIM_SOURCES})

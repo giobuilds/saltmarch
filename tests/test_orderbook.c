@@ -1,0 +1,331 @@
+/*  test_orderbook.c  --  players trading with each other
+ *                        (MARITIME_PLAN Phase 2)
+ *
+ * The order book is the first mechanic where one player's command
+ * moves another player's goods, so the properties worth asserting are
+ * the ones that make that safe:
+ *
+ *   - posting RESERVES. A sell that did not take the goods out of the
+ *     stockpile could be posted ten times over and filled ten times.
+ *   - cancelling returns exactly what is left, not what was posted.
+ *   - a fill is not a transfer: goods cross the water and arrive when
+ *     the route says they do.
+ *   - matching is reproducible, because it is sim state and a replay
+ *     must fill the same trades in the same order.
+ *
+ * Built and run by tests/run.sh.
+ */
+
+#include "game.h"
+#include "orderbook.h"
+#include "resource.h"
+#include "sea.h"
+#include "snapshot.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int failures = 0;
+
+#define CHECK(cond, msg) do {                                          \
+        if (!(cond)) { printf("  FAIL: %s\n", (msg)); failures++; }    \
+        else         { printf("  ok:   %s\n", (msg)); }                \
+    } while (0)
+
+/* Submit as `who`, the way test_ownership does: the funnel stamps the
+ * local player id, so becoming somebody else is how a second trader is
+ * simulated in one process. */
+#define AS(gs, who, call) do {                                         \
+        uint32_t saved__ = (gs)->local_player_id;                      \
+        (gs)->local_player_id = (who);                                 \
+        (call);                                                        \
+        (gs)->local_player_id = saved__;                               \
+    } while (0)
+
+static void run_ticks(GameState *gs, int n)
+{
+    while (n-- > 0) sim_run_one_tick(gs);
+}
+
+/* Two islands, two owners, both stocked. Island 0 belongs to player 1
+ * from world creation; island 1 is granted to player 2. */
+static GameState *two_traders(uint32_t seed)
+{
+    GameState *gs = game_init();
+    if (!gs) return NULL;
+
+    game_new_seeded(gs, seed);
+    gs->islands[1].settled = 1;
+    gs->islands[1].owner   = 2u;
+    stockpile_init(&gs->islands[1].stockpile);
+
+    gs->islands[0].stockpile.amount[RES_GOLD]  = 100000;
+    gs->islands[1].stockpile.amount[RES_GOLD]  = 100000;
+    gs->islands[0].stockpile.amount[RES_PLANKS] = 100;
+    return gs;
+}
+
+static void place(GameState *gs, uint32_t who, int island,
+                  ResourceType res, int qty, int limit)
+{
+    Command c;
+    memset(&c, 0, sizeof(c));
+    c.kind = CMD_PLACE_ORDER;
+    c.a    = island;
+    c.b    = TRADE_PACK(TRADE_RESOURCE, (uint16_t)res);
+    c.c    = qty;               /* sign is the side */
+    c.d    = limit;
+    AS(gs, who, command_submit(gs, &c));
+}
+
+int main(void)
+{
+    printf("=== posting reserves ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        planks_before, gold_before;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        planks_before = gs->islands[0].stockpile.amount[RES_PLANKS];
+        gold_before   = gs->islands[1].stockpile.amount[RES_GOLD];
+
+        place(gs, 1u, 0, RES_PLANKS, -20, 9);   /* player 1 sells 20 */
+        place(gs, 2u, 1, RES_PLANKS,  20, 4);   /* player 2 bids low */
+        run_ticks(gs, 1);
+
+        CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] ==
+              planks_before - 20,
+              "a sell takes the goods out of the seller's stockpile");
+        CHECK(gs->islands[1].stockpile.amount[RES_GOLD] ==
+              gold_before - 20 * 4,
+              "and a buy takes the gold out of the buyer's");
+        CHECK(orderbook_open_count(&gs->book, 1u) == 1 &&
+              orderbook_open_count(&gs->book, 2u) == 1,
+              "both orders are resting");
+
+        /* The bid is below the ask, so nothing should have crossed. */
+        run_ticks(gs, 20);
+        CHECK(orderbook_open_count(&gs->book, 1u) == 1,
+              "a bid under the ask does not fill");
+
+        game_free(gs);
+    }
+
+    printf("\n=== cancelling returns what is left ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        Command    c;
+        uint32_t   id;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        place(gs, 1u, 0, RES_PLANKS, -20, 9);
+        run_ticks(gs, 1);
+        id = gs->book.order[0].id;
+
+        memset(&c, 0, sizeof(c));
+        c.kind = CMD_CANCEL_ORDER;
+        c.a    = (int32_t)id;
+
+        /* Somebody else's order is not yours to withdraw. */
+        AS(gs, 2u, command_submit(gs, &c));
+        run_ticks(gs, 1);
+        CHECK(orderbook_open_count(&gs->book, 1u) == 1,
+              "another player cannot cancel your order");
+
+        AS(gs, 1u, command_submit(gs, &c));
+        run_ticks(gs, 1);
+        CHECK(orderbook_open_count(&gs->book, 1u) == 0, "the owner can");
+        CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] == 100,
+              "and the goods come back");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a fill crosses the water ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        uint32_t   crossing;
+        int        seller_gold;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        crossing    = sea_crossing_ticks(&gs->sea, 0, 1);
+        seller_gold = gs->islands[0].stockpile.amount[RES_GOLD];
+
+        place(gs, 1u, 0, RES_PLANKS, -20, 9);   /* ask 9 */
+        run_ticks(gs, 1);
+        place(gs, 2u, 1, RES_PLANKS,  20, 12);  /* bid 12: crosses */
+        run_ticks(gs, 1);
+
+        CHECK(gs->book.booking[0].active, "the match becomes a booking");
+        CHECK(gs->book.booking[0].price == 9,
+              "and fills at the resting order's price, not the taker's");
+        CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] == 0,
+              "the goods are not there yet");
+
+        /* Halfway across: still nothing. */
+        run_ticks(gs, (int)crossing / 2);
+        CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] == 0,
+              "nor halfway across");
+
+        run_ticks(gs, (int)crossing / 2 + 2);
+        CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] == 20,
+              "they arrive after the crossing the route says");
+        CHECK(gs->islands[0].stockpile.amount[RES_GOLD] ==
+              seller_gold + 20 * 9,
+              "and the seller is paid on delivery");
+        CHECK(!gs->book.booking[0].active, "the booking is closed");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a partial fill leaves the right reserve ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        Command    c;
+        uint32_t   id;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+
+        /* An ask for 5 at 9 is resting, so it sets the price. A bid for
+         * 20 at 12 arrives: 5 fill at 9, and the 15 the buyer was
+         * willing to overpay comes straight back.
+         *
+         * The buyer reserved 240. Cancelling the unfilled 15 must
+         * return exactly the 180 those units still hold — not the 195
+         * a reserve decremented by the FILL price rather than the LIMIT
+         * price would hand back, which pays the 15 out twice and mints
+         * gold by part-filling an order and withdrawing it. */
+        place(gs, 1u, 0, RES_PLANKS,  -5,  9);
+        run_ticks(gs, 1);
+        place(gs, 2u, 1, RES_PLANKS,  20, 12);
+        run_ticks(gs, 1);
+
+        id = 0u;
+        for (int i = 0; i < gs->book.order_count; i++)
+            if (gs->book.order[i].active && gs->book.order[i].owner == 2u)
+                id = gs->book.order[i].id;
+        CHECK(id != 0u, "the unfilled remainder is still resting");
+
+        memset(&c, 0, sizeof(c));
+        c.kind = CMD_CANCEL_ORDER;
+        c.a    = (int32_t)id;
+        AS(gs, 2u, command_submit(gs, &c));
+        run_ticks(gs, 1);
+
+        CHECK(gs->islands[1].stockpile.amount[RES_GOLD] == 100000 - 5 * 9,
+              "a part-filled order that is cancelled returns exactly what "
+              "it still held");
+
+        game_free(gs);
+    }
+
+    printf("\n=== you cannot trade with yourself, and it costs no one else ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+
+        /* Player 1 crosses their own book: best bid and best ask are
+         * both theirs. That pair must not fill — but it also must not
+         * WEDGE the book. A matcher that gave up on the resource the
+         * moment the top of book was self-crossing would let one player
+         * lock every other player out of a good for free. */
+        gs->islands[0].stockpile.amount[RES_GOLD] = 100000;
+        place(gs, 1u, 0, RES_PLANKS,  10, 50);   /* own bid, very high */
+        place(gs, 1u, 0, RES_PLANKS, -10,  1);   /* own ask, very low  */
+        run_ticks(gs, 2);
+
+        CHECK(orderbook_open_live(&gs->book) == 2 &&
+              orderbook_booking_live(&gs->book) == 0,
+              "a self-crossing pair does not fill");
+
+        /* Now player 2 offers to sell into that standing bid at a price
+         * player 1 is plainly willing to pay. */
+        gs->islands[1].stockpile.amount[RES_PLANKS] = 10;
+        place(gs, 2u, 1, RES_PLANKS, -10, 20);
+        run_ticks(gs, 2);
+
+        CHECK(orderbook_booking_live(&gs->book) == 1,
+              "and another player can still trade against it");
+
+        game_free(gs);
+    }
+
+    printf("\n=== one player cannot fill the book ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        i;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+
+        for (i = 0; i < ORDERBOOK_MAX_PER_PLAYER + 6; i++)
+            place(gs, 1u, 0, RES_PLANKS, -1, 900 + i);   /* far above any bid */
+        run_ticks(gs, 2);
+
+        CHECK(orderbook_open_count(&gs->book, 1u) == ORDERBOOK_MAX_PER_PLAYER,
+              "posting stops at the per-player cap");
+        CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] ==
+              100 - ORDERBOOK_MAX_PER_PLAYER,
+              "and a refused order reserves nothing");
+
+        game_free(gs);
+    }
+
+    printf("\n=== the book is world state ===\n");
+    {
+        GameState *a = two_traders(777u);
+        GameState *b = two_traders(777u);
+
+        if (!a || !b) { printf("game_init failed\n"); return 1; }
+
+        /* The same commands in the same order must produce the same
+         * fills — the book is hashed, so a matcher that depended on
+         * anything but price, time and id would show up here. */
+        place(a, 1u, 0, RES_PLANKS, -20, 9);
+        place(b, 1u, 0, RES_PLANKS, -20, 9);
+        run_ticks(a, 1); run_ticks(b, 1);
+        place(a, 2u, 1, RES_PLANKS, 20, 12);
+        place(b, 2u, 1, RES_PLANKS, 20, 12);
+        run_ticks(a, 40); run_ticks(b, 40);
+
+        CHECK(sim_hash(a) == sim_hash(b),
+              "two identical runs hash identically through a fill");
+
+        game_free(a);
+        game_free(b);
+    }
+
+    printf("\n=== a checkpoint keeps open orders ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        GameState *rs = game_init();
+        unsigned char *buf = NULL;
+        size_t         len = 0;
+
+        if (!gs || !rs) { printf("game_init failed\n"); return 1; }
+
+        place(gs, 1u, 0, RES_PLANKS, -20, 9);
+        place(gs, 2u, 1, RES_PLANKS,  20, 12);
+        run_ticks(gs, 2);           /* matched, in transit */
+
+        CHECK(snapshot_encode(gs, &buf, &len), "the world snapshots");
+        if (!buf) { printf("\nFAILED\n"); return 1; }
+        CHECK(snapshot_decode(rs, buf, len), "and restores");
+        CHECK(sim_hash(rs) == sim_hash(gs),
+              "with the book intact — a checkpoint that dropped an open "
+              "booking would steal goods already paid for");
+
+        /* And the shipment still lands on the far side. */
+        run_ticks(gs, 400);
+        run_ticks(rs, 400);
+        CHECK(sim_hash(rs) == sim_hash(gs),
+              "and both deliver it identically afterwards");
+
+        free(buf);
+        game_free(gs);
+        game_free(rs);
+    }
+
+    printf("\n%s\n", failures ? "FAILED" : "PASSED");
+    return failures ? 1 : 0;
+}

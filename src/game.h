@@ -38,6 +38,7 @@
 #include "command.h"
 #include "faction.h"
 #include "sea.h"
+#include "orderbook.h"
 #include "intent.h"
 
 /* Gold a new game's starting island begins with. */
@@ -254,6 +255,11 @@ typedef struct GameState {
      * hashed, because there is nothing about it a checkpoint could
      * disagree with. */
     Sea       sea;
+
+    /* The order book (MARITIME_PLAN Phase 2). World state: hashed,
+     * replayed, snapshotted. Matching runs at tick boundaries so a
+     * replay fills exactly the trades the original run filled. */
+    OrderBook book;
 
     /* Who this client is (Phase 5). CLIENT state, not world state: it
      * is never hashed and never saved — it says which player's commands
@@ -764,5 +770,20 @@ int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
 /* Owner only: allow (1) or forbid (0) foreign ships transferring at
  * `island_idx`. A ship that can't dock can't deliver — blockade. */
 int game_set_docking(GameState *gs, int island_idx, int allow);
+
+/* Post an order at `island_idx`'s harbour (MARITIME_PLAN Phase 2).
+ * `qty` carries the side: positive buys, negative sells. `limit` is the
+ * worst price per unit the order will accept, and posting reserves at
+ * it — the goods for a sell, `qty * limit` gold for a buy.
+ *
+ * `kind`/`what` name the thing being traded rather than a ResourceType,
+ * because a route chart is not one of a fixed set of goods; see
+ * orderbook.h. Today only TRADE_RESOURCE is accepted. */
+int game_place_order(GameState *gs, int island_idx, TradeKind kind,
+                     uint16_t what, int qty, int limit);
+
+/* Withdraw an order by id, returning whatever it still reserves. Owner
+ * only, and the check is the order's own, not its island's. */
+int game_cancel_order(GameState *gs, uint32_t order_id);
 
 #endif /* GAME_H */

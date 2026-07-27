@@ -53,7 +53,7 @@
 /* Bumped whenever the encoding changes. Unlike SAVE_VERSION this is not
  * about the meaning of a log — a snapshot has no history to
  * reinterpret — it is purely "these bytes are laid out differently". */
-#define SNAPSHOT_VERSION 1u
+#define SNAPSHOT_VERSION 2u   /* 2: the order book (MARITIME Phase 2) */
 
 /* Encode `gs`'s world state into a freshly malloc'd buffer. On success
  * returns 1 and stores the buffer and its length; the caller owns the
