@@ -131,6 +131,35 @@ where the faction is a market maker alongside everyone else is that
 thesis finished, not a second system beside it. Its current elastic
 quote becomes its posted bid and ask.
 
+### Open: where the faction's liquidity lives
+
+Not built, and blocked on one question the rest of the design does not
+answer. Every order in the book is posted *at a harbour*, and a fill
+becomes a crossing between two harbours that costs a merchant and a
+hull. The faction has no island, so it has no harbour to post from and
+nothing to reserve.
+
+Three ways out, in rough order of how much they change:
+
+1. **The faction posts at every settled harbour**, and its side of a
+   fill neither crosses nor reserves. Cheapest, and it preserves
+   today's instant NPC trade — but it makes the faction strictly better
+   than any player counterparty, which undercuts the whole reason to
+   trade with each other.
+2. **The faction holds one or more home ports** — real islands with
+   real stock — and its orders ship like everyone else's. Most
+   coherent: the NPC becomes a trader with a location, distance to it
+   starts mattering, and blockading it becomes a thing you could do. It
+   needs the faction's inventory to become per-island, which is a real
+   change to `Faction`.
+3. **The faction only takes, never makes**: it posts nothing, and the
+   existing quote screen stays a separate instant-settlement surface
+   beside the book. Honest about what it is, and leaves the book purely
+   player-to-player.
+
+(2) is the one that fits the rest of this document, and it is the one
+that costs the most.
+
 ## Routes and charts
 
 **Public routes** are known to everyone, slower, and protected — the
@@ -301,13 +330,19 @@ retrofitting it after combat exists means touching combat too.
    which settles one of the open questions below and is what lets a
    route chart be tradeable in phase 3 without growing `RES_COUNT`.
 
-   **Still outstanding from this phase:** merchants as a reserved
-   resource, and the faction posting orders as market maker. A booking
-   currently costs the water and nothing else — no merchant is consumed
-   and no hull is held — so a player can have unlimited trades in
-   flight. That is the next increment, and it is what makes the return
-   leg ("merchants and boats return to the island they set out from")
-   mean anything.
+   Merchants and hulls are now reserved capital: a booking takes one of
+   each from the **selling** island and gives them back when they have
+   sailed home, so trade capacity is a round trip and a standing build
+   decision. Capacity is derived from the buildings standing — a base
+   of one each per settled island, plus populated Merchant Houses and
+   Shipyards — never stored, so it follows demolition and depopulation
+   for free. An ask whose island has nothing free is skipped rather
+   than stalled on, for the same reason a self-crossing pair is: one
+   seller must not be able to shut a good for everyone.
+
+   **Still outstanding from this phase:** the faction posting orders as
+   market maker. See "the faction's liquidity" below — it needs a
+   decision before it can be built.
 3. **Routes and charts.** Public and private, chart consumption,
    per-route insurance, Scholars research.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
@@ -338,6 +373,14 @@ upgrades it rather than gating it.
 - **Waypoints and routes are named**, in lore rather than coordinates.
 - **Routes are discovered by research *or* by survey.** A survey
   dispatches one scholar, one research boat and one chart.
+- **Three routes exist between any pair of islands.** One public, two
+  private. That is enough for a real choice — a safe default and two
+  passages worth discovering, which can differ from each other in
+  length and exposure rather than just being "the fast one" — while
+  staying small enough that a player can hold the whole map of a pair
+  in their head, and small enough that choosing between known routes is
+  a decision rather than a menu. Phase 1 generates one route per pair;
+  phase 3 widens `Sea` to three and conceals two of them.
 - **A tradeable thing is a `(kind, id)` pair, not a `ResourceType`**
   (phase 2, as built). A chart for one passage is a different object
   from a chart for another, so they cannot share an enum slot, and
@@ -351,9 +394,6 @@ upgrades it rather than gating it.
 
 ## Still open
 
-- **How many routes between a pair?** One public plus a small number of
-  private is probably enough; unbounded makes the book hard to read,
-  and it interacts with how a route is chosen when several exist.
 - **What does a failed survey cost?** The blank chart is presumably
   spent either way — that is the gamble — but whether the scholar and
   the hull come home, or can be lost with the mission, is a different

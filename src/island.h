@@ -125,7 +125,44 @@ typedef struct {
     uint32_t   charter_timer;    /* ticks toward the next payment     */
     int32_t    charter_arrears;  /* consecutive payments missed       */
     int32_t    escrow[RES_COUNT];
+
+    /* ---- trade capacity (MARITIME_PLAN Phase 2) ------------
+     * A booking does not merely cost goods and time: it takes a
+     * merchant and a hull out of this island's hands for the whole
+     * round trip, and gives them back when they get home. They are
+     * CAPITAL, NOT FUEL — nothing is consumed, but nothing else can
+     * use them meanwhile, so how many trades you can run at once is a
+     * standing build decision rather than a running cost.
+     *
+     * Only the "out" counts are stored. Capacity is derived from the
+     * buildings standing (island_merchant_capacity /
+     * island_hull_capacity) because it must follow demolition and
+     * depopulation for free; storing it would be a second copy of the
+     * building list, wrong the moment a Merchant House burns down.
+     *
+     * Sim state: hashed, replayed, integer. */
+    int32_t    merchants_out;
+    int32_t    hulls_out;
 } Island;
+
+/* How many merchants and trade hulls this island can have committed at
+ * once. Every settled island has a base of each — a colony is a trading
+ * post before it is anything else, and a market that only opened once
+ * the third house line was up would be dead for most of a game — and
+ * buildings raise it from there. */
+#define TRADE_BASE_MERCHANTS      1
+#define TRADE_BASE_HULLS          1
+#define TRADE_MERCHANTS_PER_HOUSE 1   /* a populated Merchant House    */
+#define TRADE_MERCHANTS_PER_INVESTOR 2/* its upgrade is worth more     */
+#define TRADE_HULLS_PER_SHIPYARD  2
+
+int island_merchant_capacity(const Island *isl);
+int island_hull_capacity(const Island *isl);
+
+/* Whether a booking could set out from here right now: one merchant and
+ * one hull free. Asked by the matcher, which skips an ask whose island
+ * cannot carry it rather than stalling the good for everyone. */
+int island_can_dispatch(const Island *isl);
 
 /* Generate/reset `isl` to a freshly created island: new map from
  * `seed`, camera centred, everything else cleared. `settled` is set

@@ -359,6 +359,8 @@ static void put_orderbook(W *w, const OrderBook *b)
         w_u32(w, bk->buyer);
         w_u32(w, bk->seller);
         w_u64(w, bk->arrive_tick);
+        w_u64(w, bk->return_tick);
+        w_i32(w, bk->delivered);
     }
 }
 
@@ -402,6 +404,8 @@ static int get_orderbook(R *r, OrderBook *b)
         bk->buyer       = r_u32(r);
         bk->seller      = r_u32(r);
         bk->arrive_tick = r_u64(r);
+        bk->return_tick = r_u64(r);
+        bk->delivered   = r_i32(r);
     }
     return !r->bad;
 }
@@ -455,6 +459,10 @@ static void put_island(W *w, const Island *isl)
     w_u32(w, isl->charter_timer);
     w_i32(w, isl->charter_arrears);
     for (i = 0; i < RES_COUNT; i++) w_i32(w, isl->escrow[i]);
+    /* Trade capacity committed (MARITIME Phase 2). The capacity itself
+     * is derived from the buildings and needs no bytes. */
+    w_i32(w, isl->merchants_out);
+    w_i32(w, isl->hulls_out);
     w_i32(w, (int32_t)isl->agent_assign_timer);
     put_stockpile(w, &isl->stockpile);
 
@@ -500,6 +508,8 @@ static int get_island(R *r, Island *isl)
     isl->charter_timer   = r_u32(r);
     isl->charter_arrears = r_i32(r);
     for (i = 0; i < RES_COUNT; i++) isl->escrow[i] = r_i32(r);
+    isl->merchants_out = r_i32(r);
+    isl->hulls_out     = r_i32(r);
     isl->agent_assign_timer = (int)r_i32(r);
     get_stockpile(r, &isl->stockpile);
 
