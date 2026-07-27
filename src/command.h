@@ -49,6 +49,16 @@
  *   CMD_ESCROW_TAKE     a=island b=resource c=qty d=quay nonce
  *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
+ *   CMD_PLACE_ORDER     a=island b=TRADE_PACK(kind,id) c=qty (sign is
+ *                        the side: >0 buys, <0 sells) d=limit price
+ *                        (MARITIME_PLAN Phase 2). The identity is
+ *                        PACKED because what is traded is a kind and
+ *                        an id, not a ResourceType — a chart names a
+ *                        passage, and route charts are not
+ *                        interchangeable. Sign-as-side is the trick
+ *                        CMD_SHIP_TRANSFER already uses, and together
+ *                        they are what let six fields fit four slots.
+ *   CMD_CANCEL_ORDER    a=order id
  *   CMD_INTERCEPT       a=my ship b=target ship c=target departure tick
  *                        (the tick BINDS the reference: if the target
  *                        has since sailed again, the command names a
@@ -91,6 +101,8 @@ typedef enum {
     CMD_ESCROW_TAKE,     /* owner: move goods harbor escrow -> stockpile */
     CMD_SET_DOCKING,     /* owner: allow/forbid foreign ships docking    */
     CMD_INTERCEPT,       /* attack another player's voyage at sea        */
+    CMD_PLACE_ORDER,     /* post a buy or sell on the order book         */
+    CMD_CANCEL_ORDER,    /* withdraw one, returning what it reserved     */
     CMD_COUNT
 } CommandKind;
 

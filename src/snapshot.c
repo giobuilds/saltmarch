@@ -17,6 +17,7 @@
 #include "island.h"
 #include "map.h"
 #include "simlog.h"
+#include "orderbook.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -318,6 +319,93 @@ static void get_ship(R *r, Ship *s)
     s->route_leg     = (int)r_i32(r);
 }
 
+/* The order book (MARITIME_PLAN Phase 2). Live entries only — an
+ * inactive slot holds nothing the world needs, and writing its stale
+ * bytes would put noise in a buffer whose checksum has to mean
+ * something. Slot identity is not preserved across a restore, which is
+ * safe because nothing refers to an order by slot: orders are found by
+ * id, and the matcher re-derives its ordering from price and time. */
+static void put_orderbook(W *w, const OrderBook *b)
+{
+    int i;
+
+    w_i32(w, (int32_t)orderbook_open_live(b));
+    w_u32(w, b->next_order_id);
+    for (i = 0; i < b->order_count; i++) {
+        const Order *o = &b->order[i];
+        if (!o->active) continue;
+        w_u32(w, o->id);
+        w_u32(w, o->owner);
+        w_i32(w, o->island);
+        w_u16(w, o->what.kind);
+        w_u16(w, o->what.id);
+        w_i32(w, o->side);
+        w_i32(w, o->qty);
+        w_i32(w, o->limit);
+        w_i32(w, o->reserved_gold);
+        w_u64(w, o->placed_tick);
+    }
+
+    w_i32(w, (int32_t)orderbook_booking_live(b));
+    for (i = 0; i < b->booking_count; i++) {
+        const Booking *bk = &b->booking[i];
+        if (!bk->active) continue;
+        w_u16(w, bk->what.kind);
+        w_u16(w, bk->what.id);
+        w_i32(w, bk->qty);
+        w_i32(w, bk->price);
+        w_i32(w, bk->from_island);
+        w_i32(w, bk->to_island);
+        w_u32(w, bk->buyer);
+        w_u32(w, bk->seller);
+        w_u64(w, bk->arrive_tick);
+    }
+}
+
+static int get_orderbook(R *r, OrderBook *b)
+{
+    int i, n;
+
+    orderbook_init(b);
+
+    n = (int)r_i32(r);
+    b->next_order_id = r_u32(r);
+    if (r->bad || n < 0 || n > ORDERBOOK_MAX_ORDERS) return 0;
+    b->order_count = n;
+    for (i = 0; i < n; i++) {
+        Order *o = &b->order[i];
+        o->active        = 1;
+        o->id            = r_u32(r);
+        o->owner         = r_u32(r);
+        o->island        = r_i32(r);
+        o->what.kind     = r_u16(r);
+        o->what.id       = r_u16(r);
+        o->side          = r_i32(r);
+        o->qty           = r_i32(r);
+        o->limit         = r_i32(r);
+        o->reserved_gold = r_i32(r);
+        o->placed_tick   = r_u64(r);
+    }
+
+    n = (int)r_i32(r);
+    if (r->bad || n < 0 || n > ORDERBOOK_MAX_BOOKINGS) return 0;
+    b->booking_count = n;
+    for (i = 0; i < n; i++) {
+        Booking *bk = &b->booking[i];
+        bk->active      = 1;
+        bk->what.kind   = r_u16(r);
+        bk->what.id     = r_u16(r);
+        bk->qty         = r_i32(r);
+        bk->price       = r_i32(r);
+        bk->from_island = r_i32(r);
+        bk->to_island   = r_i32(r);
+        bk->buyer       = r_u32(r);
+        bk->seller      = r_u32(r);
+        bk->arrive_tick = r_u64(r);
+    }
+    return !r->bad;
+}
+
 static void put_faction(W *w, const Faction *f)
 {
     int i, j;
@@ -468,6 +556,7 @@ int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
     w_u64(&w, sim_hash(gs));
 
     put_faction(&w, &gs->faction);
+    put_orderbook(&w, &gs->book);
 
     w_i32(&w, (int32_t)gs->ship_count);
     for (i = 0; i < gs->ship_count; i++) put_ship(&w, &gs->ships[i]);
@@ -558,6 +647,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     claimed_hash        = r_u64(&r);
 
     get_faction(&r, &tmp->faction);
+    if (!get_orderbook(&r, &tmp->book)) goto bad;
 
     tmp->ship_count = (int)r_i32(&r);
     if (r.bad || tmp->ship_count < 0 || tmp->ship_count > MAX_SHIPS)
@@ -597,6 +687,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     memcpy(gs->ships,   tmp->ships,   sizeof(gs->ships));
     gs->ship_count     = tmp->ship_count;
     gs->faction        = tmp->faction;
+    gs->book           = tmp->book;
     gs->sea            = tmp->sea;
     gs->sim_tick_no    = tmp->sim_tick_no;
     gs->world_seed     = tmp->world_seed;

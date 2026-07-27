@@ -83,8 +83,14 @@ typedef struct NetSession NetSession;
  *    as 7.
  * 9: four more goods, and CMD_UPGRADE_HOUSE's `c` now selects which
  *    way up (SUPPLY_CHAIN Phase 8). A peer that ignores it would
- *    apply every Scholars upgrade as a line upgrade. */
-#define NET_PROTO_VERSION     9u
+ *    apply every Scholars upgrade as a line upgrade.
+ * 10: the order book (MARITIME_PLAN Phase 2). MSG_WORLD's snapshot
+ *    grew two sections, so an older peer would read the book as the
+ *    start of the faction and reject the checkpoint. Worse if it
+ *    didn't: the book is hashed and matched every tick, so a peer that
+ *    did not run the matcher would disagree with the host about the
+ *    world one tick after the first trade crossed. */
+#define NET_PROTO_VERSION     10u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

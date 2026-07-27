@@ -10,6 +10,7 @@
 #include "ship.h"
 #include "simlog.h"
 #include "snapshot.h"
+#include "orderbook.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -307,6 +308,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     /* The market starts at baseline, so day-one quotes equal the old
      * fixed SELL_PRICE/BUY_PRICE until the player trades. */
     faction_init(&gs->faction);
+    orderbook_init(&gs->book);
 
     /* A fresh world is a fresh history: discard any previous command
      * log and reset the world clock. The starting state above is a
@@ -517,8 +519,15 @@ typedef struct {
  * v15 (SUPPLY_CHAIN Phase 8): four more goods, and CMD_UPGRADE_HOUSE
  * gained a meaning for `c` — a v14 log's upgrades all carry c = 0,
  * which happens to be the branch they meant, but the field is no
- * longer ignorable. */
-#define SAVE_VERSION 15u
+ * longer ignorable.
+ *
+ * v16 (MARITIME_PLAN Phase 2): the order book. Two new command kinds,
+ * and — the part that makes old logs unreplayable rather than merely
+ * incomplete — the book matches at every tick boundary, so a v15 log
+ * replayed under these rules would still produce a v15 world only by
+ * accident. It is also the first hashed state that is not attached to
+ * an island or a ship. */
+#define SAVE_VERSION 16u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -951,6 +960,11 @@ static void sim_charter_tick(GameState *gs, int island)
  * The heartbeat. See the header-comment contract in game.h. Command
  * application happens first and before any island updates, so a command
  * submitted for tick N is visible to tick N's simulation. */
+/* Defined below with the other sim_* rules, beside the mutators it
+ * shares stockpile access with; declared here because the tick loop
+ * runs it. */
+static void book_match(GameState *gs);
+
 void sim_run_one_tick(GameState *gs)
 {
     int i;
@@ -979,12 +993,19 @@ void sim_run_one_tick(GameState *gs)
         gs->cmd_applied++;
     }
 
-    /* 2. Every settled island's full pipeline, one tick, in order —
+    /* 2. The order book: deliver what has arrived, then match what
+     * crosses. Before the islands tick, so goods delivered this tick
+     * are available to production this tick rather than next — a
+     * shipment that lands is stock, and stock is what a workshop
+     * consumes. */
+    book_match(gs);
+
+    /* 3. Every settled island's full pipeline, one tick, in order —
      * see island_update()'s ordering constraint. */
     for (i = 0; i < MAX_ISLANDS; i++)
         island_update(&gs->islands[i]);
 
-    /* 3. Voyages advance independently of any island. Insurance is
+    /* 4. Voyages advance independently of any island. Insurance is
      * settled either side of the move: what was at sea before, and
      * what has arrived after. */
     {
@@ -1103,6 +1124,55 @@ uint64_t sim_hash(const GameState *gs)
                 fnv_bytes(&h, &p->timer, sizeof(p->timer));
             }
         }
+    }
+
+    /* The order book is world state (MARITIME_PLAN Phase 2): two
+     * clients whose books disagreed would fill different trades and
+     * diverge from there, so it is hashed like everything else.
+     *
+     * Live entries only, and — unlike ships above — the dead slots
+     * between them contribute NOTHING, not even their `active` flag.
+     * That is deliberate and it is what lets a checkpoint compact the
+     * book: an order is addressed by id, never by slot, so a book
+     * holding one live order in slot 5 is the same world as the same
+     * order in slot 0, and the hash has to agree. Hashing a dead slot's
+     * flag would make "how many orders have ever been cancelled here"
+     * part of the world, and a restore would desync on nothing.
+     *
+     * The live counts go in explicitly so the order and booking runs
+     * cannot be read as each other. */
+    {
+        int live = orderbook_open_live(&gs->book);
+        fnv_bytes(&h, &live, sizeof(live));
+    }
+    for (s = 0; s < gs->book.order_count; s++) {
+        const Order *o = &gs->book.order[s];
+        if (!o->active) continue;
+        fnv_bytes(&h, &o->id, sizeof(o->id));
+        fnv_bytes(&h, &o->owner, sizeof(o->owner));
+        fnv_bytes(&h, &o->island, sizeof(o->island));
+        fnv_bytes(&h, &o->what, sizeof(o->what));
+        fnv_bytes(&h, &o->side, sizeof(o->side));
+        fnv_bytes(&h, &o->qty, sizeof(o->qty));
+        fnv_bytes(&h, &o->limit, sizeof(o->limit));
+        fnv_bytes(&h, &o->reserved_gold, sizeof(o->reserved_gold));
+        fnv_bytes(&h, &o->placed_tick, sizeof(o->placed_tick));
+    }
+    {
+        int live = orderbook_booking_live(&gs->book);
+        fnv_bytes(&h, &live, sizeof(live));
+    }
+    for (s = 0; s < gs->book.booking_count; s++) {
+        const Booking *bk = &gs->book.booking[s];
+        if (!bk->active) continue;
+        fnv_bytes(&h, &bk->what, sizeof(bk->what));
+        fnv_bytes(&h, &bk->qty, sizeof(bk->qty));
+        fnv_bytes(&h, &bk->price, sizeof(bk->price));
+        fnv_bytes(&h, &bk->from_island, sizeof(bk->from_island));
+        fnv_bytes(&h, &bk->to_island, sizeof(bk->to_island));
+        fnv_bytes(&h, &bk->buyer, sizeof(bk->buyer));
+        fnv_bytes(&h, &bk->seller, sizeof(bk->seller));
+        fnv_bytes(&h, &bk->arrive_tick, sizeof(bk->arrive_tick));
     }
 
     for (s = 0; s < gs->ship_count; s++) {
@@ -2198,6 +2268,316 @@ int game_set_docking(GameState *gs, int island_idx, int allow)
     return command_submit(gs, &c);
 }
 
+/* The two submission helpers for the book. Like every other game_*,
+ * these only queue the command — whether it is accepted is decided when
+ * its tick runs, and comes back as a RejectReason the flash correlates
+ * by {player_id, seq}. */
+int game_place_order(GameState *gs, int island_idx, TradeKind kind,
+                     uint16_t what, int qty, int limit)
+{
+    Command c = {0};
+    c.kind = CMD_PLACE_ORDER;
+    c.a    = island_idx;
+    c.b    = TRADE_PACK(kind, what);
+    c.c    = qty;                /* the sign is the side: + buys, - sells */
+    c.d    = limit;
+    return command_submit(gs, &c);
+}
+
+int game_cancel_order(GameState *gs, uint32_t order_id)
+{
+    Command c = {0};
+    c.kind = CMD_CANCEL_ORDER;
+    c.a    = (int32_t)order_id;
+    return command_submit(gs, &c);
+}
+
+
+/* ---- the order book (MARITIME_PLAN Phase 2) -----------------
+ * Posting reserves: a sell takes the goods out of the stockpile, a buy
+ * takes the gold. Both are held against the order and returned if it
+ * is cancelled. Without that, one cargo could be posted into ten books
+ * and fill all ten — the same double-spend the harbour escrow exists
+ * to prevent between players. */
+
+static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
+                                    int qty, int limit, uint32_t player)
+{
+    Island   *isl = &gs->islands[island];
+    OrderBook *b  = &gs->book;
+    TradeKind kind = (TradeKind)TRADE_KIND_OF(packed);
+    uint16_t  id   = TRADE_ID_OF(packed);
+    int       side = qty >= 0 ? ORDER_BUY : ORDER_SELL;
+    int       slot, i;
+
+    if (qty == 0) return REJ_UNAVAILABLE;
+    if (qty < 0) qty = -qty;
+    if (limit <= 0) return REJ_UNAVAILABLE;
+
+    /* Only resources are tradeable today. Route charts get their id
+     * space in Phase 3; the kind is here so the matcher never has to
+     * learn about them. */
+    if (kind != TRADE_RESOURCE) return REJ_UNAVAILABLE;
+    if (id >= (uint16_t)RES_COUNT || id == (uint16_t)RES_GOLD)
+        return REJ_UNAVAILABLE;
+
+    if (orderbook_open_count(b, player) >= ORDERBOOK_MAX_PER_PLAYER)
+        return REJ_UNAVAILABLE;
+
+    /* Find a slot: reuse an inactive one before growing, the same
+     * find-or-append the building and agent arrays use, so a replay
+     * lands every order in the same slot. */
+    slot = -1;
+    for (i = 0; i < b->order_count; i++)
+        if (!b->order[i].active) { slot = i; break; }
+    if (slot < 0) {
+        if (b->order_count >= ORDERBOOK_MAX_ORDERS) return REJ_UNAVAILABLE;
+        slot = b->order_count++;
+    }
+
+    if (side == ORDER_SELL) {
+        if (isl->stockpile.amount[id] < qty) return REJ_NO_STOCK;
+        stockpile_add(&isl->stockpile, (ResourceType)id, -qty);
+    } else {
+        int cost = qty * limit;
+        if (isl->stockpile.amount[RES_GOLD] < cost) return REJ_CANT_AFFORD;
+        stockpile_add(&isl->stockpile, RES_GOLD, -cost);
+    }
+
+    memset(&b->order[slot], 0, sizeof(b->order[slot]));
+    b->order[slot].active        = 1;
+    b->order[slot].id            = b->next_order_id++;
+    b->order[slot].owner         = player;
+    b->order[slot].island        = island;
+    b->order[slot].what.kind     = (uint16_t)kind;
+    b->order[slot].what.id       = id;
+    b->order[slot].side          = side;
+    b->order[slot].qty           = qty;
+    b->order[slot].limit         = limit;
+    b->order[slot].reserved_gold = (side == ORDER_BUY) ? qty * limit : 0;
+    b->order[slot].placed_tick   = gs->sim_tick_no;
+    return REJ_OK;
+}
+
+/* Give back whatever the order is still holding. Shared by cancel and
+ * by the matcher, so a partially filled order that is withdrawn cannot
+ * return more than it has left. */
+static void order_refund(GameState *gs, Order *o)
+{
+    Island *isl = &gs->islands[o->island];
+
+    if (o->side == ORDER_SELL)
+        stockpile_add(&isl->stockpile, (ResourceType)o->what.id, o->qty);
+    else
+        stockpile_add(&isl->stockpile, RES_GOLD, o->reserved_gold);
+    o->active = 0;
+}
+
+static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
+                                     uint32_t player)
+{
+    Order *o = orderbook_find(&gs->book, order_id);
+
+    if (!o) return REJ_UNAVAILABLE;
+    if (o->owner != player) return REJ_NOT_OWNER;
+    order_refund(gs, o);
+    return REJ_OK;
+}
+
+/* ---- matching -----------------------------------------------
+ * Runs once per tick. Deterministic by construction: candidates are
+ * chosen by best price, then earliest placed, then lowest id, and ids
+ * are assigned in command-log order — so a replay fills exactly the
+ * trades the original run filled, in the same sequence.
+ *
+ * A fill is not a transfer. The goods are already out of the seller's
+ * stockpile and the gold out of the buyer's; what a match creates is a
+ * Booking, and the goods arrive when the water between the two
+ * harbours has been crossed. */
+static int better_order(const Order *cand, const Order *best, int side)
+{
+    if (!best) return 1;
+    if (side == ORDER_BUY) {
+        if (cand->limit != best->limit) return cand->limit > best->limit;
+    } else {
+        if (cand->limit != best->limit) return cand->limit < best->limit;
+    }
+    if (cand->placed_tick != best->placed_tick)
+        return cand->placed_tick < best->placed_tick;
+    return cand->id < best->id;
+}
+
+/* Choose the pair to fill for one good, or return 0 if nothing can.
+ *
+ * A player may not trade with themselves — but refusing that pair is
+ * not the same as refusing the good. If the top of book is one player
+ * on both sides and the matcher simply stopped there, that player
+ * could shut every other trader out of a resource for as long as they
+ * cared to leave the pair standing, at no cost, by posting a bid and
+ * an ask nobody would ever take. So a self-crossing top of book steps
+ * aside rather than ending the pass.
+ *
+ * It steps aside in one move, not a search. With B the best bid and A
+ * the best ask, both owned by p: any crossing pair with two different
+ * owners has either a bid not owned by p — and then the best such bid
+ * also crosses A, because A is the cheapest ask of all — or an ask not
+ * owned by p, and then that ask's best case is B. Checking (B2, A) and
+ * (B, A2) is therefore exhaustive, and the common path stays a single
+ * linear pass.
+ */
+static int book_best_cross(OrderBook *b, int res, Order **out_bid,
+                           Order **out_ask)
+{
+    Order *bid = NULL, *ask = NULL, *bid2 = NULL, *ask2 = NULL;
+    int    i;
+
+    for (i = 0; i < b->order_count; i++) {
+        Order *o = &b->order[i];
+        if (!o->active || o->what.kind != TRADE_RESOURCE) continue;
+        if (o->what.id != (uint16_t)res) continue;
+        if (o->side == ORDER_BUY) {
+            if (better_order(o, bid, ORDER_BUY)) bid = o;
+        } else {
+            if (better_order(o, ask, ORDER_SELL)) ask = o;
+        }
+    }
+
+    if (!bid || !ask) return 0;
+    if (bid->limit < ask->limit) return 0;          /* no crossing */
+
+    if (bid->owner != ask->owner) {                 /* the usual case */
+        *out_bid = bid;
+        *out_ask = ask;
+        return 1;
+    }
+
+    /* Same owner on both sides. Find the best bid and the best ask
+     * belonging to anybody else. */
+    for (i = 0; i < b->order_count; i++) {
+        Order *o = &b->order[i];
+        if (!o->active || o->what.kind != TRADE_RESOURCE) continue;
+        if (o->what.id != (uint16_t)res) continue;
+        if (o->owner == bid->owner) continue;
+        if (o->side == ORDER_BUY) {
+            if (better_order(o, bid2, ORDER_BUY)) bid2 = o;
+        } else {
+            if (better_order(o, ask2, ORDER_SELL)) ask2 = o;
+        }
+    }
+
+    {
+        int cross_a = bid2 && bid2->limit >= ask->limit;   /* (B2, A) */
+        int cross_b = ask2 && bid->limit >= ask2->limit;   /* (B, A2) */
+
+        if (cross_a && cross_b) {
+            /* Both blocked orders belong to the same player, so the
+             * claim to be served is the outsider's: whichever of the
+             * two has been waiting longer, by the same price-time rule
+             * the rest of the book uses. */
+            int b2_first = (bid2->placed_tick != ask2->placed_tick)
+                         ? (bid2->placed_tick < ask2->placed_tick)
+                         : (bid2->id < ask2->id);
+            if (b2_first) cross_b = 0; else cross_a = 0;
+        }
+        if (cross_a) { *out_bid = bid2; *out_ask = ask;  return 1; }
+        if (cross_b) { *out_bid = bid;  *out_ask = ask2; return 1; }
+    }
+    return 0;
+}
+
+static void book_settle_arrivals(GameState *gs)
+{
+    OrderBook *b = &gs->book;
+    int        i;
+
+    for (i = 0; i < b->booking_count; i++) {
+        Booking *bk = &b->booking[i];
+        Island  *to, *from;
+
+        if (!bk->active) continue;
+        if (gs->sim_tick_no < bk->arrive_tick) continue;
+
+        to   = &gs->islands[bk->to_island];
+        from = &gs->islands[bk->from_island];
+
+        stockpile_add(&to->stockpile, (ResourceType)bk->what.id, bk->qty);
+        stockpile_add(&from->stockpile, RES_GOLD, bk->qty * bk->price);
+
+        sim_log("Order filled: %d %s delivered to %s at %d each",
+                bk->qty, RESOURCE_NAMES[bk->what.id], to->name, bk->price);
+        bk->active = 0;
+    }
+}
+
+static void book_match(GameState *gs)
+{
+    OrderBook *b = &gs->book;
+    int        res, guard;
+
+    book_settle_arrivals(gs);
+
+    /* Only resources exist in the book today; when Phase 3 adds route
+     * charts this loop gains an outer pass over kinds. */
+    for (res = 0; res < RES_COUNT; res++) {
+        if (res == RES_GOLD) continue;
+
+        /* Bounded: each pass fills at least one order completely, so a
+         * book of N orders cannot loop more than N times. The guard is
+         * belt and braces against a future rule that fills nothing. */
+        for (guard = 0; guard < ORDERBOOK_MAX_ORDERS; guard++) {
+            Order *bid = NULL, *ask = NULL;
+            int    i, qty, slot;
+
+            if (!book_best_cross(b, res, &bid, &ask)) break;
+
+            qty = bid->qty < ask->qty ? bid->qty : ask->qty;
+
+            slot = -1;
+            for (i = 0; i < b->booking_count; i++)
+                if (!b->booking[i].active) { slot = i; break; }
+            if (slot < 0) {
+                if (b->booking_count >= ORDERBOOK_MAX_BOOKINGS) break;
+                slot = b->booking_count++;
+            }
+
+            memset(&b->booking[slot], 0, sizeof(b->booking[slot]));
+            b->booking[slot].active      = 1;
+            b->booking[slot].what        = ask->what;
+            b->booking[slot].qty         = qty;
+            /* The resting order sets the price: the one that was there
+             * first is the quote the other side chose to take. */
+            b->booking[slot].price       = (ask->placed_tick <= bid->placed_tick)
+                                         ? ask->limit : bid->limit;
+            b->booking[slot].from_island = ask->island;
+            b->booking[slot].to_island   = bid->island;
+            b->booking[slot].buyer       = bid->owner;
+            b->booking[slot].seller      = ask->owner;
+            b->booking[slot].arrive_tick = gs->sim_tick_no +
+                sea_crossing_ticks(&gs->sea, ask->island, bid->island);
+
+            /* The buyer reserved at their limit; a fill at the resting
+             * price can only be cheaper, and the difference goes back.
+             *
+             * The reserve therefore falls by the LIMIT, not by the
+             * price: the limit is what those units were holding, and
+             * the gap between the two has just been handed back below.
+             * Decrementing by the price instead leaves the difference
+             * sitting in the reserve as well as in the stockpile, and
+             * cancelling the remainder pays it out a second time —
+             * gold minted by part-filling an order and withdrawing. */
+            bid->reserved_gold -= qty * bid->limit;
+            if (bid->limit > b->booking[slot].price)
+                stockpile_add(&gs->islands[bid->island].stockpile, RES_GOLD,
+                              qty * (bid->limit - b->booking[slot].price));
+
+            bid->qty -= qty;
+            ask->qty -= qty;
+            if (bid->qty == 0) bid->active = 0;
+            if (ask->qty == 0) ask->active = 0;
+        }
+    }
+}
+
 /* ---- Ownership gates (Phase 5) ------------------------------
  * Checked centrally in sim_apply so no dispatch path can forget them:
  * you may only act on an island you own and command a ship you own.
@@ -2292,6 +2672,13 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
     case CMD_SET_DOCKING:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_set_docking(gs, c->a, c->b);
+    case CMD_PLACE_ORDER:
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_place_order(gs, c->a, c->b, c->c, c->d, c->player_id);
+    case CMD_CANCEL_ORDER:
+        /* Ownership is the order's, not an island's, and is checked in
+         * the body where the order can be looked up. */
+        return sim_cancel_order(gs, (uint32_t)c->a, c->player_id);
     default:
         return REJ_UNAVAILABLE;
     }
