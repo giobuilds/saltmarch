@@ -232,8 +232,24 @@ enum {
     MSG_TICK_AUTH = 5,  /* host->guest: {uint64 tick} run through here  */
     MSG_HASH      = 6,  /* guest->host: {uint64 tick, uint64 hash}      */
     MSG_BYE       = 7,  /* polite shutdown either way                   */
-    MSG_PING      = 8   /* either way: no payload, means "still here"   */
+    MSG_PING      = 8,  /* either way: no payload, means "still here"   */
+    MSG_STATE     = 9   /* host->guest: the world, again. Same payload
+                         * as MSG_WORLD, but sent periodically rather
+                         * than at join: this is the correction that
+                         * makes the server the authority
+                         * (SERVER_AUTHORITY.md Phase 1). */
 };
+
+/* How often an authoritative server pushes state, in sim ticks. Once a
+ * second at SIM_TICKS_PER_SEC.
+ *
+ * The number is a bandwidth decision, not a gameplay one: a snapshot of
+ * a live world is about 16 KB, so this costs ~16 KB/s per client. At
+ * the tick rate it would be ~164 KB/s each, which is what ruled out the
+ * client going idle between pushes and left it predicting instead. Both
+ * halves get cheaper with delta encoding and with the per-client
+ * filtering of Phase 3, and this is the knob that spends the winnings. */
+#define AUTHORITY_PUSH_INTERVAL_TICKS 10
 
 #define HASH_RING       16
 #define RECV_CHUNK      (64 * 1024)
@@ -416,6 +432,19 @@ struct NetSession {
     uint64_t authorized_tick;
     int      world_installed;
     uint32_t resume_id;       /* identity to ask for at join, 0 = any   */
+
+    /* Who decides the world (SERVER_AUTHORITY.md Phase 1).
+     *
+     * `authoritative` is a HOST setting: this server pushes state and
+     * its word is final. `server_authoritative` is the GUEST's mirror
+     * of it, learned from WELCOME — a guest that knows the server is
+     * the authority stops asking permission to simulate and stops
+     * reporting hashes, because under prediction the two sides are
+     * SUPPOSED to differ between pushes and a detector for divergence
+     * would fire constantly and be right. */
+    int      authoritative;
+    int      server_authoritative;
+    uint64_t last_push_tick;
 
     /* host: my hash at recent NET_HASH_INTERVAL boundaries, to compare
      * against guests' reports (guests run behind us).
@@ -762,7 +791,8 @@ static int host_stamp_log_send(NetSession *ns, GameState *gs,
  * A snapshot is tens of KB and installs in the time it takes to decode:
  * the join cost stops tracking how long the world has existed and
  * starts tracking how big it is, which is bounded. */
-static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
+static void host_send_world_as(NetSession *ns, NetPeer *p,
+                               const GameState *gs, unsigned char type)
 {
     size_t         fixed = sizeof(uint64_t) + sizeof(int32_t) + sizeof(int32_t);
     unsigned char *snap = NULL, *buf;
@@ -793,13 +823,21 @@ static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
         memcpy(buf + off, gs->cmd_log + gs->cmd_applied,
                sizeof(Command) * (size_t)n);
 
-    send_msg(ns, p, MSG_WORLD, buf, (uint32_t)total);
+    send_msg(ns, p, type, buf, (uint32_t)total);
     free(buf);
     free(snap);
-    sim_log("net: world sent to player %u (tick %llu, %llu-byte snapshot, "
-            "%d pending commands)",
-            p->player_id, (unsigned long long)gs->sim_tick_no,
-            (unsigned long long)snap_len, n);
+    /* A periodic correction is not news; logging one a second would
+     * bury everything else in the server's output. */
+    if (type == MSG_WORLD)
+        sim_log("net: world sent to player %u (tick %llu, %llu-byte snapshot, "
+                "%d pending commands)",
+                p->player_id, (unsigned long long)gs->sim_tick_no,
+                (unsigned long long)snap_len, n);
+}
+
+static void host_send_world(NetSession *ns, NetPeer *p, const GameState *gs)
+{
+    host_send_world_as(ns, p, gs, MSG_WORLD);
 }
 
 /* A freshly joined player that owns nothing gets a starting island —
@@ -894,7 +932,12 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             }
             p->player_id  = id;
             p->said_hello = 1;
-            send_msg(ns, p, MSG_WELCOME, &id, sizeof(id));
+            {
+                uint32_t hello[2];
+                hello[0] = id;
+                hello[1] = (uint32_t)(ns->authoritative ? 1 : 0);
+                send_msg(ns, p, MSG_WELCOME, hello, sizeof(hello));
+            }
             host_send_world(ns, p, gs);
             host_grant_if_landless(ns, gs, id);
             sim_log("net: client joined as player %u (%d connected)",
@@ -955,9 +998,21 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             memcpy(&id, payload, 4);
             gs->local_player_id = id;
             ns->resume_id       = id;   /* what to ask for next time */
-            sim_log("net: we are player %u", id);
+            /* A server that says it is the authority is one whose
+             * state overwrites ours. Carried in WELCOME rather than
+             * assumed, so a co-op host and a dedicated server can
+             * behave differently over one protocol. */
+            if (len >= 8) {
+                uint32_t auth;
+                memcpy(&auth, payload + 4, 4);
+                ns->server_authoritative = auth ? 1 : 0;
+            }
+            sim_log("net: we are player %u%s", id,
+                    ns->server_authoritative ? " (server is authoritative)"
+                                             : "");
         }
         break;
+    case MSG_STATE:
     case MSG_WORLD: {
         uint64_t tick;
         int32_t  snap32, n;
@@ -988,8 +1043,9 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
          * construction; later ticks wait for MSG_TICK_AUTH. */
         ns->authorized_tick = tick;
         ns->world_installed = 1;
-        sim_log("net: world installed at tick %llu",
-                (unsigned long long)tick);
+        if (type == MSG_WORLD)
+            sim_log("net: world installed at tick %llu",
+                    (unsigned long long)tick);
         break;
     }
     case MSG_CMD:
@@ -1368,6 +1424,26 @@ void net_on_tick(NetSession *ns, GameState *gs)
         }
     }
 
+    /* An authoritative server pushes the world on a cadence; that push
+     * IS the authority. Everything below this (the hash ring, the
+     * guests' reports) is the lockstep world's way of noticing two
+     * simulations drifting apart, and it has no job here — see
+     * SERVER_AUTHORITY.md on why it has to be switched off rather than
+     * merely ignored. */
+    if (ns->authoritative) {
+        if (gs->sim_tick_no - ns->last_push_tick >=
+            AUTHORITY_PUSH_INTERVAL_TICKS) {
+            ns->last_push_tick = gs->sim_tick_no;
+            for (i = 0; i < NET_MAX_PEERS; i++) {
+                NetPeer *p = &ns->peers[i];
+                if (!peer_live(p) || !p->said_hello) continue;
+                host_send_world_as(ns, p, gs, MSG_STATE);
+            }
+        }
+        return;
+    }
+    if (ns->server_authoritative) return;   /* nothing of ours to report */
+
     if (gs->sim_tick_no % NET_HASH_INTERVAL != 0) return;
 
     if (ns->is_host) {
@@ -1431,11 +1507,19 @@ void net_detach(GameState *gs)
 
 int net_tick_allowed(const NetSession *ns, uint64_t tick)
 {
-    if (ns->is_host || !ns->alive) return 1;
-    if (!ns->world_installed) return 0;   /* no world yet: hold at join */
-    /* The horizon is EXCLUSIVE: the host reports its sim_tick_no (the
-     * next tick IT will run), so the guest may run strictly below it —
-     * converging on the host's tick exactly, never ahead of it. */
+    if (!ns || !ns->alive) return 1;
+    if (!session_connected(ns)) return 1;
+    if (ns->is_host) return 1;
+
+    /* A client of an authoritative server never waits for permission
+     * (SERVER_AUTHORITY.md Phase 1). It simulates ahead as a
+     * PREDICTION and the next pushed state overwrites whatever it
+     * guessed — so the thing the gate existed to prevent, a guest
+     * running a tick whose commands had not all arrived, is no longer
+     * a way to be wrong. It is just a way to be briefly out of date. */
+    if (ns->server_authoritative) return 1;
+
+    if (!ns->world_installed) return 0;
     return tick < ns->authorized_tick;
 }
 
@@ -1462,4 +1546,15 @@ const char *net_status(const NetSession *ns)
                  "GUEST: authorised to tick %llu",
                  (unsigned long long)ns->authorized_tick);
     return m->status;
+}
+
+void net_set_authoritative(NetSession *ns, int on)
+{
+    if (!ns) return;
+    ns->authoritative = on ? 1 : 0;
+}
+
+int net_server_authoritative(const NetSession *ns)
+{
+    return ns && ns->alive ? ns->server_authoritative : 0;
 }

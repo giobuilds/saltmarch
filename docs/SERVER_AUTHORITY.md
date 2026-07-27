@@ -167,12 +167,57 @@ mechanism that repairs a desynced guest today.
 
 ## Phases
 
-**Phase 1 — move the source of truth.** The client stops running the
-world and starts rendering a `UiSnapshot` built from the server's
-state; `MSG_WORLD` still carries everything, unfiltered. Nothing is
+**Phase 1 — move the source of truth.** The client stops being the
+authority; `MSG_WORLD` still carries everything, unfiltered. Nothing is
 concealed yet and nothing looks different — which is the point, because
 it makes the structural change testable on its own. The lockstep tick
 gate and the hash exchange come out here.
+
+### Phase 1, corrected by measurement
+
+This section originally said the client *stops running the world*. That
+is not affordable, and the number says so plainly: a snapshot of a live
+world is **16.4 KB**. Streaming state at the tick rate would be 164 KB/s
+per client — 1.3 MB/s upstream at eight of them — to say almost nothing
+new each time.
+
+So the source of truth moves without the client going idle:
+
+- the server pushes a full state **once a second** (16 KB/s per client,
+  which is affordable now and is what delta encoding and per-client
+  filtering will later cut down);
+- the client keeps simulating **between pushes**, and every push
+  overwrites whatever it had. Its local sim becomes a prediction rather
+  than an authority — the same code, demoted;
+- the lockstep tick gate goes, because a client no longer needs
+  permission to advance: it will be corrected;
+- the desync hash exchange goes with it, and not merely because it is
+  redundant. Under prediction the two sides are *expected* to disagree
+  between pushes, so a detector that treats disagreement as a fault
+  would fire constantly and correctly.
+
+That last point is the real reason the hash has to come out rather than
+be left switched off: it stops meaning what it means. Its job — *these
+two worlds have silently diverged* — is not a thing that can go wrong
+any more, because there is only one world and the other is a guess.
+
+This folds a little of the old Phase 2 into Phase 1. The alternative
+was a phase that could not be shipped, which is worse than a phase
+boundary that moved.
+
+**As built.** `MSG_STATE` carries the same payload as `MSG_WORLD` —
+snapshot plus the pending command tail — sent every
+`AUTHORITY_PUSH_INTERVAL_TICKS` instead of once at join, and installed
+through the same `game_install_from_snapshot` path. Authority is a
+property of the host (`net_set_authoritative`), announced to each
+client in `MSG_WELCOME`, so the dedicated server and an in-client co-op
+host can behave differently over one protocol: the server pushes, the
+co-op host still runs lockstep. `test_lockstep` therefore still
+describes something real rather than something being deleted.
+
+Not yet done, and next: the client rendering foreign islands from a
+view rather than from its own copy, then the per-client filtering that
+is the actual concealment (Phase 3 below).
 
 **Phase 2 — local prediction.** The client simulates the islands it
 owns and reconciles against the server. Placement feels instant again.
