@@ -4,7 +4,11 @@
  * float. This checks the three things Phase 2 promises:
  *
  *   1. Arrival is exact: a ship departing at tick D arrives at
- *      D + SHIP_VOYAGE_TICKS.
+ *      D + the crossing's length. That length is the ROUTE's since
+ *      MARITIME_PLAN Phase 1 — it used to be the constant
+ *      SHIP_VOYAGE_TICKS, and the property being checked is that
+ *      arrival is an exact integer tick, not that it is a particular
+ *      number.
  *   2. Save mid-voyage, load, and the ship still arrives at the same
  *      tick with the world hashing identically (the record survives a
  *      seed+log round-trip because departure_tick is replayed).
@@ -51,16 +55,19 @@ int main(void)
           "ship is at sea after departing");
     uint64_t dep = gs->ships[0].departure_tick;
 
+    uint32_t crossing = sea_crossing_ticks(&gs->sea,
+                                           gs->ships[0].from_island,
+                                           gs->ships[0].to_island);
     uint64_t arrival_tick = 0;
     int      arrived = 0;
-    for (int k = 0; k < SHIP_VOYAGE_TICKS + 5 && !arrived; k++) {
+    for (int k = 0; k < (int)crossing + 5 && !arrived; k++) {
         uint64_t t = gs->sim_tick_no;
         sim_run_one_tick(gs);
         if (gs->ships[0].at_island >= 0) { arrival_tick = t; arrived = 1; }
     }
     CHECK(arrived, "ship arrived");
-    CHECK(arrival_tick == dep + (uint64_t)SHIP_VOYAGE_TICKS,
-          "arrived exactly at departure_tick + SHIP_VOYAGE_TICKS");
+    CHECK(arrival_tick == dep + (uint64_t)crossing,
+          "arrived exactly at departure_tick + the route's length");
     CHECK(gs->ships[0].at_island == 1, "arrived at the destination island");
 
     /* ---- 2. Save mid-voyage, load, finish, compare ---- */
@@ -69,8 +76,13 @@ int main(void)
     if (!a || !b) { printf("game_init failed\n"); return 1; }
 
     launch_voyage(a, 777u);
-    for (int i = 0; i < SHIP_VOYAGE_TICKS / 2; i++)  /* stop mid-crossing */
-        sim_run_one_tick(a);
+    {
+        uint32_t half = sea_crossing_ticks(&a->sea,
+                                           a->ships[0].from_island,
+                                           a->ships[0].to_island) / 2u;
+        for (uint32_t i = 0; i < half; i++)   /* stop mid-crossing */
+            sim_run_one_tick(a);
+    }
 
     CHECK(a->ships[0].at_island < 0, "still mid-voyage at save time");
     CHECK(game_save(a, TMP_PATH), "save mid-voyage");
@@ -83,9 +95,14 @@ int main(void)
     CHECK(sim_hash(a) == sim_hash(b), "mid-voyage worlds hash identically");
 
     /* Finish the voyage in both; they must arrive together, hashes equal. */
-    for (int i = 0; i < SHIP_VOYAGE_TICKS; i++) {
-        sim_run_one_tick(a);
-        sim_run_one_tick(b);
+    {
+        uint32_t full = sea_crossing_ticks(&a->sea,
+                                           a->ships[0].from_island,
+                                           a->ships[0].to_island);
+        for (uint32_t i = 0; i < full; i++) {
+            sim_run_one_tick(a);
+            sim_run_one_tick(b);
+        }
     }
     CHECK(a->ships[0].at_island == 1 && b->ships[0].at_island == 1,
           "both arrive after the round-trip");

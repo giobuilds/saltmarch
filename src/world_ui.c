@@ -7,26 +7,31 @@
 #include "resource.h"
 #include <SDL3/SDL.h>
 
-/* Fixed node positions as a fraction of the screen, so the layout
- * scales with resolution without any procedural placement.
+/* Where an island sits on screen, projected from where it sits in the
+ * SEA (MARITIME_PLAN Phase 1).
  *
- * SUPPLY_CHAIN Phase 5 doubled the archipelago, and the layout now
- * says something: the four northern islands hold the upper band and
- * the four southern ones the lower, with a clear gap between. A voyage
- * from Saltford to Canereach is visibly a long way south, which is the
- * whole argument for the shipping lanes. Kept well inside the margins
- * so eight diamonds never overlap at 1920x1080 — test_world asserts
- * exactly that rather than trusting these numbers. */
-static const struct { float fx, fy; } NODE_POS[MAX_ISLANDS] = {
-    { 0.20f, 0.24f },   /* Saltford    - temperate, home */
-    { 0.44f, 0.16f },   /* Brinehold   - highland        */
-    { 0.68f, 0.24f },   /* Tidefast    - woodland        */
-    { 0.86f, 0.40f },   /* Marrowbay   - atoll           */
-    { 0.18f, 0.68f },   /* Canereach   - plantation      */
-    { 0.42f, 0.80f },   /* Palmfast    - plantation      */
-    { 0.66f, 0.72f },   /* Vinemarch   - jungle          */
-    { 0.86f, 0.84f },   /* Thornhollow - jungle          */
-};
+ * This was NODE_POS: eight hand-placed screen fractions, rewritten by
+ * hand when Phase 5 doubled the archipelago and unable to survive
+ * being doubled again. Islands now have real positions, so the map
+ * draws the world rather than a diagram of it — two islands close
+ * together on the water look close together here, and a route drawn
+ * between them is the route a ship actually sails.
+ *
+ * The projection insets by a margin so a node at the very edge of the
+ * sea still has its whole diamond on screen. Floats are fine from here
+ * down: this is drawing, and everything upstream of it was integer.
+ */
+#define WORLD_MARGIN_FRAC 0.10f
+
+static void sea_to_screen(SeaPos p, int screen_w, int screen_h,
+                          float *out_x, float *out_y)
+{
+    float mx = (float)screen_w * WORLD_MARGIN_FRAC;
+    float my = (float)screen_h * WORLD_MARGIN_FRAC;
+
+    *out_x = mx + ((float)p.x / (float)SEA_WIDTH)  * ((float)screen_w - 2.0f * mx);
+    *out_y = my + ((float)p.y / (float)SEA_HEIGHT) * ((float)screen_h - 2.0f * my);
+}
 
 /* Tint per profile, so an island reads as "the wooded one" at a
  * glance rather than needing its label. Mirrors the tile colours
@@ -58,19 +63,22 @@ static SDL_Color profile_colour(MapProfile p, int settled)
 
 /* Top-left corner of island `i`'s diamond — render_draw_diamond()
  * takes a bounding-box corner, not a centre. */
-static void node_origin(int screen_w, int screen_h, int i,
+static void node_origin(const Sea *sea, int screen_w, int screen_h, int i,
                         float *out_x, float *out_y)
 {
     float w = (float)TILE_W * WORLD_NODE_ZOOM;
     float h = (float)TILE_H * WORLD_NODE_ZOOM;
-    *out_x = NODE_POS[i].fx * (float)screen_w - w / 2.0f;
-    *out_y = NODE_POS[i].fy * (float)screen_h - h / 2.0f;
+    float cx, cy;
+
+    sea_to_screen(sea->island[i], screen_w, screen_h, &cx, &cy);
+    *out_x = cx - w / 2.0f;
+    *out_y = cy - h / 2.0f;
 }
 
-static SDL_FRect node_bounds(int screen_w, int screen_h, int i)
+static SDL_FRect node_bounds(const Sea *sea, int screen_w, int screen_h, int i)
 {
     SDL_FRect r;
-    node_origin(screen_w, screen_h, i, &r.x, &r.y);
+    node_origin(sea, screen_w, screen_h, i, &r.x, &r.y);
     r.w = (float)TILE_W * WORLD_NODE_ZOOM;
     r.h = (float)TILE_H * WORLD_NODE_ZOOM;
     return r;
@@ -95,7 +103,7 @@ static int point_in(SDL_FRect r, int x, int y)
 /* Where a ship's marker sits: on its island's node when docked, or
  * lerped along the lane between two nodes while at sea. Ships at the
  * same island are fanned out slightly so a fleet is countable. */
-static void ship_marker_pos(int screen_w, int screen_h,
+static void ship_marker_pos(const Sea *sea, int screen_w, int screen_h,
                             const Ship *sh, int idx, float *ox, float *oy)
 {
     float ax, ay, bx, by, t;
@@ -103,25 +111,25 @@ static void ship_marker_pos(int screen_w, int screen_h,
     float half_h = (float)TILE_H * WORLD_NODE_ZOOM / 2.0f;
 
     if (sh->at_island >= 0) {
-        node_origin(screen_w, screen_h, sh->at_island, &ax, &ay);
+        node_origin(sea, screen_w, screen_h, sh->at_island, &ax, &ay);
         *ox = ax + half_w + (float)((idx % 4) - 1) * 12.0f;
         *oy = ay + half_h + 26.0f;
         return;
     }
 
-    node_origin(screen_w, screen_h, sh->from_island, &ax, &ay);
-    node_origin(screen_w, screen_h, sh->to_island,   &bx, &by);
+    node_origin(sea, screen_w, screen_h, sh->from_island, &ax, &ay);
+    node_origin(sea, screen_w, screen_h, sh->to_island,   &bx, &by);
     t   = sh->progress;
     *ox = (ax + half_w) + ((bx + half_w) - (ax + half_w)) * t;
     *oy = (ay + half_h) + ((by + half_h) - (ay + half_h)) * t;
 }
 
-static SDL_FRect ship_marker_rect(int screen_w, int screen_h,
+static SDL_FRect ship_marker_rect(const Sea *sea, int screen_w, int screen_h,
                                   const Ship *sh, int idx)
 {
     SDL_FRect r;
     float x, y;
-    ship_marker_pos(screen_w, screen_h, sh, idx, &x, &y);
+    ship_marker_pos(sea, screen_w, screen_h, sh, idx, &x, &y);
     r.w = 14.0f; r.h = 14.0f;
     r.x = x - r.w / 2.0f;
     r.y = y - r.h / 2.0f;
@@ -182,20 +190,20 @@ static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
 }
 
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
-                   const Island islands[], int island_count, int current,
+                   const Sea *sea, const Island islands[], int island_count, int current,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
                    const Faction *faction, int insurance_quote,
                    int mouse_x, int mouse_y)
 {
-    SDL_FRect sea = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
+    SDL_FRect backdrop = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
     int i;
 
     /* Opaque sea, not the usual translucent dim: this overlay
      * replaces the world rather than annotating it. */
     SDL_SetRenderDrawColor(renderer, 18, 52, 88, 255);
-    SDL_RenderFillRect(renderer, &sea);
+    SDL_RenderFillRect(renderer, &backdrop);
 
     {
         SDL_Color title_col = { 210, 225, 240, 255 };
@@ -208,7 +216,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
 
     for (i = 0; i < island_count; i++) {
         const Island *isl = &islands[i];
-        SDL_FRect     nb  = node_bounds(screen_w, screen_h, i);
+        SDL_FRect     nb  = node_bounds(sea, screen_w, screen_h, i);
         int           hov = point_in(nb, mouse_x, mouse_y);
         SDL_Color     top = profile_colour(isl->profile, isl->settled);
         SDL_Color     bot;
@@ -264,11 +272,11 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
              * link stays visible between runs. */
             if (ships[si].at_island >= 0 && !ships[si].route_active) continue;
             if (ships[si].at_island >= 0) {
-                node_origin(screen_w, screen_h, ships[si].route_a, &ax, &ay);
-                node_origin(screen_w, screen_h, ships[si].route_b, &bx, &by);
+                node_origin(sea, screen_w, screen_h, ships[si].route_a, &ax, &ay);
+                node_origin(sea, screen_w, screen_h, ships[si].route_b, &bx, &by);
             } else {
-                node_origin(screen_w, screen_h, ships[si].from_island, &ax, &ay);
-                node_origin(screen_w, screen_h, ships[si].to_island,   &bx, &by);
+                node_origin(sea, screen_w, screen_h, ships[si].from_island, &ax, &ay);
+                node_origin(sea, screen_w, screen_h, ships[si].to_island,   &bx, &by);
             }
             SDL_RenderLine(renderer, ax + hw, ay + hh, bx + hw, by + hh);
         }
@@ -305,8 +313,8 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
 
             drawn++;
 
-            node_origin(screen_w, screen_h, g->from, &ax, &ay);
-            node_origin(screen_w, screen_h, g->to,   &bx, &by);
+            node_origin(sea, screen_w, screen_h, g->from, &ax, &ay);
+            node_origin(sea, screen_w, screen_h, g->to,   &bx, &by);
             gx = (ax + hw) + ((bx + hw) - (ax + hw)) * t;
             gy = (ay + hh) + ((by + hh) - (ay + hh)) * t;
 
@@ -367,7 +375,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         for (si = 0; si < ship_count; si++) {
             SDL_FRect mr;
             if (!ships[si].active) continue;
-            mr = ship_marker_rect(screen_w, screen_h, &ships[si], si);
+            mr = ship_marker_rect(sea, screen_w, screen_h, &ships[si], si);
 
             if (si == selected_ship)
                 SDL_SetRenderDrawColor(renderer, 255, 225, 120, 255);
@@ -579,7 +587,8 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     }
 }
 
-WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
+WorldHit world_ui_hit_test(int screen_w, int screen_h, const Sea *sea,
+                           int island_count,
                            const Ship ships[], int ship_count,
                            int selected_ship, int mouse_x, int mouse_y,
                            int *out_island, int *out_ship, ResourceType *out_res)
@@ -623,7 +632,7 @@ WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
     /* Ships before islands: a docked marker sits on its node. */
     for (i = 0; i < ship_count; i++) {
         if (!ships[i].active) continue;
-        if (point_in(ship_marker_rect(screen_w, screen_h, &ships[i], i),
+        if (point_in(ship_marker_rect(sea, screen_w, screen_h, &ships[i], i),
                     mouse_x, mouse_y)) {
             if (out_ship) *out_ship = i;
             return WORLD_HIT_SHIP;
@@ -631,7 +640,7 @@ WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
     }
 
     for (i = 0; i < island_count; i++) {
-        if (point_in(node_bounds(screen_w, screen_h, i), mouse_x, mouse_y)) {
+        if (point_in(node_bounds(sea, screen_w, screen_h, i), mouse_x, mouse_y)) {
             if (out_island) *out_island = i;
             return WORLD_HIT_ISLAND;
         }

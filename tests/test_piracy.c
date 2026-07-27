@@ -67,11 +67,18 @@ static void test_raid_takes_cargo(void)
 {
     Ship   ships[1];
     Island islands[MAX_ISLANDS];
+    Sea    sea;
     uint64_t dep;
+    uint32_t crossing;
     int    i;
 
     memset(ships, 0, sizeof(ships));
     memset(islands, 0, sizeof(islands));
+    /* A crossing is now the route's length (MARITIME_PLAN Phase 1), so
+     * this drives the updater over the real duration rather than the
+     * constant it used to be. */
+    sea_init(&sea, 99u, MAX_ISLANDS);
+    crossing = sea_crossing_ticks(&sea, 0, 1);
 
     dep = find_tick(99u, 0, 1);
 
@@ -82,8 +89,9 @@ static void test_raid_takes_cargo(void)
     ships[0].departure_tick = dep;
     ships[0].cargo[RES_WOOD] = 20;
 
-    for (i = 0; i <= SHIP_VOYAGE_TICKS; i++)
-        ships_update(ships, 1, islands, MAX_ISLANDS, dep + (uint64_t)i, 99u);
+    for (i = 0; i <= (int)crossing; i++)
+        ships_update(&sea, ships, 1, islands, MAX_ISLANDS,
+                     dep + (uint64_t)i, 99u);
 
     CHECK(ships[0].cargo[RES_WOOD] == 10,
           "pirates take half the hold, once");
@@ -94,11 +102,18 @@ static void test_safe_voyage_keeps_cargo(void)
 {
     Ship   ships[1];
     Island islands[MAX_ISLANDS];
+    Sea    sea;
     uint64_t dep;
+    uint32_t crossing;
     int    i;
 
     memset(ships, 0, sizeof(ships));
     memset(islands, 0, sizeof(islands));
+    /* A crossing is now the route's length (MARITIME_PLAN Phase 1), so
+     * this drives the updater over the real duration rather than the
+     * constant it used to be. */
+    sea_init(&sea, 99u, MAX_ISLANDS);
+    crossing = sea_crossing_ticks(&sea, 0, 1);
 
     dep = find_tick(99u, 0, 0);
 
@@ -109,8 +124,9 @@ static void test_safe_voyage_keeps_cargo(void)
     ships[0].departure_tick  = dep;
     ships[0].cargo[RES_WOOD] = 20;
 
-    for (i = 0; i <= SHIP_VOYAGE_TICKS; i++)
-        ships_update(ships, 1, islands, MAX_ISLANDS, dep + (uint64_t)i, 99u);
+    for (i = 0; i <= (int)crossing; i++)
+        ships_update(&sea, ships, 1, islands, MAX_ISLANDS,
+                     dep + (uint64_t)i, 99u);
 
     CHECK(ships[0].cargo[RES_WOOD] == 20,
           "an unraided voyage arrives with everything it left with");
@@ -142,7 +158,10 @@ static void test_insurance(void)
     CHECK(gs->ships[0].insured && gs->ships[0].insured_value > 0,
           "the policy records the value declared at departure");
 
-    for (i = 0; i < SHIP_VOYAGE_TICKS + 2; i++) sim_run_one_tick(gs);
+    for (i = 0; i < (int)sea_crossing_ticks(&gs->sea,
+                                            gs->ships[0].from_island,
+                                            gs->ships[0].to_island) + 2; i++)
+        sim_run_one_tick(gs);
     CHECK(!gs->ships[0].insured,
           "the policy is settled and closed on arrival");
 

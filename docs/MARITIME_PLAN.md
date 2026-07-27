@@ -274,9 +274,14 @@ retrofitting it after combat exists means touching combat too.
 
 ## Phases
 
-1. **Sea geometry.** Island positions, waypoints, routes as paths,
-   per-leg integer durations, `world_ui` projecting from world
-   coordinates. Unblocks more than eight islands.
+1. ~~**Sea geometry.**~~ **Done.** `src/sea.c`: island positions, named
+   waypoints, routes as paths with per-leg integer durations, and
+   `world_ui` projecting from sea coordinates instead of hand-placed
+   screen fractions. Voyages take the route's length rather than one
+   constant — crossings now run roughly 77 to 341 ticks around the 200
+   they all used to take. The Sea is a pure function of the world seed
+   and is regenerated like a Map, so it needed no save, snapshot or
+   protocol change.
 2. **The order book.** Orders, deterministic matching, bookings,
    merchants as a reserved resource. The faction as market maker.
 3. **Routes and charts.** Public and private, chart consumption,

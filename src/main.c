@@ -385,7 +385,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         if (gs->world_open) {
             int          target = -1, tship = -1;
             ResourceType tres   = RES_WOOD;
-            WorldHit     hit    = world_ui_hit_test(SCREEN_W, SCREEN_H, MAX_ISLANDS,
+            WorldHit     hit    = world_ui_hit_test(SCREEN_W, SCREEN_H, &gs->sea,
+                                                    MAX_ISLANDS,
                                                 gs->ships, gs->ship_count,
                                                 gs->world_selected_ship,
                                                 gs->input.logical_x,
@@ -878,7 +879,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     /* Archipelago overview on top of everything when open */
     if (gs->world_open)
-        world_ui_draw(app->r, SCREEN_W, SCREEN_H,
+        world_ui_draw(app->r, SCREEN_W, SCREEN_H, &gs->sea,
                       gs->islands, MAX_ISLANDS, gs->current_island,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       app->feed.ghosts, app->feed.ghost_count, wall_unix_ms(),

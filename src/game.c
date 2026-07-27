@@ -283,6 +283,11 @@ static void game_reset_world(GameState *gs, uint32_t seed)
             i * AGENT_ASSIGN_INTERVAL_TICKS / MAX_ISLANDS;
     }
 
+    /* The sea is generated from the same seed as the islands it
+     * separates, so an archipelago and the water around it are one
+     * deterministic object. */
+    sea_init(&gs->sea, seed, MAX_ISLANDS);
+
     gs->current_island = 0;
     gs->world_open     = 0;
     memset(gs->ships, 0, sizeof(gs->ships));
@@ -987,7 +992,7 @@ void sim_run_one_tick(GameState *gs)
         for (s2 = 0; s2 < gs->ship_count; s2++)
             gs->ships[s2].was_at_sea = (gs->ships[s2].at_island < 0);
     }
-    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
+    ships_update(&gs->sea, gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
                  gs->sim_tick_no, gs->world_seed);
 
     /* Anything that just made port with a policy on it gets settled,

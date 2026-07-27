@@ -28,6 +28,7 @@
 #include "island.h"
 #include "faction.h"
 #include "ship.h"
+#include "sea.h"
 #include "feed.h"   /* Phase 4: ghost voyages from the shared feed */
 
 #define WORLD_NODE_ZOOM   2.2f   /* island diamond size vs a map tile */
@@ -63,7 +64,7 @@ typedef enum {
  * wall time (`unix_ms`) — non-interactive: hovering one shows an info
  * tooltip, clicking does nothing (they never enter the hit-test). */
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
-                   const Island islands[], int island_count, int current,
+                   const Sea *sea, const Island islands[], int island_count, int current,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
@@ -71,7 +72,8 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    int mouse_x, int mouse_y);
 
 /* Hit-test a click. On WORLD_HIT_ISLAND, *out_island is the index. */
-WorldHit world_ui_hit_test(int screen_w, int screen_h, int island_count,
+WorldHit world_ui_hit_test(int screen_w, int screen_h, const Sea *sea,
+                           int island_count,
                            const Ship ships[], int ship_count,
                            int selected_ship, int mouse_x, int mouse_y,
                            int *out_island, int *out_ship, ResourceType *out_res);
