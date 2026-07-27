@@ -62,7 +62,42 @@ static GameState *two_traders(uint32_t seed)
     gs->islands[0].stockpile.amount[RES_GOLD]  = 100000;
     gs->islands[1].stockpile.amount[RES_GOLD]  = 100000;
     gs->islands[0].stockpile.amount[RES_PLANKS] = 100;
+
+    /* These tests are about the book, not about the market maker, so
+     * point it somewhere else. It quotes the six goods it is furthest
+     * from baseline on, so overstocking six the tests never touch
+     * guarantees Planks is never one of them and the faction's orders
+     * can never fill against the test's. Zeroing its stock instead does
+     * NOT work: mean reversion walks it back to baseline and the quotes
+     * reappear halfway through a long test. The market maker gets its
+     * own section at the end. */
+    {
+        static const ResourceType DECOY[FACTION_QUOTE_GOODS] = {
+            RES_WOOD, RES_FISH, RES_GRAIN, RES_WOOL, RES_CLOTH, RES_FISH_OIL
+        };
+        int i;
+        for (i = 0; i < FACTION_QUOTE_GOODS; i++)
+            gs->faction.inventory[DECOY[i]] = 100000;
+    }
+    gs->faction.gold = 0;      /* and it bids for nothing at all */
     return gs;
+}
+
+/* The orders and bookings belonging to the players a test drives, as
+ * opposed to the market maker's. */
+static int player_orders(const OrderBook *b)
+{
+    return orderbook_open_count(b, 1u) + orderbook_open_count(b, 2u) +
+           orderbook_open_count(b, 3u);
+}
+
+static int bookings_from(const OrderBook *b, int island)
+{
+    int i, n = 0;
+
+    for (i = 0; i < b->booking_count; i++)
+        if (b->booking[i].active && b->booking[i].from_island == island) n++;
+    return n;
 }
 
 static void place(GameState *gs, uint32_t who, int island,
@@ -232,15 +267,13 @@ int main(void)
         place(gs, 1u, 0, RES_PLANKS, -10, 5);
         place(gs, 2u, 1, RES_PLANKS,  10, 9);
         run_ticks(gs, 2);
-        CHECK(orderbook_booking_live(&gs->book) == 1 &&
-              orderbook_open_live(&gs->book) == 2,
+        CHECK(bookings_from(&gs->book, 0) == 1 && player_orders(&gs->book) == 2,
               "a crossing pair with no hull to carry it rests, not rejected");
 
         /* The round trip completes; the waiting pair sails on the same
          * tick the hull is released. */
         run_ticks(gs, (int)crossing * 2 + 4);
-        CHECK(orderbook_open_live(&gs->book) == 0 &&
-              gs->islands[0].hulls_out == 1,
+        CHECK(player_orders(&gs->book) == 0 && gs->islands[0].hulls_out == 1,
               "and sails the moment the hull is free again");
 
         game_free(gs);
@@ -376,8 +409,8 @@ int main(void)
         place(gs, 1u, 0, RES_PLANKS, -10,  1);   /* own ask, very low  */
         run_ticks(gs, 2);
 
-        CHECK(orderbook_open_live(&gs->book) == 2 &&
-              orderbook_booking_live(&gs->book) == 0,
+        CHECK(player_orders(&gs->book) == 2 &&
+              bookings_from(&gs->book, 0) == 0,
               "a self-crossing pair does not fill");
 
         /* Now player 2 offers to sell into that standing bid at a price
@@ -386,7 +419,7 @@ int main(void)
         place(gs, 2u, 1, RES_PLANKS, -10, 20);
         run_ticks(gs, 2);
 
-        CHECK(orderbook_booking_live(&gs->book) == 1,
+        CHECK(bookings_from(&gs->book, 1) == 1,
               "and another player can still trade against it");
 
         game_free(gs);
@@ -465,6 +498,117 @@ int main(void)
         free(buf);
         game_free(gs);
         game_free(rs);
+    }
+
+    printf("\n=== the market maker is a trader with a location ===\n");
+    {
+        /* Deliberately NOT two_traders: this section wants the faction
+         * quoting normally. */
+        GameState *gs = game_init();
+        int        p, quoted, mispriced, off_port;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        game_new_seeded(gs, 4242u);
+
+        for (p = 0; p < FACTION_PORT_COUNT; p++) {
+            int idx = MAX_ISLANDS - FACTION_PORT_COUNT + p;
+            CHECK(gs->islands[idx].settled &&
+                  gs->islands[idx].owner == PLAYER_FACTION,
+                  "the market holds a home port from tick 0");
+        }
+        CHECK(!faction_is_home_port(0),
+              "and the first player's island is not one of them");
+
+        run_ticks(gs, FACTION_QUOTE_INTERVAL_TICKS + 2);
+
+        quoted = orderbook_open_count(&gs->book, PLAYER_FACTION);
+        CHECK(quoted > 0, "it posts standing orders into the book");
+        CHECK(quoted <= FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2,
+              "and never more than its own ports and goods allow");
+
+        /* Its orders live at its harbours, and its ask is above its
+         * bid — so its two sides never cross each other, and a player
+         * can trade inside the spread with somebody else. */
+        mispriced = off_port = 0;
+        {
+            int i, j;
+            for (i = 0; i < gs->book.order_count; i++) {
+                const Order *o = &gs->book.order[i];
+                if (!o->active || o->owner != PLAYER_FACTION) continue;
+                if (!faction_is_home_port(o->island)) off_port++;
+                for (j = 0; j < gs->book.order_count; j++) {
+                    const Order *q = &gs->book.order[j];
+                    if (!q->active || q->owner != PLAYER_FACTION) continue;
+                    if (q->what.id != o->what.id) continue;
+                    if (o->side == ORDER_BUY && q->side == ORDER_SELL &&
+                        o->limit >= q->limit) mispriced++;
+                }
+            }
+        }
+        CHECK(off_port == 0, "every quote sits at one of its harbours");
+        CHECK(mispriced == 0, "and its bid never crosses its own ask");
+
+        /* Re-quoting replaces, it does not accumulate. A market maker
+         * that left its stale orders behind would fill the book with
+         * its own history inside a minute. */
+        run_ticks(gs, FACTION_QUOTE_INTERVAL_TICKS * 3);
+        CHECK(orderbook_open_count(&gs->book, PLAYER_FACTION) <=
+              FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2,
+              "three refreshes later it still holds only one book");
+
+        /* Its harbour is a real place with finite throughput. */
+        CHECK(island_hull_capacity(&gs->islands[MAX_ISLANDS - 1]) ==
+              FACTION_PORT_HULLS,
+              "a home port has a trading house's capacity, not a colony's");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a player can buy from the market, and it takes time ===\n");
+    {
+        GameState *gs = game_init();
+        int        i, res = -1, ask = 0, before;
+        uint32_t   crossing;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        game_new_seeded(gs, 4242u);
+        run_ticks(gs, FACTION_QUOTE_INTERVAL_TICKS + 2);
+
+        /* Find something the market is actually offering. */
+        for (i = 0; i < gs->book.order_count; i++) {
+            const Order *o = &gs->book.order[i];
+            if (o->active && o->owner == PLAYER_FACTION &&
+                o->side == ORDER_SELL) { res = o->what.id; ask = o->limit; break; }
+        }
+        CHECK(res >= 0, "the market is offering something");
+
+        if (res >= 0) {
+            gs->islands[0].stockpile.amount[RES_GOLD] = 100000;
+            before = gs->islands[0].stockpile.amount[res];
+
+            place(gs, 1u, 0, (ResourceType)res, 10, ask + 5);
+            run_ticks(gs, 2);
+            CHECK(gs->islands[0].stockpile.amount[res] == before,
+                  "buying from the market does not teleport the goods");
+
+            /* Which of its harbours served the order is the matcher's
+             * business, so take the crossing off the booking rather
+             * than assuming a port. */
+            crossing = 0;
+            for (i = 0; i < gs->book.booking_count; i++)
+                if (gs->book.booking[i].active &&
+                    gs->book.booking[i].buyer == 1u)
+                    crossing = (uint32_t)(gs->book.booking[i].arrive_tick -
+                                          gs->sim_tick_no);
+            run_ticks(gs, (int)crossing + 4);
+            CHECK(gs->islands[0].stockpile.amount[res] > before,
+                  "they arrive after a crossing, like anyone else's cargo");
+            CHECK(gs->islands[MAX_ISLANDS - 1].hulls_out > 0 ||
+                  gs->islands[MAX_ISLANDS - 2].hulls_out > 0,
+                  "and the market's own hull is at sea carrying them");
+        }
+
+        game_free(gs);
     }
 
     printf("\n%s\n", failures ? "FAILED" : "PASSED");

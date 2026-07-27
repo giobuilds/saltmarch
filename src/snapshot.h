@@ -53,7 +53,8 @@
 /* Bumped whenever the encoding changes. Unlike SAVE_VERSION this is not
  * about the meaning of a log — a snapshot has no history to
  * reinterpret — it is purely "these bytes are laid out differently". */
-#define SNAPSHOT_VERSION 3u   /* 2: the order book; 3: trade capacity */
+#define SNAPSHOT_VERSION 4u   /* 2: order book; 3: trade capacity;
+                               * 4: the faction's standing quotes */
 
 /* Encode `gs`'s world state into a freshly malloc'd buffer. On success
  * returns 1 and stores the buffer and its length; the caller owns the

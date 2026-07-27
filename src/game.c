@@ -305,6 +305,16 @@ static void game_reset_world(GameState *gs, uint32_t seed)
      * a co-op guest acquires its island via a logged CMD_GRANT_START.) */
     gs->islands[0].owner = 1u;
 
+    /* The market's home ports (MARITIME_PLAN Phase 2). Settled and
+     * owned from tick 0, by index rather than by anything random, so
+     * every client agrees about where the market IS without being
+     * told. They are not colonisable — see sim_colonise. */
+    for (i = 0; i < MAX_ISLANDS; i++)
+        if (faction_is_home_port(i)) {
+            gs->islands[i].settled = 1;
+            gs->islands[i].owner   = PLAYER_FACTION;
+        }
+
     /* The market starts at baseline, so day-one quotes equal the old
      * fixed SELL_PRICE/BUY_PRICE until the player trades. */
     faction_init(&gs->faction);
@@ -532,8 +542,14 @@ typedef struct {
  * merchant and a hull from the selling island for the round trip, and
  * the matcher skips an ask whose island has neither free. A v16 log
  * replays a world where every crossing was possible, so its fills are
- * not this world's fills. */
-#define SAVE_VERSION 17u
+ * not this world's fills.
+ *
+ * v18 (MARITIME_PLAN Phase 2, the market maker): the faction holds the
+ * last two islands as home ports from tick 0 and posts standing orders
+ * there every FACTION_QUOTE_INTERVAL_TICKS. A v17 log describes a world
+ * with two more colonisable islands and no NPC orders in the book, so
+ * its colonisations and its fills are both about somewhere else. */
+#define SAVE_VERSION 18u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -936,6 +952,12 @@ static void sim_charter_tick(GameState *gs, int island)
 
     if (!isl->settled || isl->owner == PLAYER_NONE) return;
 
+    /* The market does not rent its own harbours from itself. Left
+     * unguarded a home port would accrue arrears against a stockpile
+     * that is never where its gold is, lapse, and relist the market's
+     * own port as colonisable ground. */
+    if (isl->owner == PLAYER_FACTION) return;
+
     if (++isl->charter_timer < CHARTER_UPKEEP_TICKS) return;
     isl->charter_timer = 0;
 
@@ -1220,6 +1242,12 @@ uint64_t sim_hash(const GameState *gs)
     /* The price history too (UI_PLAN M3). It is state the sim produces
      * and the UI renders, so a replay that reproduced everything except
      * the chart would be a replay with a hole in it. */
+    /* The standing quotes are state too (MARITIME Phase 2): they name
+     * live orders, and a client that forgot which ones were its own
+     * would leave them in the book forever on the next refresh. */
+    fnv_bytes(&h, gs->faction.quote_order, sizeof(gs->faction.quote_order));
+    fnv_bytes(&h, &gs->faction.quote_timer, sizeof(gs->faction.quote_timer));
+
     fnv_bytes(&h, gs->faction.hist, sizeof(gs->faction.hist));
     fnv_bytes(&h, &gs->faction.hist_head, sizeof(gs->faction.hist_head));
     fnv_bytes(&h, &gs->faction.hist_count, sizeof(gs->faction.hist_count));
@@ -2313,10 +2341,38 @@ int game_cancel_order(GameState *gs, uint32_t order_id)
  * and fill all ten — the same double-spend the harbour escrow exists
  * to prevent between players. */
 
+/* ---- whose purse a trade touches -------------------------
+ * A player's goods and gold are in the island's stockpile. The
+ * faction's are in the company's single inventory, behind whichever of
+ * its harbours the order was posted at — see faction.h on why one stock
+ * across several ports is safe: posting reserves.
+ *
+ * Everything that moves value in the book goes through these two, so
+ * the reserve, the refund and the settlement cannot end up disagreeing
+ * about where a counterparty keeps its money. */
+static int trade_balance(const GameState *gs, uint32_t owner, int island,
+                         ResourceType res)
+{
+    if (owner == PLAYER_FACTION)
+        return (res == RES_GOLD) ? gs->faction.gold
+                                 : gs->faction.inventory[res];
+    return gs->islands[island].stockpile.amount[res];
+}
+
+static void trade_credit(GameState *gs, uint32_t owner, int island,
+                         ResourceType res, int qty)
+{
+    if (owner == PLAYER_FACTION) {
+        if (res == RES_GOLD) gs->faction.gold += qty;
+        else                 gs->faction.inventory[res] += qty;
+        return;
+    }
+    stockpile_add(&gs->islands[island].stockpile, res, qty);
+}
+
 static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
                                     int qty, int limit, uint32_t player)
 {
-    Island   *isl = &gs->islands[island];
     OrderBook *b  = &gs->book;
     TradeKind kind = (TradeKind)TRADE_KIND_OF(packed);
     uint16_t  id   = TRADE_ID_OF(packed);
@@ -2334,7 +2390,13 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
     if (id >= (uint16_t)RES_COUNT || id == (uint16_t)RES_GOLD)
         return REJ_UNAVAILABLE;
 
-    if (orderbook_open_count(b, player) >= ORDERBOOK_MAX_PER_PLAYER)
+    /* The per-player cap does not apply to the market maker: it is what
+     * stops one trader crowding the book, and the faction's quoting is
+     * already bounded by construction (ports x goods x two sides, all
+     * tracked in quote_order[] and withdrawn before each refresh). The
+     * global ORDERBOOK_MAX_ORDERS still holds for everyone. */
+    if (player != PLAYER_FACTION &&
+        orderbook_open_count(b, player) >= ORDERBOOK_MAX_PER_PLAYER)
         return REJ_UNAVAILABLE;
 
     /* Find a slot: reuse an inactive one before growing, the same
@@ -2349,12 +2411,14 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
     }
 
     if (side == ORDER_SELL) {
-        if (isl->stockpile.amount[id] < qty) return REJ_NO_STOCK;
-        stockpile_add(&isl->stockpile, (ResourceType)id, -qty);
+        if (trade_balance(gs, player, island, (ResourceType)id) < qty)
+            return REJ_NO_STOCK;
+        trade_credit(gs, player, island, (ResourceType)id, -qty);
     } else {
         int cost = qty * limit;
-        if (isl->stockpile.amount[RES_GOLD] < cost) return REJ_CANT_AFFORD;
-        stockpile_add(&isl->stockpile, RES_GOLD, -cost);
+        if (trade_balance(gs, player, island, RES_GOLD) < cost)
+            return REJ_CANT_AFFORD;
+        trade_credit(gs, player, island, RES_GOLD, -cost);
     }
 
     memset(&b->order[slot], 0, sizeof(b->order[slot]));
@@ -2377,12 +2441,11 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
  * return more than it has left. */
 static void order_refund(GameState *gs, Order *o)
 {
-    Island *isl = &gs->islands[o->island];
-
     if (o->side == ORDER_SELL)
-        stockpile_add(&isl->stockpile, (ResourceType)o->what.id, o->qty);
+        trade_credit(gs, o->owner, o->island, (ResourceType)o->what.id,
+                     o->qty);
     else
-        stockpile_add(&isl->stockpile, RES_GOLD, o->reserved_gold);
+        trade_credit(gs, o->owner, o->island, RES_GOLD, o->reserved_gold);
     o->active = 0;
 }
 
@@ -2395,6 +2458,99 @@ static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
     if (o->owner != player) return REJ_NOT_OWNER;
     order_refund(gs, o);
     return REJ_OK;
+}
+
+/* ---- the faction as market maker (MARITIME_PLAN Phase 2) ----
+ * Every FACTION_QUOTE_INTERVAL_TICKS the market withdraws its standing
+ * orders and posts fresh ones at its current bid and ask, at each of
+ * its home ports. Its quotes therefore appear in the book as ordinary
+ * orders: they reserve, they ship, they tie up its hulls, and a player
+ * can trade inside its spread with someone else instead.
+ *
+ * It is a pure function of world state, so it needs no Command — the
+ * same reasoning as faction_tick's mean reversion. A replay re-derives
+ * every quote it ever posted.
+ *
+ * WHICH goods it quotes is economic rather than arbitrary: the ones it
+ * is furthest from baseline on, which is where it most wants to trade.
+ * It cannot quote everything (two sides x every good x every port would
+ * exhaust the book by itself), and a market maker that leans against
+ * its own imbalance is a better answer than a rotation. */
+static void faction_quote_refresh(GameState *gs)
+{
+    Faction *f = &gs->faction;
+    int      pick[FACTION_QUOTE_GOODS];
+    int      npick = 0;
+    int      r, p, i, s;
+
+    if (++f->quote_timer < FACTION_QUOTE_INTERVAL_TICKS) return;
+    f->quote_timer = 0;
+
+    /* Top-N by |inventory - baseline|, ties going to the lower resource
+     * index. An insertion into a fixed array rather than a sort: N is
+     * six and the comparison has to be total, or two clients could pick
+     * different goods and diverge. */
+    for (r = 0; r < RES_COUNT; r++) {
+        int dev, j, k;
+
+        if (r == RES_GOLD) continue;
+        dev = f->inventory[r] - FACTION_BASE_INVENTORY;
+        if (dev < 0) dev = -dev;
+
+        for (j = 0; j < npick; j++) {
+            int d = f->inventory[pick[j]] - FACTION_BASE_INVENTORY;
+            if (d < 0) d = -d;
+            if (dev > d) break;
+        }
+        if (j >= FACTION_QUOTE_GOODS) continue;
+
+        if (npick < FACTION_QUOTE_GOODS) npick++;
+        for (k = npick - 1; k > j; k--) pick[k] = pick[k - 1];
+        pick[j] = r;
+    }
+
+    /* Withdraw everything first. The selection changes between
+     * refreshes, so a slot-by-slot replace would strand the quote of a
+     * good that dropped out — and a market maker that leaves its old
+     * orders behind fills the book with its own history. */
+    for (p = 0; p < FACTION_PORT_COUNT; p++)
+        for (i = 0; i < FACTION_QUOTE_GOODS; i++)
+            for (s = 0; s < 2; s++) {
+                Order *o;
+                if (!f->quote_order[p][i][s]) continue;
+                o = orderbook_find(&gs->book, f->quote_order[p][i][s]);
+                if (o) order_refund(gs, o);       /* also deactivates it */
+                f->quote_order[p][i][s] = 0u;
+            }
+
+    for (p = 0; p < FACTION_PORT_COUNT; p++) {
+        int island = MAX_ISLANDS - FACTION_PORT_COUNT + p;
+
+        for (i = 0; i < npick; i++) {
+            ResourceType res    = (ResourceType)pick[i];
+            int32_t      packed = TRADE_PACK(TRADE_RESOURCE, (uint16_t)res);
+            int          bid    = faction_bid(f, res);
+            int          ask    = faction_ask(f, res);
+            uint32_t     id_before;
+
+            /* The ask is always above the bid (faction.h keeps the
+             * spread), so the market's own two orders never cross each
+             * other — and the self-trade rule would refuse them if a
+             * future quote curve ever let them. */
+            if (bid > 0) {
+                id_before = gs->book.next_order_id;
+                if (sim_place_order(gs, island, packed, FACTION_QUOTE_LOT,
+                                    bid, PLAYER_FACTION) == REJ_OK)
+                    f->quote_order[p][i][ORDER_BUY] = id_before;
+            }
+            if (ask > 0) {
+                id_before = gs->book.next_order_id;
+                if (sim_place_order(gs, island, packed, -FACTION_QUOTE_LOT,
+                                    ask, PLAYER_FACTION) == REJ_OK)
+                    f->quote_order[p][i][ORDER_SELL] = id_before;
+            }
+        }
+    }
 }
 
 /* ---- matching -----------------------------------------------
@@ -2526,8 +2682,10 @@ static void book_settle_arrivals(GameState *gs)
 
         /* Outbound: the cargo lands and the seller is paid. */
         if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick) {
-            stockpile_add(&to->stockpile, (ResourceType)bk->what.id, bk->qty);
-            stockpile_add(&from->stockpile, RES_GOLD, bk->qty * bk->price);
+            trade_credit(gs, bk->buyer, bk->to_island,
+                         (ResourceType)bk->what.id, bk->qty);
+            trade_credit(gs, bk->seller, bk->from_island, RES_GOLD,
+                         bk->qty * bk->price);
             bk->delivered = 1;
 
             sim_log("Order filled: %d %s delivered to %s at %d each",
@@ -2551,6 +2709,7 @@ static void book_match(GameState *gs)
     int        res, guard;
 
     book_settle_arrivals(gs);
+    faction_quote_refresh(gs);
 
     /* Only resources exist in the book today; when Phase 3 adds route
      * charts this loop gains an outer pass over kinds. */
@@ -2616,8 +2775,8 @@ static void book_match(GameState *gs)
              * gold minted by part-filling an order and withdrawing. */
             bid->reserved_gold -= qty * bid->limit;
             if (bid->limit > b->booking[slot].price)
-                stockpile_add(&gs->islands[bid->island].stockpile, RES_GOLD,
-                              qty * (bid->limit - b->booking[slot].price));
+                trade_credit(gs, bid->owner, bid->island, RES_GOLD,
+                             qty * (bid->limit - b->booking[slot].price));
 
             bid->qty -= qty;
             ask->qty -= qty;
@@ -2655,6 +2814,13 @@ static int owns_ship(const GameState *gs, int idx, uint32_t player)
  * not an error. Payload decoding mirrors command.h. */
 RejectReason sim_apply_reason(GameState *gs, const Command *c)
 {
+    /* Nobody commands the market (MARITIME_PLAN Phase 2). The faction
+     * acts inside the tick, never through the log, so a command
+     * claiming its identity did not come from the sim — it came from a
+     * peer that made one up. Refusing it here rather than in each
+     * handler means a kind added later cannot forget to. */
+    if (c->player_id == PLAYER_FACTION) return REJ_NOT_OWNER;
+
     switch (c->kind) {
     case CMD_PLACE_BUILDING: {
         BuildingType type = (BuildingType)(c->d / 2);

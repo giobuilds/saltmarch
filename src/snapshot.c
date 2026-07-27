@@ -415,6 +415,14 @@ static void put_faction(W *w, const Faction *f)
     int i, j;
     w_i32(w, f->gold);
     for (i = 0; i < RES_COUNT; i++) w_i32(w, f->inventory[i]);
+    /* The standing quotes (MARITIME Phase 2). */
+    {
+        int p, g, s2;
+        for (p = 0; p < FACTION_PORT_COUNT; p++)
+            for (g = 0; g < FACTION_QUOTE_GOODS; g++)
+                for (s2 = 0; s2 < 2; s2++) w_u32(w, f->quote_order[p][g][s2]);
+    }
+    w_u32(w, f->quote_timer);
     w_u32(w, f->revert_timer);
     for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
         for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
@@ -433,6 +441,14 @@ static void get_faction(R *r, Faction *f)
     memset(f, 0, sizeof(*f));
     f->gold = r_i32(r);
     for (i = 0; i < RES_COUNT; i++) f->inventory[i] = r_i32(r);
+    {
+        int p, g, s2;
+        for (p = 0; p < FACTION_PORT_COUNT; p++)
+            for (g = 0; g < FACTION_QUOTE_GOODS; g++)
+                for (s2 = 0; s2 < 2; s2++)
+                    f->quote_order[p][g][s2] = r_u32(r);
+    }
+    f->quote_timer = r_u32(r);
     f->revert_timer = r_u32(r);
     for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
         for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
