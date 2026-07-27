@@ -83,7 +83,9 @@ The client cannot tell a dedicated server from a friend running
   without them. Among invited players that is correct. Among strangers
   it is an undetectable cheating vector that authentication cannot
   touch. [VISIBILITY.md](VISIBILITY.md) sets out why it is inherent
-  rather than a bug, and what the options actually cost.
+  rather than a bug, and what the options actually cost. **Decided:**
+  strangers get direct PvP *and* concealment, which means server
+  authority — [SERVER_AUTHORITY.md](SERVER_AUTHORITY.md) is the plan.
 - **No account tooling, and therefore no way to answer a data request.**
   Once strangers play, whoever runs the server is a data controller and
   needs to be able to export and erase a player's data.

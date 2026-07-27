@@ -1,5 +1,12 @@
 # What a client is allowed to know
 
+> **Decided.** Strangers may raid each other's convoys *and* may not
+> read each other's books, which admits only option B below.
+> [SERVER_AUTHORITY.md](SERVER_AUTHORITY.md) is the plan — including a
+> correction to this document's costing of that option, which was
+> pessimistic: four of the seams it needs already exist, built for
+> other reasons.
+
 A design note, prompted by a single new fact: **strangers will play
 this game.** Everything below was fine while "multiplayer" meant a
 friend you invited, and stops being fine the moment it doesn't.
@@ -115,7 +122,20 @@ side. MMO_PLAN chose lockstep deliberately and got determinism, cheap
 replay, verifiable checkpoints and a tiny protocol in exchange. This
 option trades all of it back.
 
-Not "a big change" — a different program that shares some art.
+~~Not "a big change" — a different program that shares some art.~~
+
+**That was wrong, and the correction matters.** Every mutation is
+already a `Command` validated by `sim_apply`; `saltmarch_host` is
+already the authoritative world; every UI builder already reads a
+`UiSnapshot` and never a `GameState`, with `ui_snapshot.h` explicitly
+naming "a remote server's state" as an interchangeable source; and
+`snapshot.c` already serialises a full world with a checksum and a
+test proving a restored world evolves identically. Determinism,
+replay and the F9 check are not lost but relocated to the server,
+where a persistent world needs them most, and the lockstep tick gate
+and hash exchange are *deleted* rather than replaced. It is a
+substantial project and an evolutionary one. See
+[SERVER_AUTHORITY.md](SERVER_AUTHORITY.md).
 
 **C. Two multiplayer models, which the tree already has.**
 `saltmarch_host` is the *invited* world: lockstep, full replication,
@@ -139,19 +159,18 @@ world you are not in — and that is the honest cost.
 nothing about visibility *within* a shard; it only bounds how many
 people see your books. A scaling answer to a trust question.
 
-## Recommendation
+## Recommendation, and what was chosen
 
-**Decide this before building accounts**, because it decides what
-accounts are for.
+I recommended **C**, on the reading that direct piracy between
+strangers was negotiable. It was not: raiding is meant to be a real
+thing strangers do to each other, and concealment is meant to be real
+too. That combination excludes A (which gives up concealment) and C
+(which gives up direct PvP), leaving **B**.
 
-For a public game I would take **C**, and keep **A** in reserve if
-direct player-versus-player piracy turns out to be the point of the
-game. C keeps everything the architecture is good at, uses a model
-already in the codebase, and gives strangers a shared ocean without
-giving them each other's ledgers. B is defensible only if
-server-authoritative play is the actual goal, and in that case it
-should be chosen deliberately and early rather than arrived at by
-patching.
+Choosing it deliberately and early was the right way to arrive at it,
+which is what happened. [SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)
+carries the plan, and revises this document's estimate of what B
+costs.
 
 What I would not do is ship lockstep to strangers and treat the
 visibility as an acceptable risk. It is not a risk; it is a certainty,
