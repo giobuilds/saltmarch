@@ -158,6 +158,21 @@ typedef struct {
      * makes about how it does business, like docking_allowed, not a
      * box ticked on every consignment. */
     int32_t    insure_shipments;
+
+    /* ---- expeditions (MARITIME_PLAN Phase 3d) --------------
+     * Research boats are built here (at a Shipyard) and kept here.
+     * Unlike a trade hull, a research boat is a THING THAT CAN BE
+     * LOST: a survey that goes wrong does not give it back, which is
+     * why it is a stock that goes down rather than a capacity that
+     * frees up.
+     *
+     * Scholars are the other half, and they are not stored at all —
+     * capacity comes from the populated Scholars' Houses standing
+     * here, and `scholars_out` counts the ones away on a mission. A
+     * lost expedition takes a resident with it. */
+    int32_t    research_boats;
+    int32_t    research_boats_out;
+    int32_t    scholars_out;
 } Island;
 
 /* The NPC market's own player id (MARITIME_PLAN Phase 2). It owns its
@@ -186,7 +201,22 @@ typedef struct {
 #define TRADE_MERCHANTS_PER_INVESTOR 2/* its upgrade is worth more     */
 #define TRADE_HULLS_PER_SHIPYARD  2
 
+/* What a research boat costs to build, at a Shipyard. Dear next to a
+ * trade hull because it is not cargo capacity — it is the thing that
+ * turns a blank chart into a passage nobody else has. */
+#define RESEARCH_BOAT_GOLD    600
+#define RESEARCH_BOAT_PLANKS   30
+
 int island_merchant_capacity(const Island *isl);
+
+/* Scholars this island can have away at once: one per populated
+ * Scholars' House. No base — unlike trade, an expedition needs someone
+ * qualified to send, and that is the whole point of the Academy. */
+int island_scholar_capacity(const Island *isl);
+
+/* Whether a survey could set out from here right now: a scholar free,
+ * a research boat idle, and a blank chart in store. */
+int island_can_survey(const Island *isl);
 int island_hull_capacity(const Island *isl);
 
 /* Whether a booking could set out from here right now: one merchant and

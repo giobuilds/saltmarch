@@ -111,8 +111,11 @@ typedef struct NetSession NetSession;
  * 15: per-route insurance and shipment raids (MARITIME_PLAN Phase 3c).
  *    A new command kind, a differently-shaped premium table in the
  *    snapshot, and cargo that can now fail to arrive — a peer on 14
- *    would deliver what this one lost. */
-#define NET_PROTO_VERSION     15u
+ *    would deliver what this one lost.
+ * 16: the survey mission (MARITIME_PLAN Phase 3d). Expeditions in the
+ *    snapshot, two more command kinds, and charts that now appear
+ *    from a mission rather than only from the market. */
+#define NET_PROTO_VERSION     16u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

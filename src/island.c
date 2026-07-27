@@ -196,6 +196,29 @@ int island_hull_capacity(const Island *isl)
     return n;
 }
 
+int island_scholar_capacity(const Island *isl)
+{
+    int i, n = 0;
+
+    if (!isl->settled) return 0;
+
+    for (i = 0; i < isl->building_count; i++) {
+        const Building *b = &isl->buildings[i];
+        if (!b->active || b->type != BUILDING_HOUSE_SCHOLAR) continue;
+        if (!isl->pop_data[i].active || isl->pop_data[i].residents <= 0)
+            continue;
+        n++;
+    }
+    return n;
+}
+
+int island_can_survey(const Island *isl)
+{
+    return isl->scholars_out < island_scholar_capacity(isl) &&
+           isl->research_boats_out < isl->research_boats &&
+           isl->stockpile.amount[RES_CHARTS] > 0;
+}
+
 int island_can_dispatch(const Island *isl)
 {
     return isl->merchants_out < island_merchant_capacity(isl) &&

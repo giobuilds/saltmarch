@@ -50,6 +50,8 @@
  *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
  *   CMD_SET_INSURANCE   a=island b=on (0/1 — insure shipments from here)
+ *   CMD_BUILD_RESEARCH_BOAT  a=island
+ *   CMD_SURVEY          a=island (from) b=island (to)
  *   CMD_PLACE_ORDER     a=island b=TRADE_PACK(kind,id) c=qty (sign is
  *                        the side: >0 buys, <0 sells) d=limit price
  *                        (MARITIME_PLAN Phase 2). The identity is
@@ -110,6 +112,8 @@ typedef enum {
      * renumbers three existing commands and silently reinterprets any
      * log old enough to contain them. */
     CMD_SET_INSURANCE,   /* owner: standing marine policy for this port  */
+    CMD_BUILD_RESEARCH_BOAT, /* owner: a hull for expeditions, at a yard */
+    CMD_SURVEY,          /* owner: send a scholar to find a passage      */
     CMD_COUNT
 } CommandKind;
 

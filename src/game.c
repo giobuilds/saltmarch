@@ -321,6 +321,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     faction_init_routes(&gs->faction, &gs->sea);
     orderbook_init(&gs->book);
     knowledge_init(&gs->knowledge);
+    survey_init(&gs->surveys);
 
     /* A fresh world is a fresh history: discard any previous command
      * log and reset the world clock. The starting state above is a
@@ -556,8 +557,22 @@ typedef struct {
  * SEA_UNITS_PER_TICK re-fitted from 21 to 26 to hold the pace. The Sea
  * is regenerated rather than saved, which is exactly why this is a log
  * break and not merely a format one: a v18 log replayed against this
- * generator has every voyage arriving on a different tick. */
-#define SAVE_VERSION 19u
+ * generator has every voyage arriving on a different tick.
+ *
+ * v20 and v21 WERE NEVER ISSUED. Phase 3b (route knowledge and charts)
+ * and Phase 3c (per-route insurance and shipment raids) both changed
+ * what a log means and both should have bumped this; the edits went
+ * astray and only NET_PROTO_VERSION and SNAPSHOT_VERSION moved. The
+ * numbers are burned rather than reused so that anything that recorded
+ * a version in between is not silently reinterpreted, and so the gap
+ * stays legible instead of looking like a miscount.
+ *
+ * v22 (MARITIME_PLAN Phase 3b, 3c and 3d together): charts route a
+ * cargo down water a v19 log had no concept of, raided shipments now
+ * fail to arrive at all, and the survey mission adds two command kinds
+ * with expeditions, research boats and scholars behind them. A v19 log
+ * replayed under any of this describes a different world. */
+#define SAVE_VERSION 22u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1152,6 +1167,9 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &isl->merchants_out, sizeof(isl->merchants_out));
         fnv_bytes(&h, &isl->hulls_out, sizeof(isl->hulls_out));
         fnv_bytes(&h, &isl->insure_shipments, sizeof(isl->insure_shipments));
+        fnv_bytes(&h, &isl->research_boats, sizeof(isl->research_boats));
+        fnv_bytes(&h, &isl->research_boats_out, sizeof(isl->research_boats_out));
+        fnv_bytes(&h, &isl->scholars_out, sizeof(isl->scholars_out));
 
         for (b = 0; b < isl->building_count; b++) {
             const Building *bd = &isl->buildings[b];
@@ -1248,6 +1266,28 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
         fnv_bytes(&h, &sh->insured, sizeof(sh->insured));
         fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
+    }
+
+    /* Expeditions in progress (MARITIME Phase 3d). Live entries only,
+     * and no slot layout — same rule as the order book: a mission is
+     * not addressed by index, so a compacted checkpoint must hash the
+     * same as the world it came from. */
+    {
+        int live = 0;
+        for (s = 0; s < gs->surveys.count; s++)
+            if (gs->surveys.mission[s].active) live++;
+        fnv_bytes(&h, &live, sizeof(live));
+    }
+    for (s = 0; s < gs->surveys.count; s++) {
+        const Survey *m = &gs->surveys.mission[s];
+        if (!m->active) continue;
+        fnv_bytes(&h, &m->owner, sizeof(m->owner));
+        fnv_bytes(&h, &m->from_island, sizeof(m->from_island));
+        fnv_bytes(&h, &m->to_island, sizeof(m->to_island));
+        fnv_bytes(&h, &m->route_id, sizeof(m->route_id));
+        fnv_bytes(&h, &m->finish_tick, sizeof(m->finish_tick));
+        fnv_bytes(&h, &m->succeeds, sizeof(m->succeeds));
+        fnv_bytes(&h, &m->lost, sizeof(m->lost));
     }
 
     /* What each player knows of the sea (MARITIME Phase 3b). Hashed
@@ -2327,6 +2367,23 @@ int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty)
     return game_escrow_take_nonce(gs, island_idx, res, qty, 0u);
 }
 
+int game_build_research_boat(GameState *gs, int island_idx)
+{
+    Command c = {0};
+    c.kind = CMD_BUILD_RESEARCH_BOAT;
+    c.a    = island_idx;
+    return command_submit(gs, &c);
+}
+
+int game_survey(GameState *gs, int from_island, int to_island)
+{
+    Command c = {0};
+    c.kind = CMD_SURVEY;
+    c.a    = from_island;
+    c.b    = to_island;
+    return command_submit(gs, &c);
+}
+
 int game_set_insurance(GameState *gs, int island_idx, int on)
 {
     Command c = {0};
@@ -2527,6 +2584,178 @@ static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
     if (o->owner != player) return REJ_NOT_OWNER;
     order_refund(gs, o);
     return REJ_OK;
+}
+
+/* ---- expeditions (MARITIME_PLAN Phase 3d) -----------------
+ * A survey commits a scholar, a research boat and a blank chart, and
+ * comes back with a passage or with nothing. See survey.h for why the
+ * blank chart is spent either way and why the crew is at risk.
+ */
+static RejectReason sim_build_research_boat(GameState *gs, int island)
+{
+    Island *isl = &gs->islands[island];
+    int     i, has_yard = 0;
+
+    if (!isl->settled) return REJ_UNAVAILABLE;
+
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == BUILDING_SHIPYARD) { has_yard = 1; break; }
+    if (!has_yard) return REJ_UNAVAILABLE;
+
+    if (isl->stockpile.amount[RES_GOLD] < RESEARCH_BOAT_GOLD)
+        return REJ_CANT_AFFORD;
+    if (isl->stockpile.amount[RES_PLANKS] < RESEARCH_BOAT_PLANKS)
+        return REJ_NO_STOCK;
+
+    stockpile_add(&isl->stockpile, RES_GOLD, -RESEARCH_BOAT_GOLD);
+    stockpile_add(&isl->stockpile, RES_PLANKS, -RESEARCH_BOAT_PLANKS);
+    isl->research_boats++;
+
+    sim_log("Research boat laid down at %s", isl->name);
+    return REJ_OK;
+}
+
+/* Which passage an expedition would chart: the fastest private route
+ * between the two islands that this player does not already know.
+ * Returns -1 if there is nothing left to find, which is a real answer
+ * and not an error — you have charted that crossing. */
+static int survey_target_route(const GameState *gs, int from, int to,
+                               uint32_t player)
+{
+    const Route *best = NULL;
+    int          best_id = -1, v;
+
+    for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+        const Route *r = sea_route_variant(&gs->sea, from, to, v);
+        int          id;
+
+        if (!r || !r->is_private) continue;
+        id = sea_route_id(&gs->sea, r);
+        if (id < 0) continue;
+        if (knowledge_knows(&gs->knowledge, player, id, 1)) continue;
+
+        if (!best || r->total_ticks < best->total_ticks ||
+            (r->total_ticks == best->total_ticks && id < best_id)) {
+            best    = r;
+            best_id = id;
+        }
+    }
+    return best_id;
+}
+
+static RejectReason sim_survey(GameState *gs, int from, int to,
+                               uint32_t player)
+{
+    Island      *isl = &gs->islands[from];
+    SurveyBoard *b   = &gs->surveys;
+    int          route_id, slot, i;
+
+    if (from == to) return REJ_UNAVAILABLE;
+    if (to < 0 || to >= MAX_ISLANDS) return REJ_UNAVAILABLE;
+    if (!isl->settled) return REJ_UNAVAILABLE;
+
+    if (isl->scholars_out >= island_scholar_capacity(isl))
+        return REJ_UNAVAILABLE;
+    if (isl->research_boats_out >= isl->research_boats)
+        return REJ_UNAVAILABLE;
+    if (isl->stockpile.amount[RES_CHARTS] < 1) return REJ_NO_STOCK;
+
+    route_id = survey_target_route(gs, from, to, player);
+    if (route_id < 0) return REJ_UNAVAILABLE;   /* nothing left to find */
+
+    slot = -1;
+    for (i = 0; i < b->count; i++)
+        if (!b->mission[i].active) { slot = i; break; }
+    if (slot < 0) {
+        if (b->count >= MAX_SURVEYS) return REJ_UNAVAILABLE;
+        slot = b->count++;
+    }
+
+    /* The blank chart is spent now, not on return. It is the paper the
+     * survey is drawn on; whether anything gets drawn is the gamble. */
+    stockpile_add(&isl->stockpile, RES_CHARTS, -1);
+    isl->scholars_out++;
+    isl->research_boats_out++;
+
+    memset(&b->mission[slot], 0, sizeof(b->mission[slot]));
+    b->mission[slot].active      = 1;
+    b->mission[slot].owner       = player;
+    b->mission[slot].from_island = from;
+    b->mission[slot].to_island   = to;
+    b->mission[slot].route_id    = route_id;
+    b->mission[slot].finish_tick = gs->sim_tick_no + SURVEY_TICKS;
+
+    /* Fixed when it sails, applied when it lands — so a late tick
+     * cannot change what already happened at sea. */
+    b->mission[slot].succeeds = survey_succeeds(gs->world_seed, route_id,
+                                                gs->sim_tick_no, player);
+    b->mission[slot].lost     = survey_is_lost(gs->world_seed, route_id,
+                                               gs->sim_tick_no, player);
+
+    sim_log("Expedition sailed from %s in search of a passage to %s",
+            isl->name, gs->islands[to].name);
+    return REJ_OK;
+}
+
+/* Take one resident from a Scholars' House: the cost of an expedition
+ * that did not come back. Prefers the fullest house, so a loss does
+ * not empty a one-resident house and silently remove the island's
+ * whole capacity to send another. */
+static void scholar_lost(Island *isl)
+{
+    int i, best = -1;
+
+    for (i = 0; i < isl->building_count; i++) {
+        const Building *bd = &isl->buildings[i];
+        if (!bd->active || bd->type != BUILDING_HOUSE_SCHOLAR) continue;
+        if (!isl->pop_data[i].active || isl->pop_data[i].residents <= 0)
+            continue;
+        if (best < 0 ||
+            isl->pop_data[i].residents > isl->pop_data[best].residents)
+            best = i;
+    }
+    if (best >= 0) isl->pop_data[best].residents--;
+}
+
+static void surveys_update(GameState *gs)
+{
+    SurveyBoard *b = &gs->surveys;
+    int          i;
+
+    for (i = 0; i < b->count; i++) {
+        Survey *m = &b->mission[i];
+        Island *isl;
+
+        if (!m->active) continue;
+        if (gs->sim_tick_no < m->finish_tick) continue;
+
+        isl = &gs->islands[m->from_island];
+
+        if (m->succeeds) {
+            knowledge_add_charts(&gs->knowledge, m->owner, m->route_id, 1);
+            sim_log("Expedition charted %s",
+                    gs->sea.route[m->route_id].name);
+        } else if (m->lost) {
+            /* The boat is gone, and so is the scholar. The house that
+             * sent them is smaller for it. */
+            isl->research_boats--;
+            scholar_lost(isl);
+            sim_log("Expedition to %s never returned",
+                    gs->islands[m->to_island].name);
+        } else {
+            sim_log("Expedition returned to %s having found nothing",
+                    isl->name);
+        }
+
+        /* The commitments end either way; what differs is whether the
+         * boat and the scholar still exist to be committed again. */
+        if (isl->scholars_out > 0)       isl->scholars_out--;
+        if (isl->research_boats_out > 0) isl->research_boats_out--;
+        if (isl->research_boats < 0)     isl->research_boats = 0;
+
+        m->active = 0;
+    }
 }
 
 /* ---- choosing a passage (MARITIME_PLAN Phase 3b) ----------
@@ -2909,6 +3138,7 @@ static void book_match(GameState *gs)
     int        kind, id, guard;
 
     book_settle_arrivals(gs);
+    surveys_update(gs);
     faction_quote_refresh(gs);
 
     /* Both kinds, each over its own id space: resources over
@@ -3158,6 +3388,12 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         gs->islands[c->a].insure_shipments = c->b ? 1 : 0;
         return REJ_OK;
+    case CMD_BUILD_RESEARCH_BOAT:
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_build_research_boat(gs, c->a);
+    case CMD_SURVEY:
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_survey(gs, c->a, c->b, c->player_id);
     default:
         return REJ_UNAVAILABLE;
     }
