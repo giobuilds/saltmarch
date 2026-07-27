@@ -40,11 +40,20 @@
 #define SEA_WIDTH   10000
 #define SEA_HEIGHT  10000
 
-/* Sea units a ship covers in one sim tick. Chosen so a typical
- * island-to-island crossing lands near the 20 seconds
- * SHIP_VOYAGE_SECONDS used to hard-code, so this phase changes the
- * shape of the world without changing its pace. */
-#define SEA_UNITS_PER_TICK  15
+/* Sea units a ship covers in one sim tick.
+ *
+ * Measured rather than guessed: across eight seeds the mean generated
+ * path is ~4288 units, so 21 units per tick puts the AVERAGE crossing
+ * at the 200 ticks SHIP_VOYAGE_TICKS used to impose on every crossing
+ * alike. This phase is meant to change the SHAPE of the world, not its
+ * pace — voyages now differ from each other (roughly 70 to 400 ticks)
+ * around the same centre, so a route being long is information rather
+ * than a slower game.
+ *
+ * The first value here was 15, which quietly made the average voyage
+ * half again as long and made this comment untrue. If the generator's
+ * scale changes, re-measure. */
+#define SEA_UNITS_PER_TICK  21
 
 /* How far apart things are kept. Islands and waypoints have different
  * requirements and used to share one number, which was too small.

@@ -111,8 +111,14 @@ int main(void)
     CHECK(gs->ships[0].cargo[RES_FISH] == 10,
           "owner loads own hold at own island (stockpile path)");
 
+    /* A crossing is the route's length, not a constant (MARITIME_PLAN
+     * Phase 1) — waiting SHIP_VOYAGE_TICKS was waiting the wrong
+     * amount for every pair whose water is longer than average. */
     AS(gs, 2u, game_ship_depart(gs, 0, 0));
-    run_ticks(gs, SHIP_VOYAGE_TICKS + 2);
+    run_ticks(gs, 1);          /* the departure is a Command; apply it */
+    run_ticks(gs, (int)sea_crossing_ticks(&gs->sea,
+                                          gs->ships[0].from_island,
+                                          gs->ships[0].to_island) + 2);
     CHECK(gs->ships[0].at_island == 0, "ship arrived at player 1's island");
 
     /* ---- Foreign transfers need a Harbor ---- */

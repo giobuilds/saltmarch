@@ -992,7 +992,7 @@ void sim_run_one_tick(GameState *gs)
         for (s2 = 0; s2 < gs->ship_count; s2++)
             gs->ships[s2].was_at_sea = (gs->ships[s2].at_island < 0);
     }
-    ships_update(gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
+    ships_update(&gs->sea, gs->ships, gs->ship_count, gs->islands, MAX_ISLANDS,
                  gs->sim_tick_no, gs->world_seed);
 
     /* Anything that just made port with a policy on it gets settled,

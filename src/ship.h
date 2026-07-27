@@ -23,6 +23,7 @@
 #include "island.h"
 #include "resource.h"
 #include <stdint.h>
+#include "sea.h"
 #include <stddef.h>   /* size_t */
 
 #define MAX_SHIPS            8
@@ -153,7 +154,7 @@ int intercept_attacker_wins(uint32_t world_seed,
                             int attacker_ship, uint64_t attacker_departure,
                             int target_ship, uint64_t target_departure);
 
-void ships_update(Ship ships[], int ship_count,
+void ships_update(const Sea *sea, Ship ships[], int ship_count,
                   Island islands[], int island_count, uint64_t sim_tick_no,
                   uint32_t world_seed);
 

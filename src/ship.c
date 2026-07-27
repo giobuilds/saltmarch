@@ -184,7 +184,7 @@ static void voyage_raid(Ship *s, int ship_id)
                 ship_id, taken);
 }
 
-void ships_update(Ship ships[], int ship_count,
+void ships_update(const Sea *sea, Ship ships[], int ship_count,
                   Island islands[], int island_count, uint64_t sim_tick_no,
                   uint32_t world_seed)
 {
@@ -193,6 +193,7 @@ void ships_update(Ship ships[], int ship_count,
     for (i = 0; i < ship_count; i++) {
         Ship    *s = &ships[i];
         uint64_t elapsed;
+        uint32_t crossing;
 
         if (!s->active) continue;
 
@@ -204,23 +205,30 @@ void ships_update(Ship ships[], int ship_count,
         }
 
         /* At sea. Arrival is an exact integer test on the tick; progress
-         * is only a cached 0..1 derivation for the renderer. */
-        elapsed = sim_tick_no - s->departure_tick;
+         * is only a cached 0..1 derivation for the renderer.
+         *
+         * The crossing's length is the route's, not a constant
+         * (MARITIME_PLAN Phase 1). Every pair of islands has a route,
+         * so the fallback inside sea_crossing_ticks is unreachable in
+         * a generated world -- but it is there rather than an assert
+         * because a ship mid-voyage must never divide by zero. */
+        crossing = sea_crossing_ticks(sea, s->from_island, s->to_island);
+        elapsed  = sim_tick_no - s->departure_tick;
 
         /* The raid check, exactly once, at the halfway mark. Testing
          * for equality rather than ">=" is what makes it once: a ship
          * that has already passed the midpoint is not robbed again by
          * the next tick. */
-        if (elapsed == (uint64_t)(SHIP_VOYAGE_TICKS / 2) &&
+        if (elapsed == (uint64_t)(crossing / 2u) &&
             voyage_is_raided(world_seed, i, s->departure_tick,
                              s->from_island, s->to_island))
             voyage_raid(s, i);
 
-        if (elapsed >= (uint64_t)SHIP_VOYAGE_TICKS) {
+        if (elapsed >= (uint64_t)crossing) {
             s->at_island = s->to_island;   /* arrived */
             s->progress  = 0.0f;
         } else {
-            s->progress = (float)elapsed / (float)SHIP_VOYAGE_TICKS;
+            s->progress = (float)elapsed / (float)crossing;
         }
     }
 }
