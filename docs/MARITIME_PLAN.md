@@ -385,8 +385,20 @@ retrofitting it after combat exists means touching combat too.
    lane — an interim source, since survey and research are the intended
    ones and are blocked on what a failed survey costs.
 
-   Still to come in this phase: per-route insurance, and the survey and
-   research missions.
+   **3c is built:** insurance is priced per ROUTE rather than per island
+   pair — one number for the water between two islands stopped being
+   enough the moment there were three ways across it. A private passage
+   starts dearer to cover and is raided far more often, so "faster but
+   unsafe" is now a number rather than a sentence. A raided shipment
+   lands nothing: the buyer, who did not choose the passage, gets their
+   gold back, and the seller bears it — which is what makes a policy
+   worth buying and choosing the fast water a decision. Cover is a
+   standing policy per harbour (`CMD_SET_INSURANCE`) rather than a flag
+   on each order, because `Command`'s four payload slots are already
+   spent and because it reads better as what it is.
+
+   Still to come in this phase: the survey and research missions, now
+   unblocked — see Settled.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
    turns "everyone knows where the fast route is" into real
    concealment, and makes stockpiles private.
@@ -415,6 +427,15 @@ upgrades it rather than gating it.
 - **Waypoints and routes are named**, in lore rather than coordinates.
 - **Routes are discovered by research *or* by survey.** A survey
   dispatches one scholar, one research boat and one chart.
+- **A failed survey can cost the scholar and the boat**, not just the
+  blank chart. That is what makes a survey an expedition rather than a
+  dice roll with a fee: the crew is at risk, so sending one is a
+  decision about people as well as money.
+- **Route charts expire after a year**, and when one does a new private
+  route is generated in its place. This is what stops the map from
+  being solved: a passage learned is not a passage owned forever, the
+  sea keeps changing shape, and the Chart House has a standing reason
+  to exist rather than a one-off job.
 - **Three routes exist between any pair of islands.** One public, two
   private. That is enough for a real choice — a safe default and two
   passages worth discovering, which can differ from each other in
@@ -444,13 +465,6 @@ upgrades it rather than gating it.
   faster than any voyage was before, rather than public being slower
   than it was. Whether that is the right side to have moved is a
   balance question best answered once charts actually gate them.
-- **What does a failed survey cost?** The blank chart is presumably
-  spent either way — that is the gamble — but whether the scholar and
-  the hull come home, or can be lost with the mission, is a different
-  question and a much sharper one.
-- **How many route charts may an island hold**, and do they expire? An
-  unbounded stock of passages makes a route permanently open once
-  surveyed, which may or may not be wanted.
 
 ## Risks
 

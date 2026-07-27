@@ -28,7 +28,7 @@ static const char *const KIND_NAMES[CMD_COUNT] = {
     "BUY_RESOURCE", "UPGRADE_HOUSE", "BUILD_SHIP", "SHIP_TRANSFER",
     "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
     "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING",
-    "INTERCEPT", "PLACE_ORDER", "CANCEL_ORDER"
+    "INTERCEPT", "PLACE_ORDER", "CANCEL_ORDER", "SET_INSURANCE"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -119,6 +119,10 @@ void command_describe(const Command *c, char *out, size_t n)
         break;
     case CMD_CANCEL_ORDER:
         snprintf(out, n, "CANCEL_ORDER  %d", c->a);
+        break;
+    case CMD_SET_INSURANCE:
+        snprintf(out, n, "SET_INSURANCE  island %d  %s", c->a,
+                 c->b ? "on" : "off");
         break;
     default:
         snprintf(out, n, "%s  %d %d %d %d", command_kind_name(c->kind),

@@ -128,6 +128,11 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
  * cannot be robbed retroactively by a late tick.
  */
 #define PIRACY_CHANCE_PER_MILLE  80    /* 8% of voyages are raided     */
+/* A private passage is fast because it runs outside patrolled water,
+ * and this is the price of that (MARITIME_PLAN Phase 3c). Without it
+ * "unsafe" is a word in a design document: a shortcut with no extra
+ * risk is simply a better route, and no one would ever sail the lane. */
+#define PIRACY_CHANCE_PRIVATE   240    /* 24% of private crossings     */
 #define PIRACY_TAKE_NUMERATOR     1    /* pirates take half the hold   */
 #define PIRACY_TAKE_DENOMINATOR   2
 
@@ -136,6 +141,15 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
  * insurance premium (it prices the same risk) and for tests. */
 int voyage_is_raided(uint32_t world_seed, int ship_id, uint64_t departure_tick,
                      int from, int to);
+
+/* The same question for a booking's crossing (MARITIME_PLAN Phase 3c).
+ * Derived from the shipment's own identity rather than rolled, for
+ * exactly the reason above: every client and every replay must reach
+ * the same answer without being told. `chance_per_mille` is the
+ * route's, so the lane and the passages are priced differently by the
+ * caller rather than by a second copy of the rule. */
+int shipment_is_raided(uint32_t world_seed, int route_id, uint64_t booked_tick,
+                       uint32_t seller, int chance_per_mille);
 
 /* ---- interception (MMO_PLAN later phases) ------------------
  * PvP that never needs a real-time arbiter. An intercept is a Command

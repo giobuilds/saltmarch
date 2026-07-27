@@ -49,6 +49,7 @@
  *   CMD_ESCROW_TAKE     a=island b=resource c=qty d=quay nonce
  *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
+ *   CMD_SET_INSURANCE   a=island b=on (0/1 — insure shipments from here)
  *   CMD_PLACE_ORDER     a=island b=TRADE_PACK(kind,id) c=qty (sign is
  *                        the side: >0 buys, <0 sells) d=limit price
  *                        (MARITIME_PLAN Phase 2). The identity is
@@ -103,6 +104,12 @@ typedef enum {
     CMD_INTERCEPT,       /* attack another player's voyage at sea        */
     CMD_PLACE_ORDER,     /* post a buy or sell on the order book         */
     CMD_CANCEL_ORDER,    /* withdraw one, returning what it reserved     */
+    /* Appended rather than slotted beside CMD_SET_DOCKING, which is
+     * where it belongs by meaning: KIND_NAMES is positional and every
+     * recorded log names kinds by number, so inserting in the middle
+     * renumbers three existing commands and silently reinterprets any
+     * log old enough to contain them. */
+    CMD_SET_INSURANCE,   /* owner: standing marine policy for this port  */
     CMD_COUNT
 } CommandKind;
 

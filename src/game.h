@@ -783,6 +783,12 @@ int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
  * `island_idx`. A ship that can't dock can't deliver — blockade. */
 int game_set_docking(GameState *gs, int island_idx, int allow);
 
+/* Owner only: turn this harbour's standing marine policy on or off
+ * (MARITIME_PLAN Phase 3c). While on, every shipment dispatched from
+ * here is insured at its ROUTE's premium — so covering a fast private
+ * passage costs more than covering the patrolled lane. */
+int game_set_insurance(GameState *gs, int island_idx, int on);
+
 /* Post an order at `island_idx`'s harbour (MARITIME_PLAN Phase 2).
  * `qty` carries the side: positive buys, negative sells. `limit` is the
  * worst price per unit the order will accept, and posting reserves at

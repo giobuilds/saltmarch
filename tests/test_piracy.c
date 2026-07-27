@@ -10,6 +10,7 @@
  */
 
 #include "game.h"
+#include "sea.h"
 #include "ship.h"
 #include "faction.h"
 #include <stdio.h>
@@ -169,34 +170,55 @@ static void test_insurance(void)
 }
 
 /* ---- 4. the premium is the information layer -------------- */
-static void test_lane_premium_moves(void)
+static void test_route_premium_moves(void)
 {
     Faction f;
+    Sea     sea;
     int     start, after_losses, after_calm, i;
 
+    sea_init(&sea, 4242u, MAX_ISLANDS);
     faction_init(&f);
-    start = faction_lane_premium(&f, 0, 1);
-    CHECK(start == INSURANCE_PREMIUM_START, "lanes start at the base rate");
+    faction_init_routes(&f, &sea);
 
-    for (i = 0; i < 20; i++) faction_lane_experience(&f, 0, 1, 1);
-    after_losses = faction_lane_premium(&f, 0, 1);
-    CHECK(after_losses > start, "a lane that loses ships gets expensive");
+    start = faction_route_premium(&f, 0);
+    CHECK(start == INSURANCE_PREMIUM_START,
+          "the patrolled lane starts at the base rate");
 
-    for (i = 0; i < 60; i++) faction_lane_experience(&f, 0, 1, 0);
-    after_calm = faction_lane_premium(&f, 0, 1);
+    /* The point of pricing per route rather than per island pair
+     * (MARITIME_PLAN Phase 3c): the same water between the same two
+     * islands is not one risk. A private passage is fast because it
+     * runs outside patrolled water, and the underwriter knows it. */
+    {
+        int priv = -1, v;
+        for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+            const Route *r = sea_route_variant(&sea, 0, 1, v);
+            if (r && r->is_private) { priv = sea_route_id(&sea, r); break; }
+        }
+        CHECK(priv >= 0, "the pair has a private passage");
+        CHECK(faction_route_premium(&f, priv) > start,
+              "which costs more to insure than the lane beside it");
+    }
+
+    for (i = 0; i < 20; i++) faction_route_experience(&f, 0, 1);
+    after_losses = faction_route_premium(&f, 0);
+    CHECK(after_losses > start, "a route that loses cargo gets expensive");
+
+    for (i = 0; i < 60; i++) faction_route_experience(&f, 0, 0);
+    after_calm = faction_route_premium(&f, 0);
     CHECK(after_calm < after_losses,
           "and grows cheap again when the losses stop");
 
-    CHECK(faction_lane_premium(&f, 0, 2) == start,
-          "one lane's troubles do not price another's");
+    CHECK(faction_route_premium(&f, 3) == INSURANCE_PREMIUM_START ||
+          faction_route_premium(&f, 3) == INSURANCE_PREMIUM_PRIVATE,
+          "one route's troubles do not price another's");
 
-    /* Bounded either way: a lane can be dangerous without becoming
+    /* Bounded either way: a route can be dangerous without becoming
      * uninsurable, and safe without becoming free. */
-    for (i = 0; i < 500; i++) faction_lane_experience(&f, 0, 1, 1);
-    CHECK(faction_lane_premium(&f, 0, 1) <= INSURANCE_PREMIUM_MAX,
+    for (i = 0; i < 500; i++) faction_route_experience(&f, 0, 1);
+    CHECK(faction_route_premium(&f, 0) <= INSURANCE_PREMIUM_MAX,
           "the premium is capped");
-    for (i = 0; i < 500; i++) faction_lane_experience(&f, 0, 1, 0);
-    CHECK(faction_lane_premium(&f, 0, 1) >= INSURANCE_PREMIUM_MIN,
+    for (i = 0; i < 500; i++) faction_route_experience(&f, 0, 0);
+    CHECK(faction_route_premium(&f, 0) >= INSURANCE_PREMIUM_MIN,
           "and floored");
 }
 
@@ -229,7 +251,7 @@ int main(void)
     test_raid_takes_cargo();
     test_safe_voyage_keeps_cargo();
     test_insurance();
-    test_lane_premium_moves();
+    test_route_premium_moves();
     test_replays();
 
     if (failures == 0) { printf("\nPASSED\n"); return 0; }

@@ -119,6 +119,27 @@ static void route_turnaround(Ship *s, Island islands[], int island_count,
     }
 }
 
+int shipment_is_raided(uint32_t world_seed, int route_id,
+                       uint64_t booked_tick, uint32_t seller,
+                       int chance_per_mille)
+{
+    uint32_t h = 2166136261u;
+    uint32_t parts[5];
+    int      i;
+
+    parts[0] = world_seed ^ 0x5EA1D0u;   /* a different space from voyages */
+    parts[1] = (uint32_t)route_id;
+    parts[2] = (uint32_t)(booked_tick & 0xFFFFFFFFu);
+    parts[3] = (uint32_t)(booked_tick >> 32);
+    parts[4] = seller;
+
+    for (i = 0; i < 5; i++) {
+        h ^= parts[i];
+        h *= 16777619u;
+    }
+    return (int)(h % 1000u) < chance_per_mille;
+}
+
 int voyage_is_raided(uint32_t world_seed, int ship_id,
                      uint64_t departure_tick, int from, int to)
 {
