@@ -111,6 +111,7 @@ typedef struct {
     uint64_t arrive_tick;
     uint64_t return_tick;    /* when the merchant and hull are free    */
     int32_t  delivered;      /* the cargo has landed; still sailing home */
+    int32_t  route_id;       /* which of the pair's three it sails     */
 } Booking;
 
 typedef struct {

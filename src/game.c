@@ -319,6 +319,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
      * fixed SELL_PRICE/BUY_PRICE until the player trades. */
     faction_init(&gs->faction);
     orderbook_init(&gs->book);
+    knowledge_init(&gs->knowledge);
 
     /* A fresh world is a fresh history: discard any previous command
      * log and reset the world clock. The starting state above is a
@@ -1214,6 +1215,7 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &bk->arrive_tick, sizeof(bk->arrive_tick));
         fnv_bytes(&h, &bk->return_tick, sizeof(bk->return_tick));
         fnv_bytes(&h, &bk->delivered, sizeof(bk->delivered));
+        fnv_bytes(&h, &bk->route_id, sizeof(bk->route_id));
     }
 
     for (s = 0; s < gs->ship_count; s++) {
@@ -1239,6 +1241,12 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
     }
 
+    /* What each player knows of the sea (MARITIME Phase 3b). Hashed
+     * because route choice depends on it: two clients disagreeing
+     * about a seller's charts would disagree about when the cargo
+     * lands, which is a desync that looks like a gameplay bug. */
+    fnv_bytes(&h, &gs->knowledge, sizeof(gs->knowledge));
+
     /* The market is world state too (Phase 3). */
     fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
@@ -1253,6 +1261,8 @@ uint64_t sim_hash(const GameState *gs)
      * would leave them in the book forever on the next refresh. */
     fnv_bytes(&h, gs->faction.quote_order, sizeof(gs->faction.quote_order));
     fnv_bytes(&h, &gs->faction.quote_timer, sizeof(gs->faction.quote_timer));
+    fnv_bytes(&h, gs->faction.chart_order, sizeof(gs->faction.chart_order));
+    fnv_bytes(&h, &gs->faction.chart_cursor, sizeof(gs->faction.chart_cursor));
 
     fnv_bytes(&h, gs->faction.hist, sizeof(gs->faction.hist));
     fnv_bytes(&h, &gs->faction.hist_head, sizeof(gs->faction.hist_head));
@@ -2351,29 +2361,51 @@ int game_cancel_order(GameState *gs, uint32_t order_id)
  * A player's goods and gold are in the island's stockpile. The
  * faction's are in the company's single inventory, behind whichever of
  * its harbours the order was posted at — see faction.h on why one stock
- * across several ports is safe: posting reserves.
+ * across several ports is safe: posting reserves. And a ROUTE CHART is
+ * in neither: it belongs to the player, not to a harbour, because
+ * losing a colony does not make you forget the sea (knowledge.h).
  *
  * Everything that moves value in the book goes through these two, so
  * the reserve, the refund and the settlement cannot end up disagreeing
- * about where a counterparty keeps its money. */
+ * about where a counterparty keeps its money — which is exactly the
+ * kind of disagreement that mints or destroys goods. */
 static int trade_balance(const GameState *gs, uint32_t owner, int island,
-                         ResourceType res)
+                         TradeId what)
 {
+    if (what.kind == TRADE_ROUTE_CHART)
+        return knowledge_charts(&gs->knowledge, owner, (int)what.id);
+
     if (owner == PLAYER_FACTION)
-        return (res == RES_GOLD) ? gs->faction.gold
-                                 : gs->faction.inventory[res];
-    return gs->islands[island].stockpile.amount[res];
+        return (what.id == (uint16_t)RES_GOLD)
+             ? gs->faction.gold : gs->faction.inventory[what.id];
+    return gs->islands[island].stockpile.amount[what.id];
 }
 
 static void trade_credit(GameState *gs, uint32_t owner, int island,
-                         ResourceType res, int qty)
+                         TradeId what, int qty)
 {
-    if (owner == PLAYER_FACTION) {
-        if (res == RES_GOLD) gs->faction.gold += qty;
-        else                 gs->faction.inventory[res] += qty;
+    if (what.kind == TRADE_ROUTE_CHART) {
+        knowledge_add_charts(&gs->knowledge, owner, (int)what.id, qty);
         return;
     }
-    stockpile_add(&gs->islands[island].stockpile, res, qty);
+
+    if (owner == PLAYER_FACTION) {
+        if (what.id == (uint16_t)RES_GOLD) gs->faction.gold += qty;
+        else                               gs->faction.inventory[what.id] += qty;
+        return;
+    }
+    stockpile_add(&gs->islands[island].stockpile, (ResourceType)what.id, qty);
+}
+
+/* Gold is the one thing every trade is denominated in, and it is never
+ * a chart, so it gets its own spelling rather than making every caller
+ * build a TradeId for it. */
+static TradeId trade_gold(void)
+{
+    TradeId t;
+    t.kind = TRADE_RESOURCE;
+    t.id   = (uint16_t)RES_GOLD;
+    return t;
 }
 
 static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
@@ -2384,17 +2416,30 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
     uint16_t  id   = TRADE_ID_OF(packed);
     int       side = qty >= 0 ? ORDER_BUY : ORDER_SELL;
     int       slot, i;
+    TradeId   what;
+
+    what.kind = (uint16_t)kind;
+    what.id   = id;
 
     if (qty == 0) return REJ_UNAVAILABLE;
     if (qty < 0) qty = -qty;
     if (limit <= 0) return REJ_UNAVAILABLE;
 
-    /* Only resources are tradeable today. Route charts get their id
-     * space in Phase 3; the kind is here so the matcher never has to
-     * learn about them. */
-    if (kind != TRADE_RESOURCE) return REJ_UNAVAILABLE;
-    if (id >= (uint16_t)RES_COUNT || id == (uint16_t)RES_GOLD)
+    /* Both kinds are tradeable now (Phase 3b). The matcher never had
+     * to learn what either means — it compares (kind, id) — which is
+     * exactly what the pair was for. */
+    if (kind == TRADE_RESOURCE) {
+        if (id >= (uint16_t)RES_COUNT || id == (uint16_t)RES_GOLD)
+            return REJ_UNAVAILABLE;
+    } else if (kind == TRADE_ROUTE_CHART) {
+        /* A chart names a route by its sea id. You cannot sell a map
+         * of a passage that does not exist, and a chart of the public
+         * lane would be a map of something everybody already has. */
+        if (id >= (uint16_t)gs->sea.route_count) return REJ_UNAVAILABLE;
+        if (!gs->sea.route[id].is_private) return REJ_UNAVAILABLE;
+    } else {
         return REJ_UNAVAILABLE;
+    }
 
     /* The per-player cap does not apply to the market maker: it is what
      * stops one trader crowding the book, and the faction's quoting is
@@ -2417,14 +2462,14 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
     }
 
     if (side == ORDER_SELL) {
-        if (trade_balance(gs, player, island, (ResourceType)id) < qty)
+        if (trade_balance(gs, player, island, what) < qty)
             return REJ_NO_STOCK;
-        trade_credit(gs, player, island, (ResourceType)id, -qty);
+        trade_credit(gs, player, island, what, -qty);
     } else {
         int cost = qty * limit;
-        if (trade_balance(gs, player, island, RES_GOLD) < cost)
+        if (trade_balance(gs, player, island, trade_gold()) < cost)
             return REJ_CANT_AFFORD;
-        trade_credit(gs, player, island, RES_GOLD, -cost);
+        trade_credit(gs, player, island, trade_gold(), -cost);
     }
 
     memset(&b->order[slot], 0, sizeof(b->order[slot]));
@@ -2432,8 +2477,7 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
     b->order[slot].id            = b->next_order_id++;
     b->order[slot].owner         = player;
     b->order[slot].island        = island;
-    b->order[slot].what.kind     = (uint16_t)kind;
-    b->order[slot].what.id       = id;
+    b->order[slot].what          = what;
     b->order[slot].side          = side;
     b->order[slot].qty           = qty;
     b->order[slot].limit         = limit;
@@ -2448,10 +2492,9 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
 static void order_refund(GameState *gs, Order *o)
 {
     if (o->side == ORDER_SELL)
-        trade_credit(gs, o->owner, o->island, (ResourceType)o->what.id,
-                     o->qty);
+        trade_credit(gs, o->owner, o->island, o->what, o->qty);
     else
-        trade_credit(gs, o->owner, o->island, RES_GOLD, o->reserved_gold);
+        trade_credit(gs, o->owner, o->island, trade_gold(), o->reserved_gold);
     o->active = 0;
 }
 
@@ -2464,6 +2507,55 @@ static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
     if (o->owner != player) return REJ_NOT_OWNER;
     order_refund(gs, o);
     return REJ_OK;
+}
+
+/* ---- choosing a passage (MARITIME_PLAN Phase 3b) ----------
+ * A booking sails the fastest route its SELLER can actually use: one
+ * they know exists and hold a chart for. The seller chooses because
+ * the seller dispatches — the merchant, the hull and the cargo all
+ * leave from their harbour, and a buyer cannot lend a map to a crew
+ * they never meet.
+ *
+ * The public lane is always available and needs no chart, so this can
+ * never fail to find a route. Ties go to the lower route id, which is
+ * generation order and therefore the same on every client.
+ *
+ * The chart is RESERVED here rather than spent on arrival, the same
+ * discipline as goods and gold: a map that were only spent at the end
+ * of the voyage could send out ten cargoes on one chart.
+ */
+static const Route *pick_route(GameState *gs, int from, int to,
+                               uint32_t seller, int *out_id)
+{
+    const Route *best = NULL;
+    int          best_id = -1;
+    int          v;
+
+    for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+        const Route *r = sea_route_variant(&gs->sea, from, to, v);
+        int          id;
+
+        if (!r) continue;
+        id = sea_route_id(&gs->sea, r);
+        if (id < 0) continue;
+
+        if (r->is_private) {
+            if (!knowledge_knows(&gs->knowledge, seller, id, 1)) continue;
+            if (knowledge_charts(&gs->knowledge, seller, id) <= 0) continue;
+        }
+
+        if (!best || r->total_ticks < best->total_ticks ||
+            (r->total_ticks == best->total_ticks && id < best_id)) {
+            best    = r;
+            best_id = id;
+        }
+    }
+
+    if (best && best->is_private)
+        knowledge_add_charts(&gs->knowledge, seller, best_id, -1);
+
+    *out_id = best_id;
+    return best;
 }
 
 /* ---- the faction as market maker (MARITIME_PLAN Phase 2) ----
@@ -2528,6 +2620,57 @@ static void faction_quote_refresh(GameState *gs)
                 if (o) order_refund(gs, o);       /* also deactivates it */
                 f->quote_order[p][i][s] = 0u;
             }
+
+    /* Chart offers, withdrawn and re-posted with the rest. They rotate
+     * through the private routes rather than offering all of them at
+     * once: the market has a few maps on the counter this week, not an
+     * atlas. The cursor advances every refresh, so every passage comes
+     * up eventually and no player is permanently locked out of one. */
+    for (i = 0; i < FACTION_CHART_ROUTES; i++) {
+        Order *o;
+        if (!f->chart_order[i]) continue;
+        o = orderbook_find(&gs->book, f->chart_order[i]);
+        if (o) order_refund(gs, o);
+        f->chart_order[i] = 0u;
+    }
+    if (gs->sea.route_count > 0) {
+        int offered = 0;
+        int scanned;
+
+        for (scanned = 0; scanned < gs->sea.route_count &&
+                          offered < FACTION_CHART_ROUTES; scanned++) {
+            int          rid = (int)((f->chart_cursor + (uint32_t)scanned) %
+                                     (uint32_t)gs->sea.route_count);
+            const Route *rt  = &gs->sea.route[rid];
+            const Route *lane;
+            int          price;
+            uint32_t     id_before;
+
+            if (!rt->is_private) continue;
+
+            /* Worth what it saves. A passage that shaves ten ticks off
+             * the lane is a curiosity; one that halves it is an asset,
+             * and the price should say which is which. */
+            lane = sea_route_variant(&gs->sea, rt->from_island,
+                                     rt->to_island, SEA_ROUTE_PUBLIC);
+            price = FACTION_CHART_MIN_PRICE;
+            if (lane && lane->total_ticks > rt->total_ticks)
+                price += (int)(lane->total_ticks - rt->total_ticks) *
+                         FACTION_CHART_GOLD_PER_TICK_SAVED;
+
+            id_before = gs->book.next_order_id;
+            if (sim_place_order(gs,
+                                MAX_ISLANDS - FACTION_PORT_COUNT +
+                                    (offered % FACTION_PORT_COUNT),
+                                TRADE_PACK(TRADE_ROUTE_CHART, (uint16_t)rid),
+                                -FACTION_CHART_LOT, price,
+                                PLAYER_FACTION) == REJ_OK)
+                f->chart_order[offered] = id_before;
+            offered++;
+        }
+        f->chart_cursor = (f->chart_cursor + (uint32_t)FACTION_CHART_ROUTES) %
+                          (uint32_t)gs->sea.route_count;
+    }
 
     for (p = 0; p < FACTION_PORT_COUNT; p++) {
         int island = MAX_ISLANDS - FACTION_PORT_COUNT + p;
@@ -2600,7 +2743,7 @@ static int better_order(const Order *cand, const Order *best, int side)
  * (B, A2) is therefore exhaustive, and the common path stays a single
  * linear pass.
  */
-static int book_best_cross(const GameState *gs, OrderBook *b, int res,
+static int book_best_cross(const GameState *gs, OrderBook *b, TradeId what,
                            Order **out_bid, Order **out_ask)
 {
     Order *bid = NULL, *ask = NULL, *bid2 = NULL, *ask2 = NULL;
@@ -2617,8 +2760,8 @@ static int book_best_cross(const GameState *gs, OrderBook *b, int res,
 
     for (i = 0; i < b->order_count; i++) {
         Order *o = &b->order[i];
-        if (!o->active || o->what.kind != TRADE_RESOURCE) continue;
-        if (o->what.id != (uint16_t)res) continue;
+        if (!o->active) continue;
+        if (o->what.kind != what.kind || o->what.id != what.id) continue;
         if (o->side == ORDER_BUY) {
             if (better_order(o, bid, ORDER_BUY)) bid = o;
         } else {
@@ -2640,8 +2783,8 @@ static int book_best_cross(const GameState *gs, OrderBook *b, int res,
      * belonging to anybody else. */
     for (i = 0; i < b->order_count; i++) {
         Order *o = &b->order[i];
-        if (!o->active || o->what.kind != TRADE_RESOURCE) continue;
-        if (o->what.id != (uint16_t)res) continue;
+        if (!o->active) continue;
+        if (o->what.kind != what.kind || o->what.id != what.id) continue;
         if (o->owner == bid->owner) continue;
         if (o->side == ORDER_BUY) {
             if (better_order(o, bid2, ORDER_BUY)) bid2 = o;
@@ -2688,14 +2831,19 @@ static void book_settle_arrivals(GameState *gs)
 
         /* Outbound: the cargo lands and the seller is paid. */
         if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick) {
-            trade_credit(gs, bk->buyer, bk->to_island,
-                         (ResourceType)bk->what.id, bk->qty);
-            trade_credit(gs, bk->seller, bk->from_island, RES_GOLD,
+            trade_credit(gs, bk->buyer, bk->to_island, bk->what, bk->qty);
+            trade_credit(gs, bk->seller, bk->from_island, trade_gold(),
                          bk->qty * bk->price);
             bk->delivered = 1;
 
-            sim_log("Order filled: %d %s delivered to %s at %d each",
-                    bk->qty, RESOURCE_NAMES[bk->what.id], to->name, bk->price);
+            if (bk->what.kind == TRADE_ROUTE_CHART)
+                sim_log("Chart filled: %d chart(s) of %s to %s at %d each",
+                        bk->qty, gs->sea.route[bk->what.id].name, to->name,
+                        bk->price);
+            else
+                sim_log("Order filled: %d %s delivered to %s at %d each",
+                        bk->qty, RESOURCE_NAMES[bk->what.id], to->name,
+                        bk->price);
         }
 
         /* Homeward: the merchant and the hull are free again. Only now
@@ -2712,15 +2860,26 @@ static void book_settle_arrivals(GameState *gs)
 static void book_match(GameState *gs)
 {
     OrderBook *b = &gs->book;
-    int        res, guard;
+    int        kind, id, guard;
 
     book_settle_arrivals(gs);
     faction_quote_refresh(gs);
 
-    /* Only resources exist in the book today; when Phase 3 adds route
-     * charts this loop gains an outer pass over kinds. */
-    for (res = 0; res < RES_COUNT; res++) {
-        if (res == RES_GOLD) continue;
+    /* Both kinds, each over its own id space: resources over
+     * RES_COUNT, charts over the routes that exist. The matcher itself
+     * never learned the difference — it compares (kind, id) — so this
+     * loop is the only place that knows there is more than one. */
+    for (kind = 0; kind < TRADE_KIND_COUNT; kind++) {
+      int id_count = (kind == TRADE_RESOURCE) ? RES_COUNT
+                                              : gs->sea.route_count;
+      for (id = 0; id < id_count; id++) {
+        TradeId what;
+
+        if (kind == TRADE_RESOURCE && id == RES_GOLD) continue;
+        if (kind == TRADE_ROUTE_CHART && !gs->sea.route[id].is_private)
+            continue;
+        what.kind = (uint16_t)kind;
+        what.id   = (uint16_t)id;
 
         /* Bounded: each pass fills at least one order completely, so a
          * book of N orders cannot loop more than N times. The guard is
@@ -2729,7 +2888,7 @@ static void book_match(GameState *gs)
             Order *bid = NULL, *ask = NULL;
             int    i, qty, slot;
 
-            if (!book_best_cross(gs, b, res, &bid, &ask)) break;
+            if (!book_best_cross(gs, b, what, &bid, &ask)) break;
 
             qty = bid->qty < ask->qty ? bid->qty : ask->qty;
 
@@ -2754,11 +2913,19 @@ static void book_match(GameState *gs)
             b->booking[slot].buyer       = bid->owner;
             b->booking[slot].seller      = ask->owner;
             {
-                uint32_t crossing = sea_crossing_ticks(&gs->sea, ask->island,
-                                                       bid->island);
+                int          route_id = -1;
+                const Route *r = pick_route(gs, ask->island, bid->island,
+                                            ask->owner, &route_id);
+                uint32_t crossing = r ? r->total_ticks
+                                      : sea_crossing_ticks(&gs->sea,
+                                                           ask->island,
+                                                           bid->island);
+                b->booking[slot].route_id    = route_id;
                 b->booking[slot].arrive_tick = gs->sim_tick_no + crossing;
-                /* Home again by the same water. The round trip is what
-                 * the merchant and the hull are committed for. */
+                /* Home again by the same water — one chart, one round
+                 * trip, which is what "consumed when travel is done"
+                 * means. The round trip is also what the merchant and
+                 * the hull are committed for. */
                 b->booking[slot].return_tick = gs->sim_tick_no + crossing * 2u;
             }
 
@@ -2781,7 +2948,7 @@ static void book_match(GameState *gs)
              * gold minted by part-filling an order and withdrawing. */
             bid->reserved_gold -= qty * bid->limit;
             if (bid->limit > b->booking[slot].price)
-                trade_credit(gs, bid->owner, bid->island, RES_GOLD,
+                trade_credit(gs, bid->owner, bid->island, trade_gold(),
                              qty * (bid->limit - b->booking[slot].price));
 
             bid->qty -= qty;
@@ -2789,6 +2956,7 @@ static void book_match(GameState *gs)
             if (bid->qty == 0) bid->active = 0;
             if (ask->qty == 0) ask->active = 0;
         }
+      }
     }
 }
 
