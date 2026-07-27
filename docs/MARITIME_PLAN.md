@@ -50,6 +50,9 @@ which routes can be charted at all.
 **Predation.** Intercepting a merchantman, and hunting the pirates that
 prey on everyone. The only layer with no existing mechanic behind it.
 
+Trade, survey and predation all dispatch **a person, a hull and a
+payload**, which is worth building once rather than three times.
+
 ## Geometry
 
 Islands gain a world position. Waypoints are named positions in the sea
@@ -131,21 +134,48 @@ public: a rival cannot see which passages you have opened.
 
 **Passage consumes a chart.** Route *access* is therefore two things
 with different lifetimes: **knowledge**, which is permanent and
-per-player, and a **chart**, which is a good, is spent on the crossing,
-and is already hashed, replayed, private once stockpiles are private,
-and tradeable on the book being built above.
+per-player, and a **chart**, which is spent on the crossing. Both are
+hashed and replayed, and both become private once stockpiles are — but
+they are not the same kind of object, and the next section is about why
+that matters.
 
 Knowledge arrives two ways. **Research** lets you manufacture charts for
 a route you have learned. **A looted chart** both reveals a route and
 carries one passage on it — which makes piracy a way to acquire
 geography, not just cargo.
 
-`RES_CHARTS` already exists — Paper + Glass → Chart House, added in
-SUPPLY_CHAIN Phase 8, wanted today only by Scholars. Making it the
-vehicle for passage gives it a second and better purpose, makes the
-Chart House a permanent industry with recurring demand rather than a
-one-off unlock, and means the market trades the maps that let people
-raid the market's own convoys.
+### Two charts, and why that matters more than it reads
+
+A survey **consumes a blank chart and produces a chart that unlocks one
+private route.** So there are two goods, and they are different kinds
+of thing:
+
+- A **blank chart** is fungible. One is exactly as good as another.
+  `RES_CHARTS` already exists — Paper + Glass → Chart House, added in
+  SUPPLY_CHAIN Phase 8 — and fits this exactly, with no enum change and
+  no `SAVE_VERSION` bump. Scholars go on wanting it, which is the right
+  reading anyway: a scholar's household consumes charts as a good.
+  Whether it should now *display* as "Blank Charts" is a naming call.
+- A **route chart names a passage.** It is not fungible, and that is
+  the wrinkle: `Stockpile.amount[RES_COUNT]` is a flat count per
+  resource, with nowhere to record *which* route a chart is for.
+
+The cheap answer is the shape `Island` already uses for `escrow`: a
+parallel per-route array, `route_charts[MAX_ROUTES]`, held per island
+and hashed like everything else. No item-instance system, no identity
+machinery — the same trick, indexed by route instead of by resource.
+
+**This corrects something claimed earlier in this document.** Route
+charts cannot simply trade on the order book: an order is keyed by
+`ResourceType`, and "a chart" is not enough information to fill. Either
+the book learns to carry a *kind and an id* — which is a
+generalisation worth deciding before the matcher is written rather than
+retrofitting after — or route charts move only by harbour escrow and by
+looting. Blank charts trade normally either way.
+
+This also makes the Chart House a permanent industry with recurring
+demand rather than a one-off unlock, and keeps piracy a way of
+acquiring geography.
 
 **Scholars research which routes can be charted.** This is the one
 genuinely new per-player persistent state, and it is *private* — which
@@ -160,8 +190,8 @@ taking the map off a ship that was using it.
 
 **Surveying is the other way to learn a route**, and it mirrors trade
 exactly. A survey mission dispatches **one scholar, one research boat
-and one chart**, the way a booking dispatches one merchant, one boat
-and the goods. That symmetry is worth building deliberately rather than
+and one blank chart**, the way a booking dispatches one merchant, one
+boat and the goods. That symmetry is worth building deliberately rather than
 twice: a mission is *a person, a hull and a payload*, and trade and
 survey are two instances of it. It also gives the Scholar's House the
 same kind of mechanical output the Merchant House has — people who go
@@ -196,6 +226,21 @@ busy and must go and patrol it; interception becomes a search with a
 cost in position, rather than sorting a list of everyone's cargo by
 value. It is also why private routes are worth their risk: less
 traffic, and no published window.
+
+## Hulls
+
+**Research boats are built at the Shipyard**, which means the Shipyard
+stops producing one kind of vessel. `sim_build_ship` makes a single
+ship today and `CMD_BUILD_SHIP` documents `b` as "shipyard index
+(unused today)" — so the hull type has a free payload slot waiting for
+it, and `Ship` gains a type alongside `owner`.
+
+That is a small change with a long tail: cargo capacity, speed, whether
+a hull may carry a merchant or a scholar, and later whether it can
+fight, all become per-type rather than the constants
+`SHIP_CARGO_CAPACITY` and `SHIP_VOYAGE_TICKS` are today. Worth
+introducing the type early even while there are only two, because
+retrofitting it after combat exists means touching combat too.
 
 ## Phases
 
@@ -241,12 +286,13 @@ upgrades it rather than gating it.
 - **How long does a survey take, and can it fail?** A mission that can
   return empty makes exploration a gamble; one that cannot makes it a
   queue.
-- **Where do research boats come from** — a Shipyard variant, or a
-  refit of an ordinary hull? They are the first non-merchant vessel.
-- **What does a survey consume the chart *for*?** A blank chart as raw
-  material and a finished chart as the result would give the Chart
-  House two products and make the loop legible; the alternative is that
-  a survey spends a known route's chart to reach the water beyond it.
+- **Does the order book carry a kind and an id, or only a
+  `ResourceType`?** Route charts are the first tradeable thing that is
+  not a fungible good, and the answer decides whether they can be
+  bought at all. Worth settling before the matcher exists.
+- **How many route charts may an island hold**, and do they expire? An
+  unbounded stock of passages makes a route permanently open once
+  surveyed, which may or may not be wanted.
 
 ## Risks
 
