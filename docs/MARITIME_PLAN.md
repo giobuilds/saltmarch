@@ -146,9 +146,24 @@ geography, not just cargo.
 
 ### Two charts, and why that matters more than it reads
 
-A survey **consumes a blank chart and produces a chart that unlocks one
-private route.** So there are two goods, and they are different kinds
-of thing:
+The Chart House produces **blank** charts; those become **route**
+charts, which are what a private passage costs. So the loop is:
+
+```
+Scholars research  ─┐
+                    ├─→ knowledge of route R  (permanent, per-player, private)
+survey mission     ─┘
+Chart House:  Paper + Glass       → blank chart      (fungible)
+              blank chart + know R → route chart (R)  (names a passage)
+sailing R:    spends one route chart (R)
+looting:      takes a route chart, and with it the passage
+```
+
+Knowledge unlocks the *recipe*; the Chart House is the standing supply;
+each crossing spends one. That is what keeps a discovered route an
+ongoing cost rather than a switch that stays flipped.
+
+So there are two goods, and they are different kinds of thing:
 
 - A **blank chart** is fungible. One is exactly as good as another.
   `RES_CHARTS` already exists — Paper + Glass → Chart House, added in
@@ -191,7 +206,22 @@ taking the map off a ship that was using it.
 **Surveying is the other way to learn a route**, and it mirrors trade
 exactly. A survey mission dispatches **one scholar, one research boat
 and one blank chart**, the way a booking dispatches one merchant, one
-boat and the goods. That symmetry is worth building deliberately rather than
+boat and the goods.
+
+**It takes a set time and it may fail.** The duration is another
+integer tick count, like a route leg. The outcome must be a
+deterministic function of the mission's identity — and that pattern
+already exists and is documented, in `voyage_is_raided`:
+
+> *"FNV-1a over the voyage's identity. Not cryptographic and not trying
+> to be: it needs to be well-mixed, integer-only and identical on every
+> platform, which rules out anything touching floating point or the C
+> library's rand."*
+
+A survey's success should be hashed the same way, over
+`(world_seed, scholar, hull, departure tick, target route)`. This is
+precisely the place somebody reaches for `rand()` and makes two
+machines disagree about whether a passage was found. That symmetry is worth building deliberately rather than
 twice: a mission is *a person, a hull and a payload*, and trade and
 survey are two instances of it. It also gives the Scholar's House the
 same kind of mechanical output the Merchant House has — people who go
@@ -264,6 +294,8 @@ upgrades it rather than gating it.
 
 ## Settled
 
+- **A survey takes a set time and may fail**, with the outcome hashed
+  from the mission's identity the way voyage raids already are.
 - **Merchants and boats return** to the island they set out from once a
   trade completes. Capital, not fuel.
 - **Charts are lootable**, and NPC pirates carry them rarely — so
@@ -283,9 +315,10 @@ upgrades it rather than gating it.
 - **How many routes between a pair?** One public plus a small number of
   private is probably enough; unbounded makes the book hard to read,
   and it interacts with how a route is chosen when several exist.
-- **How long does a survey take, and can it fail?** A mission that can
-  return empty makes exploration a gamble; one that cannot makes it a
-  queue.
+- **What does a failed survey cost?** The blank chart is presumably
+  spent either way — that is the gamble — but whether the scholar and
+  the hull come home, or can be lost with the mission, is a different
+  question and a much sharper one.
 - **Does the order book carry a kind and an id, or only a
   `ResourceType`?** Route charts are the first tradeable thing that is
   not a fungible good, and the answer decides whether they can be
