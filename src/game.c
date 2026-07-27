@@ -526,8 +526,14 @@ typedef struct {
  * incomplete — the book matches at every tick boundary, so a v15 log
  * replayed under these rules would still produce a v15 world only by
  * accident. It is also the first hashed state that is not attached to
- * an island or a ship. */
-#define SAVE_VERSION 16u
+ * an island or a ship.
+ *
+ * v17 (MARITIME_PLAN Phase 2, merchants): a booking now holds a
+ * merchant and a hull from the selling island for the round trip, and
+ * the matcher skips an ask whose island has neither free. A v16 log
+ * replays a world where every crossing was possible, so its fills are
+ * not this world's fills. */
+#define SAVE_VERSION 17u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1105,6 +1111,11 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &isl->owner, sizeof(isl->owner));
         fnv_bytes(&h, &isl->docking_allowed, sizeof(isl->docking_allowed));
         fnv_bytes(&h, isl->escrow, sizeof(isl->escrow));
+        /* Trade capacity committed (MARITIME Phase 2). Only the "out"
+         * counts: the capacity itself is derived from the buildings,
+         * which are hashed just below. */
+        fnv_bytes(&h, &isl->merchants_out, sizeof(isl->merchants_out));
+        fnv_bytes(&h, &isl->hulls_out, sizeof(isl->hulls_out));
 
         for (b = 0; b < isl->building_count; b++) {
             const Building *bd = &isl->buildings[b];
@@ -1173,6 +1184,8 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &bk->buyer, sizeof(bk->buyer));
         fnv_bytes(&h, &bk->seller, sizeof(bk->seller));
         fnv_bytes(&h, &bk->arrive_tick, sizeof(bk->arrive_tick));
+        fnv_bytes(&h, &bk->return_tick, sizeof(bk->return_tick));
+        fnv_bytes(&h, &bk->delivered, sizeof(bk->delivered));
     }
 
     for (s = 0; s < gs->ship_count; s++) {
@@ -2425,11 +2438,20 @@ static int better_order(const Order *cand, const Order *best, int side)
  * (B, A2) is therefore exhaustive, and the common path stays a single
  * linear pass.
  */
-static int book_best_cross(OrderBook *b, int res, Order **out_bid,
-                           Order **out_ask)
+static int book_best_cross(const GameState *gs, OrderBook *b, int res,
+                           Order **out_bid, Order **out_ask)
 {
     Order *bid = NULL, *ask = NULL, *bid2 = NULL, *ask2 = NULL;
     int    i;
+
+    /* An ask whose island has no merchant or no hull free cannot carry
+     * a cargo this tick, so it is not in the book this tick. Skipping
+     * it rather than stalling on it is the same rule the self-crossing
+     * case above needs, and for the same reason: one seller at the top
+     * of the book, out of hulls, must not stop everyone else trading
+     * the good. It becomes eligible again when one of its merchants
+     * gets home. */
+#define ASK_ELIGIBLE(o) island_can_dispatch(&gs->islands[(o)->island])
 
     for (i = 0; i < b->order_count; i++) {
         Order *o = &b->order[i];
@@ -2438,6 +2460,7 @@ static int book_best_cross(OrderBook *b, int res, Order **out_bid,
         if (o->side == ORDER_BUY) {
             if (better_order(o, bid, ORDER_BUY)) bid = o;
         } else {
+            if (!ASK_ELIGIBLE(o)) continue;
             if (better_order(o, ask, ORDER_SELL)) ask = o;
         }
     }
@@ -2461,9 +2484,11 @@ static int book_best_cross(OrderBook *b, int res, Order **out_bid,
         if (o->side == ORDER_BUY) {
             if (better_order(o, bid2, ORDER_BUY)) bid2 = o;
         } else {
+            if (!ASK_ELIGIBLE(o)) continue;
             if (better_order(o, ask2, ORDER_SELL)) ask2 = o;
         }
     }
+#undef ASK_ELIGIBLE
 
     {
         int cross_a = bid2 && bid2->limit >= ask->limit;   /* (B2, A) */
@@ -2495,17 +2520,28 @@ static void book_settle_arrivals(GameState *gs)
         Island  *to, *from;
 
         if (!bk->active) continue;
-        if (gs->sim_tick_no < bk->arrive_tick) continue;
 
         to   = &gs->islands[bk->to_island];
         from = &gs->islands[bk->from_island];
 
-        stockpile_add(&to->stockpile, (ResourceType)bk->what.id, bk->qty);
-        stockpile_add(&from->stockpile, RES_GOLD, bk->qty * bk->price);
+        /* Outbound: the cargo lands and the seller is paid. */
+        if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick) {
+            stockpile_add(&to->stockpile, (ResourceType)bk->what.id, bk->qty);
+            stockpile_add(&from->stockpile, RES_GOLD, bk->qty * bk->price);
+            bk->delivered = 1;
 
-        sim_log("Order filled: %d %s delivered to %s at %d each",
-                bk->qty, RESOURCE_NAMES[bk->what.id], to->name, bk->price);
-        bk->active = 0;
+            sim_log("Order filled: %d %s delivered to %s at %d each",
+                    bk->qty, RESOURCE_NAMES[bk->what.id], to->name, bk->price);
+        }
+
+        /* Homeward: the merchant and the hull are free again. Only now
+         * is the booking done — the trade completed at arrival, but the
+         * capital it tied up is still at sea until here. */
+        if (gs->sim_tick_no >= bk->return_tick) {
+            if (from->merchants_out > 0) from->merchants_out--;
+            if (from->hulls_out     > 0) from->hulls_out--;
+            bk->active = 0;
+        }
     }
 }
 
@@ -2528,7 +2564,7 @@ static void book_match(GameState *gs)
             Order *bid = NULL, *ask = NULL;
             int    i, qty, slot;
 
-            if (!book_best_cross(b, res, &bid, &ask)) break;
+            if (!book_best_cross(gs, b, res, &bid, &ask)) break;
 
             qty = bid->qty < ask->qty ? bid->qty : ask->qty;
 
@@ -2552,8 +2588,21 @@ static void book_match(GameState *gs)
             b->booking[slot].to_island   = bid->island;
             b->booking[slot].buyer       = bid->owner;
             b->booking[slot].seller      = ask->owner;
-            b->booking[slot].arrive_tick = gs->sim_tick_no +
-                sea_crossing_ticks(&gs->sea, ask->island, bid->island);
+            {
+                uint32_t crossing = sea_crossing_ticks(&gs->sea, ask->island,
+                                                       bid->island);
+                b->booking[slot].arrive_tick = gs->sim_tick_no + crossing;
+                /* Home again by the same water. The round trip is what
+                 * the merchant and the hull are committed for. */
+                b->booking[slot].return_tick = gs->sim_tick_no + crossing * 2u;
+            }
+
+            /* Take the merchant and the hull. book_best_cross only
+             * offered this ask because both were free, and it re-reads
+             * the counts on every pass, so a second match out of the
+             * same island this tick sees them already committed. */
+            gs->islands[ask->island].merchants_out++;
+            gs->islands[ask->island].hulls_out++;
 
             /* The buyer reserved at their limit; a fill at the resting
              * price can only be cheaper, and the difference goes back.

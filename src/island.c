@@ -152,6 +152,54 @@ void island_recompute_storage_capacity(Island *isl)
         BASE_STORAGE_CAP + warehouses * WAREHOUSE_STORAGE_BONUS);
 }
 
+/* ---- trade capacity (MARITIME_PLAN Phase 2) --------------
+ * Derived from the buildings standing, never stored: capacity that
+ * followed a demolished Merchant House only because someone remembered
+ * to decrement it would eventually be wrong, and it would be wrong in
+ * the hashed state, which is the expensive kind of wrong.
+ *
+ * A house with nobody in it supplies no merchant. That is the whole
+ * reason the population line and the trade line touch at all — an
+ * unfed Merchant House loses residents and, with them, the trade it was
+ * carrying capacity for. */
+int island_merchant_capacity(const Island *isl)
+{
+    int i, n = TRADE_BASE_MERCHANTS;
+
+    if (!isl->settled) return 0;
+
+    for (i = 0; i < isl->building_count; i++) {
+        const Building *b = &isl->buildings[i];
+        if (!b->active) continue;
+        if (!isl->pop_data[i].active || isl->pop_data[i].residents <= 0)
+            continue;
+        if (b->type == BUILDING_HOUSE_MERCHANT)
+            n += TRADE_MERCHANTS_PER_HOUSE;
+        else if (b->type == BUILDING_HOUSE_INVESTOR)
+            n += TRADE_MERCHANTS_PER_INVESTOR;
+    }
+    return n;
+}
+
+int island_hull_capacity(const Island *isl)
+{
+    int i, n = TRADE_BASE_HULLS;
+
+    if (!isl->settled) return 0;
+
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == BUILDING_SHIPYARD)
+            n += TRADE_HULLS_PER_SHIPYARD;
+    return n;
+}
+
+int island_can_dispatch(const Island *isl)
+{
+    return isl->merchants_out < island_merchant_capacity(isl) &&
+           isl->hulls_out     < island_hull_capacity(isl);
+}
+
 uint32_t island_escrow_nonce(const Island *isl)
 {
     uint32_t h = 2166136261u;

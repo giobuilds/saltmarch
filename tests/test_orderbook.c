@@ -173,7 +173,148 @@ int main(void)
         CHECK(gs->islands[0].stockpile.amount[RES_GOLD] ==
               seller_gold + 20 * 9,
               "and the seller is paid on delivery");
-        CHECK(!gs->book.booking[0].active, "the booking is closed");
+        CHECK(gs->book.booking[0].active && gs->book.booking[0].delivered,
+              "the booking outlives the delivery — the crew is sailing home");
+
+        run_ticks(gs, (int)crossing + 2);
+        CHECK(!gs->book.booking[0].active, "and closes when they arrive");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a trade costs a merchant and a hull, and gives them back ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        uint32_t   crossing;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        crossing = sea_crossing_ticks(&gs->sea, 0, 1);
+
+        CHECK(island_merchant_capacity(&gs->islands[0]) == TRADE_BASE_MERCHANTS
+              && island_hull_capacity(&gs->islands[0]) == TRADE_BASE_HULLS,
+              "a bare island can run one trade at a time");
+
+        place(gs, 1u, 0, RES_PLANKS, -10, 5);
+        place(gs, 2u, 1, RES_PLANKS,  10, 9);
+        run_ticks(gs, 2);
+        CHECK(gs->islands[0].merchants_out == 1 &&
+              gs->islands[0].hulls_out == 1,
+              "a booking takes one of each from the selling island");
+
+        /* Delivery is not the release: the crew is still at sea. */
+        run_ticks(gs, (int)crossing + 2);
+        CHECK(gs->islands[0].merchants_out == 1,
+              "delivering does not free them");
+
+        run_ticks(gs, (int)crossing + 2);
+        CHECK(gs->islands[0].merchants_out == 0 &&
+              gs->islands[0].hulls_out == 0,
+              "coming home does");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a trade waits for a hull rather than being refused ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        uint32_t   crossing;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        crossing = sea_crossing_ticks(&gs->sea, 0, 1);
+
+        place(gs, 1u, 0, RES_PLANKS, -10, 5);
+        place(gs, 2u, 1, RES_PLANKS,  10, 9);
+        run_ticks(gs, 2);
+
+        /* A second crossing pair, posted while the island's one hull is
+         * already at sea. The orders are good and they cross; only the
+         * capacity is missing. */
+        place(gs, 1u, 0, RES_PLANKS, -10, 5);
+        place(gs, 2u, 1, RES_PLANKS,  10, 9);
+        run_ticks(gs, 2);
+        CHECK(orderbook_booking_live(&gs->book) == 1 &&
+              orderbook_open_live(&gs->book) == 2,
+              "a crossing pair with no hull to carry it rests, not rejected");
+
+        /* The round trip completes; the waiting pair sails on the same
+         * tick the hull is released. */
+        run_ticks(gs, (int)crossing * 2 + 4);
+        CHECK(orderbook_open_live(&gs->book) == 0 &&
+              gs->islands[0].hulls_out == 1,
+              "and sails the moment the hull is free again");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a seller with no hull does not wedge the good ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+
+        /* Island 2 is a third port, owned by player 3. */
+        gs->islands[2].settled = 1;
+        gs->islands[2].owner   = 3u;
+        stockpile_init(&gs->islands[2].stockpile);
+        gs->islands[2].stockpile.amount[RES_PLANKS] = 100;
+
+        /* Player 1 sells cheapest, and uses up their one hull. */
+        place(gs, 1u, 0, RES_PLANKS, -10, 3);
+        place(gs, 2u, 1, RES_PLANKS,  10, 20);
+        run_ticks(gs, 2);
+        CHECK(gs->islands[0].hulls_out == 1, "the cheapest seller ships first");
+
+        /* Player 1 is now out of hulls but still has the best price.
+         * A matcher that stopped at the top of book would strand every
+         * other seller behind an ask that cannot move — the same free
+         * denial of service as the self-crossing case. */
+        place(gs, 1u, 0, RES_PLANKS, -10, 3);
+        place(gs, 3u, 2, RES_PLANKS, -10, 8);
+        place(gs, 2u, 1, RES_PLANKS,  10, 20);
+        run_ticks(gs, 2);
+
+        CHECK(gs->islands[2].hulls_out == 1,
+              "a seller who still has a hull trades past one who does not");
+
+        game_free(gs);
+    }
+
+    printf("\n=== buildings raise the ceiling ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        base_m, base_h;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        base_m = island_merchant_capacity(&gs->islands[0]);
+        base_h = island_hull_capacity(&gs->islands[0]);
+
+        /* Hand-place rather than going through the funnel: this is a
+         * test of the capacity rule, not of placement. */
+        {
+            Island *isl = &gs->islands[0];
+            int     i   = isl->building_count++;
+            isl->buildings[i].active = 1;
+            isl->buildings[i].type   = BUILDING_HOUSE_MERCHANT;
+            isl->pop_data[i].active    = 1;
+            isl->pop_data[i].residents = 0;
+        }
+        CHECK(island_merchant_capacity(&gs->islands[0]) == base_m,
+              "an empty Merchant House supplies no merchant");
+
+        gs->islands[0].pop_data[gs->islands[0].building_count - 1].residents = 4;
+        CHECK(island_merchant_capacity(&gs->islands[0]) ==
+              base_m + TRADE_MERCHANTS_PER_HOUSE,
+              "a lived-in one does");
+
+        {
+            Island *isl = &gs->islands[0];
+            int     i   = isl->building_count++;
+            isl->buildings[i].active = 1;
+            isl->buildings[i].type   = BUILDING_SHIPYARD;
+        }
+        CHECK(island_hull_capacity(&gs->islands[0]) ==
+              base_h + TRADE_HULLS_PER_SHIPYARD,
+              "and a shipyard raises the hulls");
 
         game_free(gs);
     }

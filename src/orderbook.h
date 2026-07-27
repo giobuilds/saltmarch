@@ -90,7 +90,15 @@ typedef struct {
 
 /* A matched trade, in transit. The goods are already out of the
  * seller's hands and the gold already out of the buyer's; this is the
- * crossing. */
+ * crossing.
+ *
+ * A booking outlives its own delivery. It holds a merchant and a hull
+ * from `from_island` for the ROUND TRIP: the cargo lands at
+ * `arrive_tick`, and the two of them are only free again at
+ * `return_tick`, having sailed home. Releasing them on delivery would
+ * make a one-way trip the unit of trade capacity and quietly double
+ * what an island can run — and it would contradict the thing that makes
+ * merchants capital rather than fuel, which is that they come back. */
 typedef struct {
     int32_t  active;
     TradeId  what;
@@ -101,6 +109,8 @@ typedef struct {
     uint32_t buyer;
     uint32_t seller;
     uint64_t arrive_tick;
+    uint64_t return_tick;    /* when the merchant and hull are free    */
+    int32_t  delivered;      /* the cargo has landed; still sailing home */
 } Booking;
 
 typedef struct {

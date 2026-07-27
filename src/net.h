@@ -89,8 +89,12 @@ typedef struct NetSession NetSession;
  *    start of the faction and reject the checkpoint. Worse if it
  *    didn't: the book is hashed and matched every tick, so a peer that
  *    did not run the matcher would disagree with the host about the
- *    world one tick after the first trade crossed. */
-#define NET_PROTO_VERSION     10u
+ *    world one tick after the first trade crossed.
+ * 11: trade capacity (MARITIME_PLAN Phase 2, merchants). Two more
+ *    fields per island and two per booking in the snapshot, and a
+ *    matching rule that now depends on them — so a peer on 10 would
+ *    both misread the checkpoint and fill trades this one refuses. */
+#define NET_PROTO_VERSION     11u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
