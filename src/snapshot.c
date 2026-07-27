@@ -654,6 +654,125 @@ static int get_island(R *r, Island *isl)
 
 /* ---- the public halves ------------------------------------- */
 
+/* ---- redaction (SERVER_AUTHORITY.md Phase 3) --------------
+ * Blank everything `viewer` is not entitled to know, in place, on a
+ * COPY of the world. A copy rather than a filter woven through the
+ * encoder because the encoder is the one thing that must not grow a
+ * second version of itself: a redacted snapshot has to be the same
+ * format as a full one, byte for byte, or every decoder learns about
+ * views and the whole seam leaks.
+ *
+ * The scratch is allocated per call. At one push a second that is a
+ * 5 MB malloc and memcpy per client per second — real, but not the
+ * expensive part of anything, and a shared scratch is the obvious
+ * optimisation if it ever shows up in a profile. */
+static void redact_for(GameState *gs, uint32_t viewer)
+{
+    int i;
+
+    for (i = 0; i < MAX_ISLANDS; i++) {
+        Island *isl = &gs->islands[i];
+
+        if (isl->owner == viewer) continue;
+
+        /* The public face: name, profile, whether settled, who holds
+         * the charter, and whether foreigners may dock. Ownership is
+         * public in spirit already — the world map names it — and
+         * docking has to be, or a captain cannot know before sailing
+         * whether they will be turned away.
+         *
+         * Everything past this line is the owner's business. */
+        stockpile_init(&isl->stockpile);
+
+        memset(isl->buildings, 0, sizeof(isl->buildings));
+        memset(isl->pop_data,  0, sizeof(isl->pop_data));
+        isl->building_count = 0;
+        memset(isl->agents, 0, sizeof(isl->agents));
+        isl->agent_count = 0;
+
+        /* Trade and expedition activity. How many hulls a rival has at
+         * sea, and whether they are surveying, is intelligence — and
+         * the order book is the honest channel for the first of those. */
+        isl->merchants_out      = 0;
+        isl->hulls_out          = 0;
+        isl->research_boats     = 0;
+        isl->research_boats_out = 0;
+        isl->scholars_out       = 0;
+        isl->insure_shipments   = 0;
+
+        /* The harbour escrow deliberately SURVIVES. It is the neutral
+         * quay a foreign captain trades across; hiding it would break
+         * the one exchange strangers are allowed to have. */
+    }
+
+    /* Nobody else's charts, and nobody else's memory of the sea. This
+     * is the field VISIBILITY.md and MARITIME_PLAN care most about:
+     * which passages a rival has found is the whole of their advantage,
+     * and until this function existed it sat in every client's RAM. */
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        if ((uint32_t)(i + 1) == viewer) continue;
+        memset(&gs->knowledge.player[i], 0,
+               sizeof(gs->knowledge.player[i]));
+    }
+
+    /* Expeditions are research, and research is private. */
+    for (i = 0; i < gs->surveys.count; i++)
+        if (gs->surveys.mission[i].owner != viewer)
+            memset(&gs->surveys.mission[i], 0,
+                   sizeof(gs->surveys.mission[i]));
+
+    /* A foreign hold is not readable. You may see the ship, its owner
+     * and where it is going — attacking it is a bet on the route, not
+     * a decision made from the manifest. */
+    for (i = 0; i < gs->ship_count; i++) {
+        Ship *sh = &gs->ships[i];
+        if (!sh->active || sh->owner == viewer) continue;
+        memset(sh->cargo, 0, sizeof(sh->cargo));
+        sh->insured       = 0;
+        sh->insured_value = 0;
+    }
+
+    /* And a shipment on a private passage is reported as though it
+     * took the lane. A chart buys concealment as well as speed: a
+     * rival can see that you are trading and where to, never that you
+     * found a faster way. */
+    for (i = 0; i < gs->book.booking_count; i++) {
+        Booking     *bk = &gs->book.booking[i];
+        const Route *lane;
+
+        if (!bk->active) continue;
+        if (bk->buyer == viewer || bk->seller == viewer) continue;
+        if (bk->route_id < 0 || !gs->sea.route[bk->route_id].is_private)
+            continue;
+
+        lane = sea_route_between(&gs->sea, bk->from_island, bk->to_island);
+        bk->route_id = lane ? sea_route_id(&gs->sea, lane) : -1;
+    }
+
+    /* The order book itself stays public. It is a market, and
+     * exchange_view.h's thesis is that it is the honest channel
+     * through which strangers affect one another. */
+}
+
+int snapshot_encode_for(const GameState *gs, uint32_t viewer,
+                        unsigned char **out, size_t *out_len)
+{
+    GameState *view;
+    int        ok;
+
+    if (viewer == PLAYER_NONE) return snapshot_encode(gs, out, out_len);
+
+    view = (GameState *)malloc(sizeof(GameState));
+    if (!view) return 0;
+    memcpy(view, gs, sizeof(GameState));
+
+    redact_for(view, viewer);
+    ok = snapshot_encode(view, out, out_len);
+
+    free(view);
+    return ok;
+}
+
 int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
 {
     W   w;

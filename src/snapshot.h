@@ -65,6 +65,23 @@
  * buffer and frees it. Returns 0 on allocation failure. */
 int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len);
 
+/* The same, but redacted to what `viewer` is entitled to know
+ * (SERVER_AUTHORITY.md Phase 3). Own islands in full; foreign ones by
+ * their public face; nobody else's charts, expeditions or ship
+ * manifests; and a shipment on a private passage reported as though it
+ * took the public lane.
+ *
+ * This is the ONE place concealment happens. It is a filter on the way
+ * out rather than a rule inside the sim, because the sim has to be able
+ * to compute the whole world — every other design collapses into
+ * writing the game twice.
+ *
+ * `viewer` of PLAYER_NONE redacts nothing, which is what a checkpoint
+ * and the replay tools want: a server's own record of the world is not
+ * a view of it. */
+int snapshot_encode_for(const GameState *gs, uint32_t viewer,
+                        unsigned char **out, size_t *out_len);
+
 /* Replace `gs`'s world with the one in `buf`. Returns 1 on success; 0
  * if the buffer is not a snapshot this build understands, is truncated,
  * carries out-of-range counts, or does not hash to the value it claims

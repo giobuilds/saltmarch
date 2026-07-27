@@ -802,7 +802,15 @@ static void host_send_world_as(NetSession *ns, NetPeer *p,
 
     if (n < 0) n = 0;
 
-    if (!snapshot_encode(gs, &snap, &snap_len)) {
+    /* Redacted to what this peer is entitled to know
+     * (SERVER_AUTHORITY.md Phase 3). An authoritative server sends
+     * views; a lockstep co-op host still sends the whole world,
+     * because a guest that is computing the world itself needs all of
+     * it and hiding half would simply desync them. Concealment and
+     * lockstep are alternatives, not layers. */
+    if (!(ns->authoritative
+            ? snapshot_encode_for(gs, p->player_id, &snap, &snap_len)
+            : snapshot_encode(gs, &snap, &snap_len))) {
         sim_log("net: could not snapshot the world for player %u",
                 p->player_id);
         return;
