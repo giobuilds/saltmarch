@@ -205,6 +205,12 @@ int main(int argc, char *argv[])
         return 1;
     }
     net_set_persistent(ns, 1);
+    /* The dedicated server is the authority (SERVER_AUTHORITY.md
+     * Phase 1): it pushes the world on a cadence and its state wins.
+     * A co-op host in the game client still runs lockstep — the
+     * protocol carries both, and which one you get is a property of
+     * who is hosting rather than of the wire format. */
+    net_set_authoritative(ns, 1);
 
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);

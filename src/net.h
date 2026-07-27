@@ -119,8 +119,13 @@ typedef struct NetSession NetSession;
  *    that is world state rather than generated — the per-pair cursor
  *    saying which private passages are in play — and the snapshot
  *    carries it. A peer on 16 regenerates the pool and then disagrees
- *    about which two of it are real. */
-#define NET_PROTO_VERSION     17u
+ *    about which two of it are real.
+ * 18: server authority (SERVER_AUTHORITY.md Phase 1). MSG_STATE, and
+ *    MSG_WELCOME grew a flag saying whether the server's word is
+ *    final. A peer on 17 would read the flag as absent, keep waiting
+ *    for tick authorisation that an authoritative server never sends,
+ *    and sit still. */
+#define NET_PROTO_VERSION     18u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
@@ -224,6 +229,20 @@ int net_submit_local(NetSession *ns, GameState *gs, const Command *c);
 /* May the sim run tick `tick` right now? Hosts always may; guests only
  * up to the last authorised tick. */
 int net_tick_allowed(const NetSession *ns, uint64_t tick);
+
+/* Declare this host the authority (SERVER_AUTHORITY.md Phase 1): it
+ * pushes the whole world to every client once a second and its state
+ * wins. Clients learn of it in MSG_WELCOME, stop waiting for tick
+ * authorisation, and stop reporting desync hashes — under prediction
+ * the two sides are meant to differ between pushes.
+ *
+ * Set before peers join. A co-op host may leave it off and keep the
+ * lockstep behaviour; the dedicated server turns it on. */
+void net_set_authoritative(NetSession *ns, int on);
+
+/* Whether the server this client is talking to said it was the
+ * authority. 0 offline, and 0 for a lockstep co-op session. */
+int  net_server_authoritative(const NetSession *ns);
 
 /* 1 if this session is the ordering authority. */
 int net_is_host(const NetSession *ns);
