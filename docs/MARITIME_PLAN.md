@@ -358,6 +358,19 @@ retrofitting it after combat exists means touching combat too.
    **Phase 2 is complete.**
 3. **Routes and charts.** Public and private, chart consumption,
    per-route insurance, Scholars research.
+
+   **3a is built:** the sea now generates three routes between every
+   pair — one public lane and two private passages — each a distinct
+   path, with every private one faster than the lane. Concealment is
+   not here yet: all three are generated, and nothing yet tracks what a
+   player knows or spends a chart on, so bookings still take the public
+   lane. `sea_route_variant` / `sea_route_id` are the handles the rest
+   of the phase hangs off; a route id is what a chart will name and
+   what `TRADE_ROUTE_CHART` will trade under.
+
+   Still to come in this phase: per-player route knowledge, charts as
+   the thing that unlocks and is spent, route selection for a booking,
+   per-route insurance, and the survey and research missions.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
    turns "everyone knows where the fast route is" into real
    concealment, and makes stockpiles private.
@@ -407,6 +420,14 @@ upgrades it rather than gating it.
 
 ## Still open
 
+- **Should the public lane carry a convoy penalty at all?** It does
+  today (9/8), which is what guarantees every private passage is
+  strictly faster. `SEA_UNITS_PER_TICK` was re-fitted from 21 to 26 to
+  keep the average public crossing near 200 ticks, so the game as a
+  whole did not get slower — but that means private routes are now
+  faster than any voyage was before, rather than public being slower
+  than it was. Whether that is the right side to have moved is a
+  balance question best answered once charts actually gate them.
 - **What does a failed survey cost?** The blank chart is presumably
   spent either way — that is the gamble — but whether the scholar and
   the hull come home, or can be lost with the mission, is a different

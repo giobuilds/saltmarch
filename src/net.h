@@ -96,8 +96,14 @@ typedef struct NetSession NetSession;
  *    both misread the checkpoint and fill trades this one refuses.
  * 12: the faction's home ports and standing quotes (MARITIME_PLAN
  *    Phase 2). The snapshot carries its quote table, and the world it
- *    describes has two islands nobody may colonise. */
-#define NET_PROTO_VERSION     12u
+ *    describes has two islands nobody may colonise.
+ * 13: three routes per island pair (MARITIME_PLAN Phase 3). No message
+ *    changed shape and the Sea is in none of them — it is regenerated
+ *    from the seed at both ends, which is the point: a peer on 12
+ *    rebuilds a DIFFERENT sea from the same seed and disagrees about
+ *    when every ship arrives. Nothing in the wire format would catch
+ *    that, so the handshake has to. */
+#define NET_PROTO_VERSION     13u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
