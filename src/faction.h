@@ -98,6 +98,24 @@
 #define FACTION_QUOTE_LOT    20   /* units per standing order          */
 #define FACTION_QUOTE_INTERVAL_TICKS 100  /* re-quote every 10 seconds */
 
+/* ---- charts (MARITIME_PLAN Phase 3b) ----------------------
+ * The market draws maps as well as moving cargo, so it is where a
+ * player gets their first private passage. It offers charts for a few
+ * routes at a time, priced by what the passage is WORTH — the ticks it
+ * saves over the public lane — rather than by a flat number, so a
+ * shortcut that barely helps is cheap and one that halves a crossing
+ * is not.
+ *
+ * That the market sells them at all is the interim answer to "where do
+ * charts come from". Survey and research are the intended sources and
+ * are a phase away, blocked on what a failed survey costs; without
+ * some source the whole mechanic would be unreachable. Looting pirates
+ * is the third, and is Phase 5. */
+#define FACTION_CHART_ROUTES   4    /* routes quoted at once           */
+#define FACTION_CHART_LOT      1    /* charts per standing order       */
+#define FACTION_CHART_GOLD_PER_TICK_SAVED 3
+#define FACTION_CHART_MIN_PRICE 40
+
 /* Whether island `idx` is one of the faction's home ports. A pure
  * function of the index, so it needs no state and every client agrees
  * without being told. */
@@ -123,6 +141,13 @@ typedef struct {
      * history in about a minute. */
     uint32_t quote_order[FACTION_PORT_COUNT][FACTION_QUOTE_GOODS][2];
     uint32_t quote_timer;
+
+    /* The chart offers it currently has standing, one id each, and
+     * which route each is for. Same reason as quote_order: a refresh
+     * has to withdraw its own stale offers rather than stack new ones
+     * beside them. */
+    uint32_t chart_order[FACTION_CHART_ROUTES];
+    uint32_t chart_cursor;   /* which routes it is offering this cycle */
 
 /* Ring of mid-prices ((bid+ask)/2), oldest-to-newest by index once
      * hist_count reaches FACTION_HIST_LEN. hist_head is where the next

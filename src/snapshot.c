@@ -18,6 +18,7 @@
 #include "map.h"
 #include "simlog.h"
 #include "orderbook.h"
+#include "knowledge.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -361,6 +362,7 @@ static void put_orderbook(W *w, const OrderBook *b)
         w_u64(w, bk->arrive_tick);
         w_u64(w, bk->return_tick);
         w_i32(w, bk->delivered);
+        w_i32(w, bk->route_id);
     }
 }
 
@@ -406,8 +408,39 @@ static int get_orderbook(R *r, OrderBook *b)
         bk->arrive_tick = r_u64(r);
         bk->return_tick = r_u64(r);
         bk->delivered   = r_i32(r);
+        bk->route_id    = r_i32(r);
     }
     return !r->bad;
+}
+
+/* What each player knows (MARITIME Phase 3b). Written flat rather than
+ * sparsely: it is a few kilobytes, it compresses to nothing in the
+ * places that matter, and a sparse encoding of "which routes does this
+ * player know" is exactly the kind of cleverness that goes wrong
+ * silently on the decode side. */
+static void put_knowledge(W *w, const Knowledge *k)
+{
+    int p, i;
+
+    for (p = 0; p < MAX_PLAYERS; p++) {
+        for (i = 0; i < (int)sizeof k->player[p].known; i++)
+            w_u8(w, k->player[p].known[i]);
+        for (i = 0; i < SEA_MAX_ROUTES; i++)
+            w_u8(w, k->player[p].charts[i]);
+    }
+}
+
+static void get_knowledge(R *r, Knowledge *k)
+{
+    int p, i;
+
+    knowledge_init(k);
+    for (p = 0; p < MAX_PLAYERS; p++) {
+        for (i = 0; i < (int)sizeof k->player[p].known; i++)
+            k->player[p].known[i] = r_u8(r);
+        for (i = 0; i < SEA_MAX_ROUTES; i++)
+            k->player[p].charts[i] = r_u8(r);
+    }
 }
 
 static void put_faction(W *w, const Faction *f)
@@ -423,6 +456,8 @@ static void put_faction(W *w, const Faction *f)
                 for (s2 = 0; s2 < 2; s2++) w_u32(w, f->quote_order[p][g][s2]);
     }
     w_u32(w, f->quote_timer);
+    { int c; for (c = 0; c < FACTION_CHART_ROUTES; c++) w_u32(w, f->chart_order[c]); }
+    w_u32(w, f->chart_cursor);
     w_u32(w, f->revert_timer);
     for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
         for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
@@ -449,6 +484,8 @@ static void get_faction(R *r, Faction *f)
                     f->quote_order[p][g][s2] = r_u32(r);
     }
     f->quote_timer = r_u32(r);
+    { int c; for (c = 0; c < FACTION_CHART_ROUTES; c++) f->chart_order[c] = r_u32(r); }
+    f->chart_cursor = r_u32(r);
     f->revert_timer = r_u32(r);
     for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
         for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
@@ -583,6 +620,7 @@ int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
 
     put_faction(&w, &gs->faction);
     put_orderbook(&w, &gs->book);
+    put_knowledge(&w, &gs->knowledge);
 
     w_i32(&w, (int32_t)gs->ship_count);
     for (i = 0; i < gs->ship_count; i++) put_ship(&w, &gs->ships[i]);
@@ -674,6 +712,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
 
     get_faction(&r, &tmp->faction);
     if (!get_orderbook(&r, &tmp->book)) goto bad;
+    get_knowledge(&r, &tmp->knowledge);
 
     tmp->ship_count = (int)r_i32(&r);
     if (r.bad || tmp->ship_count < 0 || tmp->ship_count > MAX_SHIPS)
@@ -714,6 +753,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     gs->ship_count     = tmp->ship_count;
     gs->faction        = tmp->faction;
     gs->book           = tmp->book;
+    gs->knowledge      = tmp->knowledge;
     gs->sea            = tmp->sea;
     gs->sim_tick_no    = tmp->sim_tick_no;
     gs->world_seed     = tmp->world_seed;

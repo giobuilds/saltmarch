@@ -368,9 +368,25 @@ retrofitting it after combat exists means touching combat too.
    of the phase hangs off; a route id is what a chart will name and
    what `TRADE_ROUTE_CHART` will trade under.
 
-   Still to come in this phase: per-player route knowledge, charts as
-   the thing that unlocks and is spent, route selection for a booking,
-   per-route insurance, and the survey and research missions.
+   **3b is built:** `src/knowledge.c` — the first state in the world
+   that belongs to a *player* rather than to a place or a thing, since
+   a player who loses their colony does not forget the sea. Knowing a
+   passage and holding a map of it are separate: the known bit is
+   permanent, the chart is spent, one per round trip. A booking sails
+   the fastest route its seller can actually use, and the chart is
+   reserved when the booking is made rather than on arrival — the same
+   discipline as goods and gold, or one map would send out ten cargoes.
+
+   Charts are tradeable in the book as `TRADE_ROUTE_CHART`, which is
+   the payoff for the (kind, id) trade identity settled in Phase 2: a
+   chart for one passage is a different object from a chart for
+   another, and neither could ever have had a `ResourceType` slot. The
+   market sells them, priced by the ticks the passage saves over the
+   lane — an interim source, since survey and research are the intended
+   ones and are blocked on what a failed survey costs.
+
+   Still to come in this phase: per-route insurance, and the survey and
+   research missions.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
    turns "everyone knows where the fast route is" into real
    concealment, and makes stockpiles private.

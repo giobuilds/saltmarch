@@ -523,8 +523,9 @@ int main(void)
 
         quoted = orderbook_open_count(&gs->book, PLAYER_FACTION);
         CHECK(quoted > 0, "it posts standing orders into the book");
-        CHECK(quoted <= FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2,
-              "and never more than its own ports and goods allow");
+        CHECK(quoted <= FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2 +
+                        FACTION_CHART_ROUTES,
+              "and never more than its own ports, goods and charts allow");
 
         /* Its orders live at its harbours, and its ask is above its
          * bid — so its two sides never cross each other, and a player
@@ -539,7 +540,8 @@ int main(void)
                 for (j = 0; j < gs->book.order_count; j++) {
                     const Order *q = &gs->book.order[j];
                     if (!q->active || q->owner != PLAYER_FACTION) continue;
-                    if (q->what.id != o->what.id) continue;
+                    if (q->what.kind != o->what.kind ||
+                        q->what.id != o->what.id) continue;
                     if (o->side == ORDER_BUY && q->side == ORDER_SELL &&
                         o->limit >= q->limit) mispriced++;
                 }
@@ -553,7 +555,8 @@ int main(void)
          * its own history inside a minute. */
         run_ticks(gs, FACTION_QUOTE_INTERVAL_TICKS * 3);
         CHECK(orderbook_open_count(&gs->book, PLAYER_FACTION) <=
-              FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2,
+              FACTION_PORT_COUNT * FACTION_QUOTE_GOODS * 2 +
+              FACTION_CHART_ROUTES,
               "three refreshes later it still holds only one book");
 
         /* Its harbour is a real place with finite throughput. */

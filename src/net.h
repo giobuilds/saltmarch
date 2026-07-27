@@ -102,8 +102,13 @@ typedef struct NetSession NetSession;
  *    from the seed at both ends, which is the point: a peer on 12
  *    rebuilds a DIFFERENT sea from the same seed and disagrees about
  *    when every ship arrives. Nothing in the wire format would catch
- *    that, so the handshake has to. */
-#define NET_PROTO_VERSION     13u
+ *    that, so the handshake has to.
+ * 14: route knowledge and charts (MARITIME_PLAN Phase 3b). The
+ *    snapshot carries per-player knowledge and the market's chart
+ *    offers, and a booking's route depends on the seller's charts —
+ *    so a peer on 13 both misreads the checkpoint and sails cargoes
+ *    down the wrong passage. */
+#define NET_PROTO_VERSION     14u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

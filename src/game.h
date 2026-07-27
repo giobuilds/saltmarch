@@ -39,6 +39,7 @@
 #include "faction.h"
 #include "sea.h"
 #include "orderbook.h"
+#include "knowledge.h"
 #include "intent.h"
 
 /* Gold a new game's starting island begins with. */
@@ -263,6 +264,14 @@ typedef struct GameState {
      * replayed, snapshotted. Matching runs at tick boundaries so a
      * replay fills exactly the trades the original run filled. */
     OrderBook book;
+
+    /* What each player knows of the sea, and the charts they hold
+     * (MARITIME_PLAN Phase 3b). The first state in this struct that
+     * belongs to a PLAYER rather than to a place or a thing — a player
+     * who loses their colony does not forget the passages. World state:
+     * hashed, snapshotted, replayed, because which route a booking
+     * takes depends on what its seller knows. */
+    Knowledge knowledge;
 
     /* Who this client is (Phase 5). CLIENT state, not world state: it
      * is never hashed and never saved — it says which player's commands
