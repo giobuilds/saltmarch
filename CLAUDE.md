@@ -14,9 +14,9 @@ cmake --build build -j$(nproc)
 ./build/saltmarch
 ```
 
-Requires `SDL3-devel` and `SDL3_ttf-devel` (Fedora package names; see BUILD.md for building SDL3 from source if not packaged).
+Requires `SDL3-devel` and `SDL3_ttf-devel` (Fedora package names; see docs/BUILD.md for building SDL3 from source if not packaged).
 
-The build produces six targets (`libsaltmarch_ui.a` holds the SDL-free UI layer): `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `libsaltmarch_ui.a` (layout/hit-test kit + the UI's read-only snapshot, no SDL), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see SERVER.md). Verification, in the order it is cheapest to run:
+The build produces six targets (`libsaltmarch_ui.a` holds the SDL-free UI layer): `saltmarch` (the game), `libsaltmarch_sim.a` (the simulation, no SDL), `libsaltmarch_net.a` (the lockstep protocol, no SDL, shared by game and server), `libsaltmarch_ui.a` (layout/hit-test kit + the UI's read-only snapshot, no SDL), `saltmarch_replay` (headless CLI over the sim) and `saltmarch_host` (the persistent server — see docs/SERVER.md). Verification, in the order it is cheapest to run:
 
 ```bash
 cmake --build build -j$(nproc)          # zero warnings is the bar
@@ -44,7 +44,7 @@ Uses SDL3's callback-based app model (`SDL_MAIN_USE_CALLBACKS`), not a manual ev
 
 **`GameState` (game.h) is the single top-level struct** owning every subsystem: `Map`, `Camera`, `InputState`, the `buildings[]`/`building_count` array, `Stockpile`, and `pop_data[]`. One `GameState*` is stashed in SDL's `appstate` and threaded through every callback. There is no global state outside of `BUILDING_DEFS` and `RESOURCE_NAMES` (static const tables).
 
-**Coordinate systems**: the map is a `MAP_ROWS x MAP_COLS` (64x64) grid of `Tile` (row, col). `render.c`'s `iso_to_screen()` / `screen_to_iso()` are the only conversion points between tile space and screen pixels — they account for `Camera.offset_x/y` and `Camera.zoom`. Any new code that needs to place something on the map or hit-test a click must go through these two functions rather than re-deriving the projection math. `screen_to_iso()` uses `floorf()` (not integer cast) because negative-coordinate truncation was a past bug (see "Bug fix 001" in README.md).
+**Coordinate systems**: the map is a `MAP_ROWS x MAP_COLS` (64x64) grid of `Tile` (row, col). `render.c`'s `iso_to_screen()` / `screen_to_iso()` are the only conversion points between tile space and screen pixels — they account for `Camera.offset_x/y` and `Camera.zoom`. Any new code that needs to place something on the map or hit-test a click must go through these two functions rather than re-deriving the projection math. `screen_to_iso()` uses `floorf()` (not integer cast) because negative-coordinate truncation was a past bug (see "Bug fix 001" in docs/README.md).
 
 **Two parallel arrays keyed by building slot index**: `gs->buildings[i]` (the placed instance) and `gs->pop_data[i]` (population data, meaningful only when `buildings[i].type == BUILDING_HOUSE`). When iterating buildings for anything population-related, index both arrays together rather than searching.
 
@@ -60,7 +60,7 @@ New building types are added by extending the `BuildingType` enum and adding a m
 
 **Frame-rate independence**: all continuous movement (camera pan, production timers, population needs) is scaled by `GameState.delta_time`, computed once per frame in `game_update()` from the SDL tick delta. Don't add new per-frame increments without multiplying by `delta_time`.
 
-**Rendering fallback pattern**: `render.c` draws everything as SDL_RenderGeometry diamonds (`draw_diamond()`), colored per `TILE_COLOURS`/`BuildingDef` color fields. Sprite-based rendering existed once (README.md's "Phase 6: sprite rendering" section) and was deliberately removed; `src/sprite.c`/`src/sprite.h` are gone from the tree. Don't reintroduce sprites without checking with the user first.
+**Rendering fallback pattern**: `render.c` draws everything as SDL_RenderGeometry diamonds (`draw_diamond()`), colored per `TILE_COLOURS`/`BuildingDef` color fields. Sprite-based rendering existed once (docs/README.md's "Phase 6: sprite rendering" section) and was deliberately removed; `src/sprite.c`/`src/sprite.h` are gone from the tree. Don't reintroduce sprites without checking with the user first.
 
 **Text rendering** goes through `fonts.c` (thin SDL_ttf wrapper, `fonts_init()`/`fonts_quit()`/`font_draw_text()`), not raw SDL_ttf calls — HUD, tooltips, and menu labels all use it.
 
@@ -100,4 +100,4 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 
 ## History / conventions
 
-README.md's "Phase N" sections are a changelog of major feature additions (procedural gen → building placement → resource ticks → population → sprites → sprite removal/zoom) written in past commits — read it before assuming a feature (like sprites) is still in the current build; check `CMakeLists.txt`'s `SALTMARCH_SIM_SOURCES` / `SALTMARCH_CLIENT_SOURCES` lists against `src/` to see what's actually compiled. MMO_PLAN.md's phases are the current work (1–5 done, 6 in progress); ARCHITECTURE.md explains how the pieces fit.
+docs/README.md's "Phase N" sections are a changelog of major feature additions (procedural gen → building placement → resource ticks → population → sprites → sprite removal/zoom) written in past commits — read it before assuming a feature (like sprites) is still in the current build; check `CMakeLists.txt`'s `SALTMARCH_SIM_SOURCES` / `SALTMARCH_CLIENT_SOURCES` lists against `src/` to see what's actually compiled. docs/MMO_PLAN.md's phases are the current work (1–5 done, 6 in progress); docs/SUPPLY_CHAIN.md's eight phases are all done; docs/SERVER.md covers the dedicated server, including the transport hardening and the snapshot format that bounds join cost; docs/AUTH_PLAN.md, docs/VISIBILITY.md and docs/PRIVACY.md are design notes for the public-server questions — authentication, what a client is allowed to know, and personal data — none of them built yet. docs/ARCHITECTURE.md explains how the pieces fit.
