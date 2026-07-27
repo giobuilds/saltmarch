@@ -114,8 +114,13 @@ typedef struct NetSession NetSession;
  *    would deliver what this one lost.
  * 16: the survey mission (MARITIME_PLAN Phase 3d). Expeditions in the
  *    snapshot, two more command kinds, and charts that now appear
- *    from a mission rather than only from the market. */
-#define NET_PROTO_VERSION     16u
+ *    from a mission rather than only from the market.
+ * 17: chart expiry (MARITIME_PLAN Phase 3e). A Sea now has one field
+ *    that is world state rather than generated — the per-pair cursor
+ *    saying which private passages are in play — and the snapshot
+ *    carries it. A peer on 16 regenerates the pool and then disagrees
+ *    about which two of it are real. */
+#define NET_PROTO_VERSION     17u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

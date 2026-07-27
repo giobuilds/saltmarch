@@ -168,10 +168,30 @@ int main(void)
 
                     /* The trade-off itself: every private passage beats
                      * the patrolled lane. If this ever stops holding,
-                     * charts are a cost with no benefit. */
-                    for (v = 1; v < SEA_ROUTES_PER_PAIR; v++)
-                        if (r[v]->total_ticks >= r[SEA_ROUTE_PUBLIC]->total_ticks)
-                            private_not_faster++;
+                     * charts are a cost with no benefit.
+                     *
+                     * Checked across the WHOLE POOL, not just the two
+                     * in play (MARITIME_PLAN Phase 3e). Passages
+                     * rotate, so one that is only tested while it
+                     * happens to be live is one that can turn out to
+                     * be the long way round the day it comes in — and
+                     * a chart that made you slower is worse than no
+                     * chart at all. Checking only the live pair passed
+                     * happily while pool entries ran 4% slower than
+                     * the lane. */
+                    {
+                        int pair = sea_pair_index(&sea, i, j);
+                        int slot;
+                        const Route *lane =
+                            &sea.route[pair * SEA_STORED_PER_PAIR];
+                        for (slot = 1; slot < SEA_STORED_PER_PAIR; slot++) {
+                            const Route *p =
+                                &sea.route[pair * SEA_STORED_PER_PAIR + slot];
+                            if (!p->is_private) wrong_split++;
+                            if (p->total_ticks >= lane->total_ticks)
+                                private_not_faster++;
+                        }
+                    }
                 }
         }
         CHECK(wrong_count == 0, "every pair has exactly three routes");

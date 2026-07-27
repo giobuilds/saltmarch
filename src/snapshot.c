@@ -675,6 +675,10 @@ int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
     put_orderbook(&w, &gs->book);
     put_knowledge(&w, &gs->knowledge);
     put_surveys(&w, &gs->surveys);
+    {
+        int p;
+        for (p = 0; p < SEA_MAX_PAIRS; p++) w_u8(&w, gs->sea.pair_cursor[p]);
+    }
 
     w_i32(&w, (int32_t)gs->ship_count);
     for (i = 0; i < gs->ship_count; i++) put_ship(&w, &gs->ships[i]);
@@ -724,6 +728,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     GameState *tmp;
     uint64_t  claimed_hash, actual;
     int       i, n_isl;
+    uint8_t   saved_cursor[SEA_MAX_PAIRS];
 
     if (!buf) return 0;
     r.b = buf; r.len = len; r.off = 0; r.bad = 0;
@@ -769,6 +774,16 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     get_knowledge(&r, &tmp->knowledge);
     if (!get_surveys(&r, &tmp->surveys)) goto bad;
 
+    /* Which private passages are in play (MARITIME Phase 3e). Read
+     * here, where it was written, but APPLIED after sea_init below —
+     * regenerating the sea zeroes the cursors, so restoring them first
+     * would restore nothing. */
+    {
+        int p;
+        for (p = 0; p < SEA_MAX_PAIRS; p++) saved_cursor[p] = r_u8(&r);
+        if (r.bad) goto bad;
+    }
+
     tmp->ship_count = (int)r_i32(&r);
     if (r.bad || tmp->ship_count < 0 || tmp->ship_count > MAX_SHIPS)
         goto bad;
@@ -783,6 +798,18 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     if (tmp->current_island < 0 || tmp->current_island >= MAX_ISLANDS)
         tmp->current_island = 0;
 
+    /* The sea is a pure function of the seed, like every Map, so it is
+     * regenerated rather than carried in the buffer — except for the
+     * cursors, which are the one part of it that is world state. Both
+     * must happen BEFORE the hash check, because sim_hash reads the
+     * cursors. */
+    sea_init(&tmp->sea, tmp->world_seed, MAX_ISLANDS);
+    {
+        int p;
+        for (p = 0; p < SEA_MAX_PAIRS; p++)
+            tmp->sea.pair_cursor[p] = saved_cursor[p];
+    }
+
     /* The claim, checked. sim_hash reads only the fields restored
      * above, so this catches a field the writer emits and the reader
      * skips just as surely as it catches a corrupt byte. */
@@ -796,9 +823,6 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
         goto bad;
     }
 
-    /* The sea is a pure function of the seed, like every Map, so it is
-     * regenerated rather than carried in the buffer. */
-    sea_init(&tmp->sea, tmp->world_seed, MAX_ISLANDS);
 
     /* Commit. The world moves across; everything the caller owns that
      * is NOT world state (its command log, its net session, its

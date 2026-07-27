@@ -702,6 +702,104 @@ int main(void)
         CHECK(seen, "an expedition is lost sooner or later");
     }
 
+    printf("\n=== the sea keeps changing shape ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        rid_before, rid_after, pair;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        pair = sea_pair_index(&gs->sea, 0, 1);
+        CHECK(pair >= 0, "the pair has an index");
+
+        fastest_private(&gs->sea, 0, 1, &rid_before);
+        knowledge_add_charts(&gs->knowledge, 1u, rid_before, 3);
+        CHECK(knowledge_charts(&gs->knowledge, 1u, rid_before) == 3,
+              "the player holds charts of a passage in play");
+
+        /* Nothing rotates on the first tick. A world that voided
+         * charts before it had issued any would be a world where the
+         * Chart House could never get ahead. */
+        run_ticks(gs, 50);
+        CHECK(knowledge_charts(&gs->knowledge, 1u, rid_before) == 3,
+              "and keeps them through the early world");
+
+        /* A year later, that pair's oldest passage goes out of use. */
+        run_ticks(gs, SEA_ROUTE_LIFETIME_TICKS + 4);
+
+        fastest_private(&gs->sea, 0, 1, &rid_after);
+        CHECK(gs->sea.pair_cursor[pair] != 0,
+              "the pair has moved on in its rotation");
+        CHECK(knowledge_charts(&gs->knowledge, 1u, rid_before) == 0,
+              "charts of the retired passage are waste paper");
+        CHECK(knowledge_knows(&gs->knowledge, 1u, rid_before, 1),
+              "but you still remember where the water was");
+
+        /* And a fresh passage is in play in its place. */
+        {
+            int live_private = 0, v;
+            for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+                const Route *r = sea_route_variant(&gs->sea, 0, 1, v);
+                if (r && r->is_private) live_private++;
+            }
+            CHECK(live_private == 2,
+                  "two private passages are still in play");
+        }
+        CHECK(!knowledge_knows(&gs->knowledge, 1u,
+                  sea_route_id(&gs->sea,
+                      sea_route_variant(&gs->sea, 0, 1, 2)), 1) ||
+              rid_after != rid_before,
+              "and at least one of them is new water to this player");
+
+        /* The whole pool still beats the lane, whichever two are up. */
+        {
+            const Route *lane = sea_route_between(&gs->sea, 0, 1);
+            int          slow = 0, v;
+            for (v = 1; v < SEA_ROUTES_PER_PAIR; v++) {
+                const Route *r = sea_route_variant(&gs->sea, 0, 1, v);
+                if (r && r->total_ticks >= lane->total_ticks) slow++;
+            }
+            CHECK(slow == 0,
+                  "a passage that rotated in is still faster than the lane");
+        }
+
+        game_free(gs);
+    }
+
+    printf("\n=== a rotation survives a checkpoint ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        GameState *rs = game_init();
+        unsigned char *buf = NULL;
+        size_t         len = 0;
+        int            pair, i;
+
+        if (!gs || !rs) { printf("game_init failed\n"); return 1; }
+        pair = sea_pair_index(&gs->sea, 0, 1);
+
+        run_ticks(gs, SEA_ROUTE_LIFETIME_TICKS + 4);
+        CHECK(gs->sea.pair_cursor[pair] != 0, "the world has rotated");
+
+        CHECK(snapshot_encode(gs, &buf, &len), "it snapshots");
+        if (!buf) { printf("\nFAILED\n"); return 1; }
+        CHECK(snapshot_decode(rs, buf, len), "and restores");
+
+        /* The Sea is still regenerated from the seed — but WHICH
+         * passages are in play is not, and a checkpoint that
+         * regenerated the pool and forgot the cursor would put every
+         * restored client on different water from the one that saved. */
+        {
+            int same = 1;
+            for (i = 0; i < SEA_MAX_PAIRS; i++)
+                if (rs->sea.pair_cursor[i] != gs->sea.pair_cursor[i]) same = 0;
+            CHECK(same, "with every pair on the same passage as before");
+        }
+        CHECK(sim_hash(rs) == sim_hash(gs), "and hashes identically");
+
+        free(buf);
+        game_free(gs);
+        game_free(rs);
+    }
+
     printf("\n=== knowledge survives a checkpoint ===\n");
     {
         GameState *gs = two_traders(4242u);
