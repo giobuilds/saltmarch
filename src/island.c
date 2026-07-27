@@ -167,6 +167,7 @@ int island_merchant_capacity(const Island *isl)
     int i, n = TRADE_BASE_MERCHANTS;
 
     if (!isl->settled) return 0;
+    if (isl->owner == PLAYER_FACTION) return FACTION_PORT_MERCHANTS;
 
     for (i = 0; i < isl->building_count; i++) {
         const Building *b = &isl->buildings[i];
@@ -186,6 +187,7 @@ int island_hull_capacity(const Island *isl)
     int i, n = TRADE_BASE_HULLS;
 
     if (!isl->settled) return 0;
+    if (isl->owner == PLAYER_FACTION) return FACTION_PORT_HULLS;
 
     for (i = 0; i < isl->building_count; i++)
         if (isl->buildings[i].active &&

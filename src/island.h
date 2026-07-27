@@ -145,6 +145,14 @@ typedef struct {
     int32_t    hulls_out;
 } Island;
 
+/* The NPC market's own player id (MARITIME_PLAN Phase 2). It owns its
+ * home ports and posts orders in the book like anybody else, so it
+ * needs an identity — but one no human can ever be assigned, which is
+ * why it sits at the top of the range rather than after the humans.
+ * Ownership checks reject a command claiming it for the same reason
+ * they reject one player commanding another's ships. */
+#define PLAYER_FACTION 0xFFFFFFFFu
+
 /* How many merchants and trade hulls this island can have committed at
  * once. Every settled island has a base of each — a colony is a trading
  * post before it is anything else, and a market that only opened once
@@ -152,6 +160,13 @@ typedef struct {
  * buildings raise it from there. */
 #define TRADE_BASE_MERCHANTS      1
 #define TRADE_BASE_HULLS          1
+
+/* A faction home port is a trading house, not a colony: it starts with
+ * the capacity a player would need a developed island to match. This is
+ * what keeps the NPC market liquid without making it infinite — it can
+ * still be saturated, and its ports can still be blockaded. */
+#define FACTION_PORT_MERCHANTS    6
+#define FACTION_PORT_HULLS        6
 #define TRADE_MERCHANTS_PER_HOUSE 1   /* a populated Merchant House    */
 #define TRADE_MERCHANTS_PER_INVESTOR 2/* its upgrade is worth more     */
 #define TRADE_HULLS_PER_SHIPYARD  2

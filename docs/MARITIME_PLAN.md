@@ -6,7 +6,8 @@ market order, intercepting somebody else's merchantman, and hunting
 pirates. Today only the first exists, and the sea it crosses is not a
 place — it is a constant.
 
-Nothing here is built. Sequenced against
+Phases 1 and 2 are built (see the phase list at the end); routes,
+charts, server authority and predation are not. Sequenced against
 [SERVER_AUTHORITY.md](SERVER_AUTHORITY.md), which makes the concealment
 this design assumes actually true; most of what follows works without
 it, less well.
@@ -131,34 +132,43 @@ where the faction is a market maker alongside everyone else is that
 thesis finished, not a second system beside it. Its current elastic
 quote becomes its posted bid and ask.
 
-### Open: where the faction's liquidity lives
+### The faction's liquidity: home ports (as built)
 
-Not built, and blocked on one question the rest of the design does not
-answer. Every order in the book is posted *at a harbour*, and a fill
-becomes a crossing between two harbours that costs a merchant and a
-hull. The faction has no island, so it has no harbour to post from and
-nothing to reserve.
+The question was where a counterparty with no island posts orders from,
+given that every order sits at a harbour and every fill is a crossing
+that costs a merchant and a hull. The answer taken is **home ports**:
+the market holds the last two islands, settled and owned by
+`PLAYER_FACTION` from tick 0, not colonisable, and quotes there like
+anybody else. Its fills ship, take the time the water takes, and tie up
+its own hulls — so the NPC is a trader with a location, distance to the
+market is a real cost, and its harbour is a place that could be
+blockaded.
 
-Three ways out, in rough order of how much they change:
+**One company stock, several harbours.** Its inventory and gold stay
+global, and its quotes with them, so every existing caller of
+`faction_bid`/`faction_ask` is untouched. That is safe only because
+posting reserves: an order at each port draws down the same stock when
+it is posted, exactly as a player's several orders draw down one
+stockpile. `trade_balance`/`trade_credit` in game.c are the single place
+that knows a counterparty's goods might not be in an island's
+stockpile, so the reserve, the refund and the settlement cannot end up
+disagreeing about it.
 
-1. **The faction posts at every settled harbour**, and its side of a
-   fill neither crosses nor reserves. Cheapest, and it preserves
-   today's instant NPC trade — but it makes the faction strictly better
-   than any player counterparty, which undercuts the whole reason to
-   trade with each other.
-2. **The faction holds one or more home ports** — real islands with
-   real stock — and its orders ship like everyone else's. Most
-   coherent: the NPC becomes a trader with a location, distance to it
-   starts mattering, and blockading it becomes a thing you could do. It
-   needs the faction's inventory to become per-island, which is a real
-   change to `Faction`.
-3. **The faction only takes, never makes**: it posts nothing, and the
-   existing quote screen stays a separate instant-settlement surface
-   beside the book. Honest about what it is, and leaves the book purely
-   player-to-player.
+**It cannot quote everything.** Two sides times every good times every
+port would exhaust the book by itself, so it quotes the six goods it is
+furthest from baseline on — where it most wants to trade. That makes
+the selection economic rather than a rotation, and means the market
+leans against its own imbalance.
 
-(2) is the one that fits the rest of this document, and it is the one
-that costs the most.
+Two things this deliberately did not do, both worth revisiting:
+
+- **Per-port inventory**, and with it different prices at the faction's
+  own harbours. That is the piece that would make arbitrage between its
+  ports a thing; it needs quotes to take a port, which touches every
+  caller including the build-cost estimate and the F10 overlay.
+- **Charters on home ports.** The market does not rent its harbours
+  from itself, so the upkeep tick skips them entirely. If a player is
+  ever to take a faction port, that is the rule that has to change.
 
 ## Routes and charts
 
@@ -322,7 +332,7 @@ retrofitting it after combat exists means touching combat too.
    they all used to take. The Sea is a pure function of the world seed
    and is regenerated like a Map, so it needed no save, snapshot or
    protocol change.
-2. ~~**The order book.**~~ **Partly done.** `src/orderbook.c` plus the
+2. ~~**The order book.**~~ **Done.** `src/orderbook.c` plus the
    rules in `game.c`: `CMD_PLACE_ORDER` / `CMD_CANCEL_ORDER`, reservation
    at posting, deterministic matching at every tick boundary, and a
    match becoming a `Booking` that lands after `sea_crossing_ticks`. A
@@ -340,9 +350,12 @@ retrofitting it after combat exists means touching combat too.
    than stalled on, for the same reason a self-crossing pair is: one
    seller must not be able to shut a good for everyone.
 
-   **Still outstanding from this phase:** the faction posting orders as
-   market maker. See "the faction's liquidity" below — it needs a
-   decision before it can be built.
+   The faction is a market maker with **home ports**: it holds the last
+   two islands, quotes there every `FACTION_QUOTE_INTERVAL_TICKS`, and
+   its fills ship and tie up its own hulls like anyone else's. See "the
+   faction's liquidity" below for what that settled and what it left.
+
+   **Phase 2 is complete.**
 3. **Routes and charts.** Public and private, chart consumption,
    per-route insurance, Scholars research.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —

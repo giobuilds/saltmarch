@@ -4,6 +4,15 @@
 #include "island.h"   /* the insurance constants, and the lane-count check */
 #include <string.h>
 
+/* The last FACTION_PORT_COUNT islands are the market's own. Taking them
+ * from the end rather than the start keeps island 0 — always the first
+ * player's — and leaves the colonisable middle contiguous. */
+int faction_is_home_port(int idx)
+{
+    return idx >= MAX_ISLANDS_FOR_LANES - FACTION_PORT_COUNT &&
+           idx <  MAX_ISLANDS_FOR_LANES;
+}
+
 int faction_lane_premium(const Faction *f, int from, int to)
 {
     if (from < 0 || from >= MAX_ISLANDS_FOR_LANES ||

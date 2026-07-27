@@ -48,6 +48,9 @@
  * island; real players count from 1. Single player is always player 1;
  * a co-op guest gets its id from the host at join. */
 #define PLAYER_NONE 0u
+/* PLAYER_FACTION lives in island.h, beside the `owner` field that
+ * holds it — the NPC market owns islands, so the constant has to be
+ * visible to code that only knows about islands. */
 
 /* Fixed-timestep clock constants (SIM_TICK_MS, SIM_TICK_NS, ...). */
 #include "simclock.h"

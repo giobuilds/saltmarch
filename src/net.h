@@ -93,8 +93,11 @@ typedef struct NetSession NetSession;
  * 11: trade capacity (MARITIME_PLAN Phase 2, merchants). Two more
  *    fields per island and two per booking in the snapshot, and a
  *    matching rule that now depends on them — so a peer on 10 would
- *    both misread the checkpoint and fill trades this one refuses. */
-#define NET_PROTO_VERSION     11u
+ *    both misread the checkpoint and fill trades this one refuses.
+ * 12: the faction's home ports and standing quotes (MARITIME_PLAN
+ *    Phase 2). The snapshot carries its quote table, and the world it
+ *    describes has two islands nobody may colonise. */
+#define NET_PROTO_VERSION     12u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

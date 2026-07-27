@@ -67,6 +67,42 @@
 #define FACTION_HIST_LEN            24
 #define FACTION_HIST_INTERVAL_TICKS 50   /* one sample per 5 seconds */
 
+/* ---- home ports and market making (MARITIME_PLAN Phase 2) ----
+ * The faction is a trader with a location. It holds the last few
+ * islands as home ports — settled, owned by PLAYER_FACTION, and not
+ * colonisable — and posts standing orders there like any player, which
+ * ship, take time, and tie up its merchants and hulls.
+ *
+ * That is the whole point of giving it ports rather than letting it
+ * trade from nowhere: distance to the market becomes a real cost, its
+ * liquidity is finite in THROUGHPUT and not just in stock, and a
+ * blockade of its harbour is a thing a player could attempt.
+ *
+ * ONE COMPANY STOCK, SEVERAL HARBOURS. Its inventory and gold stay
+ * global — it is one company with warehouses, not two rival branches —
+ * and its quotes stay global with them, so every existing caller of
+ * faction_bid/faction_ask is unchanged. That is safe only because
+ * posting RESERVES: an order at each port draws down the same stock
+ * when it is posted, exactly as a player's several orders draw down one
+ * stockpile. (Per-port inventory, and with it price differences between
+ * the faction's own harbours, is a separate and larger change.)
+ */
+#define FACTION_PORT_COUNT 2
+
+/* It cannot quote everything: two sides times every good times every
+ * port would exhaust the book by itself. It quotes the goods it is
+ * furthest from baseline on — where it most wants to trade — which
+ * makes the selection economic rather than a blind rotation, and means
+ * the market leans against its own imbalance. */
+#define FACTION_QUOTE_GOODS   6
+#define FACTION_QUOTE_LOT    20   /* units per standing order          */
+#define FACTION_QUOTE_INTERVAL_TICKS 100  /* re-quote every 10 seconds */
+
+/* Whether island `idx` is one of the faction's home ports. A pure
+ * function of the index, so it needs no state and every client agrees
+ * without being told. */
+int  faction_is_home_port(int idx);
+
 typedef struct {
     int32_t  gold;
     int32_t  inventory[RES_COUNT];   /* GOLD slot unused                 */
@@ -79,7 +115,16 @@ typedef struct {
      * Sim state: hashed and replayed. */
     int16_t  lane_premium[MAX_ISLANDS_FOR_LANES][MAX_ISLANDS_FOR_LANES];
 
-    /* Ring of mid-prices ((bid+ask)/2), oldest-to-newest by index once
+        /* Where the faction's standing orders are in the book
+     * (MARITIME_PLAN Phase 2). One id per (port, good, side) it is
+     * currently quoting; 0 for a slot it is not. Kept so a refresh can
+     * withdraw the stale quote instead of posting a second one beside
+     * it, which is how a market maker fills a book with its own
+     * history in about a minute. */
+    uint32_t quote_order[FACTION_PORT_COUNT][FACTION_QUOTE_GOODS][2];
+    uint32_t quote_timer;
+
+/* Ring of mid-prices ((bid+ask)/2), oldest-to-newest by index once
      * hist_count reaches FACTION_HIST_LEN. hist_head is where the next
      * sample goes. */
     int16_t  hist[RES_COUNT][FACTION_HIST_LEN];
