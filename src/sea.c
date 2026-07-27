@@ -283,9 +283,10 @@ static void add_route(Sea *sea, int a, int b, int variant, int wp,
  * routes, two of them the same crossing, the "private" one slower. */
 static void build_routes(Sea *sea, int a, int b)
 {
-    enum { RANK_MAX = 8 };
+    enum { RANK_MAX = SEA_PRIVATE_POOL + 2 };
     int rank[RANK_MAX];
-    int n, lane_wp = -1, short_wp = -1;
+    int n, lane_wp = -1;
+    int i;
 
     /* Unlimited: every waypoint is ranked, and how far a detour may go
      * is decided below per route rather than by excluding candidates
@@ -293,19 +294,45 @@ static void build_routes(Sea *sea, int a, int b)
     n = rank_waypoints(sea, sea->island[a], sea->island[b], 0,
                        rank, RANK_MAX);
 
-    if (n > 0) short_wp = rank[0];
+    /* The lane threads the FURTHEST waypoint any of this pair's routes
+     * uses, so that every private passage's path is shorter than the
+     * lane's before the convoy penalty is even applied. That is what
+     * keeps "every private passage beats the lane" true for the whole
+     * pool and not merely for the two that happen to be in play today
+     * — a passage that rotated in and turned out to be the long way
+     * round would be a chart that made you slower.
+     *
+     * It is the furthest of a BOUNDED set, not the furthest in the
+     * sea: the pool is small, and the ranking is by how far off the
+     * direct line a waypoint sits, so rank[SEA_PRIVATE_POOL - 1] is
+     * still a route rather than a tour. An early version took the
+     * furthest available anywhere and the mean public crossing went
+     * from ~200 ticks to 429. */
+    if (n > SEA_PRIVATE_POOL - 1) lane_wp = rank[SEA_PRIVATE_POOL - 1];
+    else if (n > 0)               lane_wp = rank[n - 1];
 
-    /* The lane threads the NEXT waypoint out from the shortcut's. Not
-     * the furthest available: an early version took that, and the
-     * average public crossing went from the ~200 ticks sea.h calibrates
-     * SEA_UNITS_PER_TICK against to 429 — every voyage in the game
-     * silently slowed by half, in an increment that ships no charts to
-     * compensate. The lane is a slightly wider berth, not a tour. */
-    if (n > 1) lane_wp = rank[1];
+    add_route(sea, a, b, 0, lane_wp, ROUTE_CONVOY_NUM, ROUTE_CONVOY_DEN);
 
-    add_route(sea, a, b, 0, lane_wp,  ROUTE_CONVOY_NUM, ROUTE_CONVOY_DEN);
-    add_route(sea, a, b, 1, -1,       1, 1);
-    add_route(sea, a, b, 2, short_wp, 1, 1);
+    /* Then the pool of private passages. The first is the open reach —
+     * straight water, and the fastest thing between two islands. The
+     * rest thread the nearest waypoints, cheapest detour first, so a
+     * passage that rotates in later is a little slower than the one it
+     * replaced rather than arbitrarily different. */
+    for (i = 0; i < SEA_PRIVATE_POOL; i++) {
+        int wp = -1;
+
+        if (i > 0 && i - 1 < n) {
+            int k, taken = 0;
+            for (k = 0; k < n; k++) {
+                /* Never the lane's own water: two routes through one
+                 * waypoint would be one route sold twice. */
+                if (rank[k] == lane_wp) continue;
+                if (taken == i - 1) { wp = rank[k]; break; }
+                taken++;
+            }
+        }
+        add_route(sea, a, b, i + 1, wp, 1, 1);
+    }
 }
 
 /* ---- the generator ---------------------------------------- */
@@ -356,19 +383,45 @@ void sea_init(Sea *sea, uint32_t seed, int island_count)
             build_routes(sea, i, j);
 }
 
+int sea_pair_index(const Sea *sea, int island_a, int island_b)
+{
+    int lo = island_a < island_b ? island_a : island_b;
+    int hi = island_a < island_b ? island_b : island_a;
+    int i, n = 0;
+
+    if (lo < 0 || hi >= sea->island_count || lo == hi) return -1;
+
+    /* Pairs in generation order: (0,1) (0,2) ... (1,2) ... */
+    for (i = 0; i < lo; i++) n += sea->island_count - 1 - i;
+    return n + (hi - lo - 1);
+}
+
+/* The stored slot for one of a pair's routes: 0 is the lane, 1..pool
+ * are the private passages in generation order. */
+static const Route *pair_slot(const Sea *sea, int pair, int slot)
+{
+    int idx = pair * SEA_STORED_PER_PAIR + slot;
+
+    if (pair < 0 || idx < 0 || idx >= sea->route_count) return NULL;
+    return &sea->route[idx];
+}
+
 const Route *sea_route_variant(const Sea *sea, int island_a, int island_b,
                                int variant)
 {
-    int i;
+    int pair = sea_pair_index(sea, island_a, island_b);
+    int cursor;
 
-    for (i = 0; i < sea->route_count; i++) {
-        const Route *r = &sea->route[i];
-        if (r->variant != variant) continue;
-        if ((r->from_island == island_a && r->to_island == island_b) ||
-            (r->from_island == island_b && r->to_island == island_a))
-            return r;
-    }
-    return NULL;
+    if (pair < 0 || variant < 0 || variant >= SEA_ROUTES_PER_PAIR)
+        return NULL;
+    if (variant == SEA_ROUTE_PUBLIC) return pair_slot(sea, pair, 0);
+
+    /* The live private passages are the two the cursor points at. The
+     * rest of the pool exists and is generated, but is not in use —
+     * a chart for one of them is a map of water nobody sails. */
+    cursor = sea->pair_cursor[pair] % SEA_PRIVATE_POOL;
+    return pair_slot(sea, pair,
+                     1 + (cursor + variant - 1) % SEA_PRIVATE_POOL);
 }
 
 const Route *sea_route_between(const Sea *sea, int island_a, int island_b)
@@ -378,15 +431,8 @@ const Route *sea_route_between(const Sea *sea, int island_a, int island_b)
 
 int sea_route_count_between(const Sea *sea, int island_a, int island_b)
 {
-    int i, n = 0;
-
-    for (i = 0; i < sea->route_count; i++) {
-        const Route *r = &sea->route[i];
-        if ((r->from_island == island_a && r->to_island == island_b) ||
-            (r->from_island == island_b && r->to_island == island_a))
-            n++;
-    }
-    return n;
+    return sea_pair_index(sea, island_a, island_b) < 0
+         ? 0 : SEA_ROUTES_PER_PAIR;
 }
 
 int sea_route_id(const Sea *sea, const Route *route)
@@ -394,6 +440,23 @@ int sea_route_id(const Sea *sea, const Route *route)
     if (!route || route < sea->route ||
         route >= sea->route + sea->route_count) return -1;
     return (int)(route - sea->route);
+}
+
+int sea_rotate_pair(Sea *sea, int pair)
+{
+    const Route *going;
+    int          cursor;
+
+    if (pair < 0 || pair >= SEA_MAX_PAIRS) return -1;
+
+    /* The one leaving play is the passage the cursor currently points
+     * at; advancing brings the far end of the pool in behind it. */
+    cursor = sea->pair_cursor[pair] % SEA_PRIVATE_POOL;
+    going  = pair_slot(sea, pair, 1 + cursor);
+    sea->pair_cursor[pair] =
+        (uint8_t)((cursor + 1) % SEA_PRIVATE_POOL);
+
+    return going ? sea_route_id(sea, going) : -1;
 }
 
 uint32_t sea_crossing_ticks(const Sea *sea, int island_a, int island_b)

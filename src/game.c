@@ -571,8 +571,13 @@ typedef struct {
  * cargo down water a v19 log had no concept of, raided shipments now
  * fail to arrive at all, and the survey mission adds two command kinds
  * with expeditions, research boats and scholars behind them. A v19 log
- * replayed under any of this describes a different world. */
-#define SAVE_VERSION 22u
+ * replayed under any of this describes a different world.
+ *
+ * v23 (MARITIME_PLAN Phase 3e): private passages rotate. Each pair now
+ * generates a pool and keeps two in play, and which two changes as the
+ * world runs — so a v22 log's cargoes sail water this world is not
+ * using. */
+#define SAVE_VERSION 23u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1267,6 +1272,11 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->insured, sizeof(sh->insured));
         fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
     }
+
+    /* Which passages are currently in play (MARITIME Phase 3e). The
+     * only part of a Sea that is world state — everything else about
+     * it regenerates from the seed. */
+    fnv_bytes(&h, gs->sea.pair_cursor, sizeof(gs->sea.pair_cursor));
 
     /* Expeditions in progress (MARITIME Phase 3d). Live entries only,
      * and no slot layout — same rule as the order book: a mission is
@@ -2718,6 +2728,53 @@ static void scholar_lost(Island *isl)
     if (best >= 0) isl->pop_data[best].residents--;
 }
 
+/* ---- the sea changes shape (MARITIME_PLAN Phase 3e) -------
+ * Charts expire. A private passage stays in play for
+ * SEA_ROUTE_LIFETIME_TICKS and then goes out of use: the water silts
+ * up, the reef shifts, the pilots who knew it die. A fresh passage from
+ * the pair's pool comes in behind it, and every chart of the old one
+ * becomes waste paper.
+ *
+ * This is what stops the map from ever being solved. Without it a
+ * player who surveyed every crossing once would be permanently faster
+ * than everyone who came later, and the Chart House would be a
+ * building you use once.
+ *
+ * Pairs rotate on their OWN offsets rather than together, so the sea
+ * shifts continuously instead of invalidating every chart in the world
+ * on the same tick.
+ */
+static void sea_rotation_update(GameState *gs)
+{
+    int pairs = gs->sea.island_count * (gs->sea.island_count - 1) / 2;
+    int p;
+
+    for (p = 0; p < pairs && p < SEA_MAX_PAIRS; p++) {
+        /* Stagger by pair index, spread across the lifetime. */
+        uint64_t offset = (uint64_t)p * SEA_ROUTE_LIFETIME_TICKS /
+                          (pairs > 0 ? (uint64_t)pairs : 1u);
+
+        /* The first rotation is a full lifetime in, not at the
+         * offset: otherwise every pair whose stagger works out to zero
+         * rotates on tick 0, voiding charts in a world that has not
+         * had time to issue any. */
+        uint64_t first = offset + SEA_ROUTE_LIFETIME_TICKS;
+
+        if (gs->sim_tick_no < first) continue;
+        if ((gs->sim_tick_no - first) % SEA_ROUTE_LIFETIME_TICKS != 0)
+            continue;
+
+        {
+            int retired = sea_rotate_pair(&gs->sea, p);
+            if (retired >= 0) {
+                knowledge_void_charts(&gs->knowledge, retired);
+                sim_log("The passage %s has gone out of use",
+                        gs->sea.route[retired].name);
+            }
+        }
+    }
+}
+
 static void surveys_update(GameState *gs)
 {
     SurveyBoard *b = &gs->surveys;
@@ -3138,6 +3195,7 @@ static void book_match(GameState *gs)
     int        kind, id, guard;
 
     book_settle_arrivals(gs);
+    sea_rotation_update(gs);
     surveys_update(gs);
     faction_quote_refresh(gs);
 

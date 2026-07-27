@@ -91,4 +91,11 @@ int  knowledge_charts(const Knowledge *k, uint32_t player, int route_id);
 int  knowledge_add_charts(Knowledge *k, uint32_t player, int route_id,
                           int qty);
 
+/* Discard every player's charts of `route_id` — the passage has gone
+ * out of use and the maps of it are waste paper (MARITIME_PLAN Phase
+ * 3e). The KNOWN bit is deliberately left standing: you still remember
+ * where the water was, and if the passage ever comes back round you
+ * will know it on sight. What you no longer have is a usable map. */
+void knowledge_void_charts(Knowledge *k, int route_id);
+
 #endif /* KNOWLEDGE_H */

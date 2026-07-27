@@ -409,8 +409,14 @@ retrofitting it after combat exists means touching combat too.
    and there. Asking for a route by id would mean already knowing it
    existed, which is what the expedition is paying to find out.
 
-   **Phase 3 is complete** except chart expiry, which is deferred: see
-   below.
+   **3e is built:** private passages rotate. Each pair holds a pool of
+   six and keeps two in play; a year in, the oldest goes out of use, a
+   fresh one comes in behind it, and every chart of the retired passage
+   becomes waste paper — though you still remember where the water was.
+   Pairs rotate on their own offsets, so the sea shifts continuously
+   rather than invalidating every chart in the world on one tick.
+
+   **Phase 3 is complete.**
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
    turns "everyone knows where the fast route is" into real
    concealment, and makes stockpiles private.
@@ -444,11 +450,15 @@ upgrades it rather than gating it.
   dice roll with a fee: the crew is at risk, so sending one is a
   decision about people as well as money.
 - **Route charts expire after a year**, and when one does a new private
-  route is generated in its place. *Not built* — and it is the one
-  remaining piece with an architectural cost, because generating a
-  replacement route means `Sea` stops being a pure function of the seed
-  and becomes mutable world state that a snapshot must carry. sea.h
-  currently states the opposite in bold. Worth doing deliberately. This is what stops the map from
+  route comes into play in its place. Built in Phase 3e, and the
+  architectural cost was paid the cheap way: each pair GENERATES a pool
+  of six private passages and keeps two in play, with a one-byte cursor
+  per pair saying which two. So the `Sea` is still a pure function of
+  the seed — geometry, names, durations and the whole pool all
+  regenerate identically everywhere — and the only world state is the
+  cursor. Making the entire Sea mutable would have been simpler to
+  write and much worse to live with: a desync in generated data is a
+  bug in a generator, a desync in saved data is a bug anywhere. This is what stops the map from
   being solved: a passage learned is not a passage owned forever, the
   sea keeps changing shape, and the Chart House has a standing reason
   to exist rather than a one-off job.

@@ -85,3 +85,12 @@ int knowledge_add_charts(Knowledge *k, uint32_t player, int route_id,
 
     return now - had;
 }
+
+void knowledge_void_charts(Knowledge *k, int route_id)
+{
+    int p;
+
+    if (route_id < 0 || route_id >= SEA_MAX_ROUTES) return;
+    for (p = 0; p < MAX_PLAYERS; p++)
+        k->player[p].charts[route_id] = 0;
+}

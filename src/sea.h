@@ -44,7 +44,7 @@
  *
  * Measured rather than guessed, and RE-measured whenever the generator
  * changes shape. Across eight seeds the mean PUBLIC crossing comes out
- * at 198.6 ticks — the same centre SHIP_VOYAGE_TICKS used to impose on
+ * at 196.7 ticks — the same centre SHIP_VOYAGE_TICKS used to impose on
  * every crossing alike, so voyages differ from each other (roughly 100
  * to 350 ticks) without the game as a whole getting slower.
  *
@@ -53,15 +53,18 @@
  *
  *   15 -> 21  Phase 1. The first value quietly made the average voyage
  *             half again as long and made this comment untrue.
- *   21 -> 26  Phase 3. Three routes per pair: the public lane now
+ *   21 -> 26  Phase 3a. Three routes per pair: the public lane now
  *             threads a slightly wider waypoint and carries a convoy
  *             penalty, which together took the mean to 246 before this
  *             was re-fitted.
+ *   26 -> 34  Phase 3e. The private pool: the lane now threads the
+ *             furthest waypoint the pool uses, so that every passage
+ *             in it beats the lane, which pushed the mean to 258.
  *
  * If the generator's scale changes again, re-measure. The failure mode
  * is not a wrong number, it is every voyage in the game silently
  * getting slower while nothing says so. */
-#define SEA_UNITS_PER_TICK  26
+#define SEA_UNITS_PER_TICK  34
 
 /* How far apart things are kept. Islands and waypoints have different
  * requirements and used to share one number, which was too small.
@@ -92,10 +95,43 @@
 #define SEA_MAX_ROUTE_WAYPOINTS 2
 #define SEA_MAX_ROUTE_LEGS      (SEA_MAX_ROUTE_WAYPOINTS + 1)
 
-/* Three routes per island pair (MARITIME_PLAN Phase 3): one public and
- * two private. 3 * N*(N-1)/2, which is 84 at eight islands. */
-#define SEA_ROUTES_PER_PAIR 3
+/* Three routes are IN PLAY between any island pair (MARITIME_PLAN
+ * Phase 3): one public lane and two private passages.
+ *
+ * But more than that are GENERATED. Charts expire, and when one does
+ * the passage it mapped goes out of use and a fresh one comes into
+ * play — so the sea keeps changing shape and the map can never be
+ * finished (Phase 3e). Each pair therefore has a POOL of private
+ * routes, of which two are live at a time, and a cursor says which
+ * two.
+ *
+ * THE CURSOR IS THE ONLY PART OF A SEA THAT IS WORLD STATE. Everything
+ * else here is still a pure function of the world seed, which is the
+ * property the rest of this header is written around: the geometry,
+ * the names, the durations and the pool all regenerate identically on
+ * every machine, and a checkpoint carries one small number per pair
+ * saying where in the rotation the world has got to. Making the whole
+ * Sea mutable would have been simpler to write and much worse to
+ * reason about — a desync in generated data is a bug in a generator,
+ * a desync in saved data is a bug anywhere.
+ *
+ * (1 + pool) * N*(N-1)/2 = 196 at eight islands and a pool of six. */
+#define SEA_ROUTES_PER_PAIR 3    /* live: one public, two private     */
+#define SEA_PRIVATE_POOL    6    /* generated private passages        */
+#define SEA_STORED_PER_PAIR (1 + SEA_PRIVATE_POOL)
+#define SEA_MAX_PAIRS       (16 * 15 / 2)
 #define SEA_MAX_ROUTES      512
+
+/* How long a private passage stays in play. A "year" in a game with no
+ * calendar: long enough that charting one is worth doing and short
+ * enough that the map is never finished. Charter upkeep falls every
+ * 1200 ticks, so this is fifteen of those.
+ *
+ * The pairs do NOT all turn over together. Each rotates on its own
+ * offset, so the sea changes shape continuously rather than lurching
+ * once every half hour and invalidating everybody's charts at the same
+ * instant. */
+#define SEA_ROUTE_LIFETIME_TICKS 18000
 
 /* Which of a pair's three this is. Variant 0 is the lane everybody
  * knows; 1 and 2 are the passages a chart buys you.
@@ -138,7 +174,23 @@ typedef struct {
     int      waypoint_count;
     Route    route[SEA_MAX_ROUTES];
     int      route_count;
+
+    /* Where each pair is in its rotation: the two live private
+     * passages are pool entries [cursor] and [cursor+1], modulo the
+     * pool. World state — the one field in here a checkpoint carries
+     * and the one a replay must reproduce. */
+    uint8_t  pair_cursor[SEA_MAX_PAIRS];
 } Sea;
+
+/* The pair index for two islands, order-independent, or -1. This is
+ * what indexes pair_cursor[]. */
+int sea_pair_index(const Sea *sea, int island_a, int island_b);
+
+/* Retire the oldest live passage on `pair` and bring the next one in.
+ * Returns the route id that just went out of play, or -1. The caller
+ * is what makes charts for it worthless — the sea only decides which
+ * water is in use. */
+int sea_rotate_pair(Sea *sea, int pair);
 
 /* Generate the whole sea from `seed` and `island_count`. Deterministic:
  * the same arguments always produce the same positions, names, paths
