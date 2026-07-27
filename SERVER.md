@@ -71,9 +71,25 @@ The client cannot tell a dedicated server from a friend running
 ## What it does not do yet
 
 - **No authentication.** `--as N` is an honour system: anyone who knows
-  an id can claim it while its owner is away. Fine for friends, not fine
-  for a public server. This is the first thing to fix before opening one
-  up.
+  an id can claim it while its owner is away — and ids are small
+  integers from 1, so they are enumerated rather than guessed. Fine for
+  friends, not fine for a public server. This is the first thing to fix
+  before opening one up, and [AUTH_PLAN.md](AUTH_PLAN.md) is the design
+  for fixing it: three identity layers, why the credential must never
+  reach a snapshot, and why tokens come before passwords.
+- **No privacy between players, and none available.** Lockstep sends
+  every client the whole world — every stockpile, every building, every
+  ship's cargo and destination — because it cannot run the simulation
+  without them. Among invited players that is correct. Among strangers
+  it is an undetectable cheating vector that authentication cannot
+  touch. [VISIBILITY.md](VISIBILITY.md) sets out why it is inherent
+  rather than a bug, and what the options actually cost.
+- **No account tooling, and therefore no way to answer a data request.**
+  Once strangers play, whoever runs the server is a data controller and
+  needs to be able to export and erase a player's data.
+  [PRIVACY.md](PRIVACY.md) sets out what is held where, why erasure is
+  a one-row delete rather than a rewrite of history, and the invariant
+  that keeps it that way.
 - **No sharding.** One process, one archipelago, one thread.
 
 ## Log truncation: the snapshot format
@@ -191,9 +207,13 @@ work. This section is what was done about it, in the order it was done.
 All four phases have landed; the numbering is kept because the
 reasoning is the part worth keeping.
 
-Because peers now exchange `MSG_PING`, `NET_PROTO_VERSION` is 4: a
-client older than this is refused at the handshake with a version
-mismatch, rather than connecting and then looking idle.
+Because peers now exchange `MSG_PING`, this work took
+`NET_PROTO_VERSION` to 4: a client older than that is refused at the
+handshake with a version mismatch, rather than connecting and then
+looking idle. (It has since gone further — the log-truncation section
+below took it to 5, and SUPPLY_CHAIN Phases 5-8 to 9, because a
+resource-vocabulary change is a protocol change for the same reason it
+is a save change. `SAVE_VERSION` is 15 for the same run of reasons.)
 
 ### Phase A — availability (a single peer must not be able to stop the world)
 
