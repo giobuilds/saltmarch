@@ -107,8 +107,12 @@ typedef struct NetSession NetSession;
  *    snapshot carries per-player knowledge and the market's chart
  *    offers, and a booking's route depends on the seller's charts —
  *    so a peer on 13 both misreads the checkpoint and sails cargoes
- *    down the wrong passage. */
-#define NET_PROTO_VERSION     14u
+ *    down the wrong passage.
+ * 15: per-route insurance and shipment raids (MARITIME_PLAN Phase 3c).
+ *    A new command kind, a differently-shaped premium table in the
+ *    snapshot, and cargo that can now fail to arrive — a peer on 14
+ *    would deliver what this one lost. */
+#define NET_PROTO_VERSION     15u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

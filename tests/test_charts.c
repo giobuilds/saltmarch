@@ -23,6 +23,7 @@
 #include "knowledge.h"
 #include "orderbook.h"
 #include "sea.h"
+#include "ship.h"
 #include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,6 +63,21 @@ static GameState *two_traders(uint32_t seed)
     gs->islands[0].stockpile.amount[RES_GOLD]   = 1000000;
     gs->islands[1].stockpile.amount[RES_GOLD]   = 1000000;
     gs->islands[0].stockpile.amount[RES_PLANKS] = 1000;
+
+    /* Aim the market maker at goods these tests never trade, as
+     * test_orderbook does: it quotes the six it is furthest from
+     * baseline on, so overstocking six others keeps Planks out of its
+     * book and the counts below are the test's own. Its chart offers
+     * are harmless here — nobody bids on them. */
+    {
+        static const ResourceType DECOY[FACTION_QUOTE_GOODS] = {
+            RES_WOOD, RES_FISH, RES_GRAIN, RES_WOOL, RES_CLOTH, RES_FISH_OIL
+        };
+        int i;
+        for (i = 0; i < FACTION_QUOTE_GOODS; i++)
+            gs->faction.inventory[DECOY[i]] = 100000;
+    }
+    gs->faction.gold = 0;
     return gs;
 }
 
@@ -285,6 +301,142 @@ int main(void)
         CHECK(offers <= FACTION_CHART_ROUTES, "a few of them, not an atlas");
         CHECK(on_public == 0,
               "and never a map of the lane everyone already knows");
+
+        game_free(gs);
+    }
+
+    printf("\n=== the fast water is dangerous water ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        rid, raided = 0, safe = 0, i;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        fastest_private(&gs->sea, 0, 1, &rid);
+
+        /* A raid is derived from the shipment's identity, not rolled,
+         * so the honest test is that the derivation is BIASED the way
+         * the design says — a private passage loses cargo more often
+         * than the lane — rather than that any one crossing is taken. */
+        for (i = 0; i < 400; i++) {
+            if (shipment_is_raided(gs->world_seed, rid, (uint64_t)i, 1u,
+                                   PIRACY_CHANCE_PRIVATE)) raided++;
+            if (shipment_is_raided(gs->world_seed, 0, (uint64_t)i, 1u,
+                                   PIRACY_CHANCE_PER_MILLE)) safe++;
+        }
+        CHECK(raided > safe,
+              "pirates take more off the passages than off the lane");
+        CHECK(raided > 0 && raided < 400,
+              "but not everything, and not nothing");
+
+        /* And it is a function, not a roll: the same shipment always
+         * has the same fate, which is what lets a replay agree. */
+        CHECK(shipment_is_raided(gs->world_seed, rid, 99u, 1u, 240) ==
+              shipment_is_raided(gs->world_seed, rid, 99u, 1u, 240),
+              "and the same crossing always has the same fate");
+
+        game_free(gs);
+    }
+
+    printf("\n=== a raided cargo costs the seller, not the buyer ===\n");
+    {
+        GameState   *gs = two_traders(4242u);
+        const Route *priv;
+        int          rid, tries, raided_at = -1;
+        int          buyer_gold_before = 0, seller_planks_before = 0;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        priv = fastest_private(&gs->sea, 0, 1, &rid);
+
+        /* Rather than compute which tick produces a taken crossing and
+         * hope the booking lands on it, sail the passage repeatedly
+         * until one is taken. Each round trip is a real dispatch, so
+         * the flag under test is the one the sim actually derived. */
+        for (tries = 0; tries < 12 && raided_at < 0; tries++) {
+            int i;
+
+            knowledge_add_charts(&gs->knowledge, 1u, rid, 1);
+            place(gs, 1u, 0, TRADE_RESOURCE, RES_PLANKS, -10, 5);
+            place(gs, 2u, 1, TRADE_RESOURCE, RES_PLANKS,  10, 9);
+            run_ticks(gs, 2);
+
+            for (i = 0; i < gs->book.booking_count; i++) {
+                Booking *bk = &gs->book.booking[i];
+                if (!bk->active || bk->route_id != rid) continue;
+
+                /* The wiring, asserted against the shipment's OWN
+                 * dispatch tick: the flag must be what the derivation
+                 * says, not merely plausible. */
+                {
+                    uint64_t booked = bk->arrive_tick - priv->total_ticks;
+                    CHECK(bk->raided == shipment_is_raided(gs->world_seed,
+                              rid, booked, 1u, PIRACY_CHANCE_PRIVATE),
+                          "a shipment's fate is what its identity says");
+                }
+                if (bk->raided) {
+                    raided_at = i;
+                    buyer_gold_before =
+                        gs->islands[1].stockpile.amount[RES_GOLD];
+                    seller_planks_before =
+                        gs->islands[0].stockpile.amount[RES_PLANKS];
+                }
+                break;
+            }
+            if (raided_at < 0) run_ticks(gs, (int)priv->total_ticks * 2 + 4);
+        }
+
+        CHECK(raided_at >= 0, "the passage takes a cargo sooner or later");
+        if (raided_at >= 0) {
+            int landed_before = gs->islands[1].stockpile.amount[RES_PLANKS];
+
+            run_ticks(gs, (int)priv->total_ticks * 2 + 6);
+            CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] ==
+                  landed_before,
+                  "nothing lands");
+            CHECK(gs->islands[1].stockpile.amount[RES_GOLD] >
+                  buyer_gold_before,
+                  "the buyer, who did not choose the passage, is made whole");
+            CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] ==
+                  seller_planks_before,
+                  "and the seller is out the goods");
+        }
+
+        game_free(gs);
+    }
+
+    printf("\n=== a policy pays, and the passage costs more to cover ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        int        rid, i, found = -1, lane_id;
+        int        seller_gold;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        fastest_private(&gs->sea, 0, 1, &rid);
+        lane_id = sea_route_id(&gs->sea, sea_route_between(&gs->sea, 0, 1));
+
+        CHECK(faction_route_premium(&gs->faction, rid) >
+              faction_route_premium(&gs->faction, lane_id),
+              "covering the passage costs more than covering the lane");
+
+        for (i = 5; i < 600 && found < 0; i++)
+            if (shipment_is_raided(gs->world_seed, rid, (uint64_t)i, 1u,
+                                   PIRACY_CHANCE_PRIVATE)) found = i;
+        CHECK(found > 4, "some crossing on this passage is taken");
+
+        AS(gs, 1u, game_set_insurance(gs, 0, 1));
+        knowledge_add_charts(&gs->knowledge, 1u, rid, 1);
+        run_ticks(gs, found - 1);
+        CHECK(gs->islands[0].insure_shipments, "the port carries a policy");
+
+        place(gs, 1u, 0, TRADE_RESOURCE, RES_PLANKS, -10, 5);
+        place(gs, 2u, 1, TRADE_RESOURCE, RES_PLANKS,  10, 9);
+        run_ticks(gs, 2);
+        CHECK(gs->book.booking[0].insured_value > 0,
+              "and the shipment goes out covered");
+
+        seller_gold = gs->islands[0].stockpile.amount[RES_GOLD];
+        run_ticks(gs, 900);
+        CHECK(gs->islands[0].stockpile.amount[RES_GOLD] > seller_gold,
+              "so the loss is paid out rather than simply borne");
 
         game_free(gs);
     }

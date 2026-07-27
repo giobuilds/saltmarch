@@ -26,6 +26,7 @@
  * ========================================================= */
 
 #include "resource.h"
+#include "sea.h"
 #include <stdint.h>
 
 /* island.h includes this header, so the island count cannot come from
@@ -126,12 +127,20 @@ typedef struct {
     int32_t  inventory[RES_COUNT];   /* GOLD slot unused                 */
     uint32_t revert_timer;           /* ticks toward the next nudge      */
 
-    /* Per-lane insurance premium, in tenths of a percent of declared
-     * cargo value (MMO_PLAN later phases). Indexed [from][to]; the
-     * diagonal is unused. Moves as an EMA on every insured voyage's
-     * outcome, so the table is a map of where ships have been lost.
+    /* Per-ROUTE insurance premium, in tenths of a percent of declared
+     * cargo value. Moves as an EMA on every insured shipment's outcome,
+     * so the table is a map of where cargo has been lost.
+     *
+     * Indexed by sea route id (MARITIME_PLAN Phase 3c). It used to be
+     * [from][to] — one number for the water between two islands — which
+     * stopped being enough the moment there were three ways across it.
+     * A private passage is faster BECAUSE it runs outside patrolled
+     * water, and a premium that could not tell the two apart priced
+     * that risk at zero. Insurance is where "faster but unsafe" stops
+     * being a sentence in a design document.
+     *
      * Sim state: hashed and replayed. */
-    int16_t  lane_premium[MAX_ISLANDS_FOR_LANES][MAX_ISLANDS_FOR_LANES];
+    int16_t  route_premium[SEA_MAX_ROUTES];
 
         /* Where the faction's standing orders are in the book
      * (MARITIME_PLAN Phase 2). One id per (port, good, side) it is
@@ -162,14 +171,22 @@ typedef struct {
  * every lane at the starting premium. */
 void faction_init(Faction *f);
 
-/* The premium this lane currently charges, in tenths of a percent. */
-int  faction_lane_premium(const Faction *f, int from, int to);
+/* The premium this route currently charges, in tenths of a percent.
+ * Out-of-range ids get the starting premium rather than nothing, so a
+ * caller holding a stale id is overcharged rather than insured free. */
+int  faction_route_premium(const Faction *f, int route_id);
 
-/* Fold one insured voyage's outcome into the lane's premium: `raided`
- * pushes it up, a safe arrival pulls it down. An EMA rather than a
- * counter, so a lane that was dangerous last month stops being priced
- * as though it still is. */
-void faction_lane_experience(Faction *f, int from, int to, int raided);
+/* Fold one insured shipment's outcome into the route's premium:
+ * `raided` pushes it up, a safe arrival pulls it down. An EMA rather
+ * than a counter, so a passage that was dangerous last month stops
+ * being priced as though it still is. */
+void faction_route_experience(Faction *f, int route_id, int raided);
+
+/* Set every route's starting premium from what kind of water it is:
+ * the patrolled lane at the base rate, a private passage dearer,
+ * because it is dearer. Called once when a world is built, after the
+ * sea exists — faction_init runs before it and cannot know. */
+void faction_init_routes(Faction *f, const Sea *sea);
 
 /* Price the faction will PAY the player for one unit of `r` (bid), and
  * price it CHARGES the player for one unit (ask). ask > bid always (the

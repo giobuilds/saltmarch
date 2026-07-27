@@ -485,11 +485,17 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             if (faction && docked) {
                 int to, ty = (int)(ib.y + ib.h + 6.0f);
                 for (to = 0; to < island_count; to++) {
+                    int prem;
                     if (to == sh->at_island) continue;
+                    /* The lane, specifically: a player ship carries
+                     * cargo rather than a chart, so the public route is
+                     * the water it would actually be on. */
+                    prem = faction_route_premium(faction,
+                               sea_route_id(sea,
+                                   sea_route_between(sea, sh->at_island, to)));
                     SDL_snprintf(buf, sizeof(buf), "%s -> %s   %d.%d%%",
                                  islands[sh->at_island].name, islands[to].name,
-                                 faction_lane_premium(faction, sh->at_island, to) / 10,
-                                 faction_lane_premium(faction, sh->at_island, to) % 10);
+                                 prem / 10, prem % 10);
                     font_draw_text(renderer, FONT_SMALL, buf,
                                    (int)(ib.x + 8.0f), ty, lane_col);
                     ty += 16;

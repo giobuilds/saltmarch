@@ -13,23 +13,20 @@ int faction_is_home_port(int idx)
            idx <  MAX_ISLANDS_FOR_LANES;
 }
 
-int faction_lane_premium(const Faction *f, int from, int to)
+int faction_route_premium(const Faction *f, int route_id)
 {
-    if (from < 0 || from >= MAX_ISLANDS_FOR_LANES ||
-        to   < 0 || to   >= MAX_ISLANDS_FOR_LANES)
+    if (route_id < 0 || route_id >= SEA_MAX_ROUTES)
         return INSURANCE_PREMIUM_START;
-    return f->lane_premium[from][to];
+    return f->route_premium[route_id];
 }
 
-void faction_lane_experience(Faction *f, int from, int to, int raided)
+void faction_route_experience(Faction *f, int route_id, int raided)
 {
     int p, target;
 
-    if (from < 0 || from >= MAX_ISLANDS_FOR_LANES ||
-        to   < 0 || to   >= MAX_ISLANDS_FOR_LANES)
-        return;
+    if (route_id < 0 || route_id >= SEA_MAX_ROUTES) return;
 
-    p      = f->lane_premium[from][to];
+    p      = f->route_premium[route_id];
     target = raided ? INSURANCE_PREMIUM_MAX : INSURANCE_PREMIUM_MIN;
 
     /* p += (target - p) >> shift, in integers. The shift is the EMA's
@@ -38,13 +35,23 @@ void faction_lane_experience(Faction *f, int from, int to, int raided)
 
     /* An integer EMA can stall short of its target when the difference
      * shifts to zero; nudge it so experience always moves the price at
-     * least a little, or a lane could sit at a stale premium forever. */
-    if (raided && p <= f->lane_premium[from][to]) p++;
-    if (!raided && p >= f->lane_premium[from][to]) p--;
+     * least a little, or a route could sit at a stale premium forever. */
+    if (raided && p <= f->route_premium[route_id]) p++;
+    if (!raided && p >= f->route_premium[route_id]) p--;
 
     if (p < INSURANCE_PREMIUM_MIN) p = INSURANCE_PREMIUM_MIN;
     if (p > INSURANCE_PREMIUM_MAX) p = INSURANCE_PREMIUM_MAX;
-    f->lane_premium[from][to] = (int16_t)p;
+    f->route_premium[route_id] = (int16_t)p;
+}
+
+void faction_init_routes(Faction *f, const Sea *sea)
+{
+    int i;
+
+    for (i = 0; i < SEA_MAX_ROUTES; i++)
+        f->route_premium[i] = (int16_t)
+            (i < sea->route_count && sea->route[i].is_private
+                 ? INSURANCE_PREMIUM_PRIVATE : INSURANCE_PREMIUM_START);
 }
 
 void faction_init(Faction *f)
@@ -64,12 +71,11 @@ void faction_init(Faction *f)
     for (i = 0; i < RES_COUNT; i++)
         f->inventory[i] = (i == RES_GOLD) ? 0 : FACTION_BASE_INVENTORY;
 
-    {
-        int a, b;
-        for (a = 0; a < MAX_ISLANDS_FOR_LANES; a++)
-            for (b = 0; b < MAX_ISLANDS_FOR_LANES; b++)
-                f->lane_premium[a][b] = INSURANCE_PREMIUM_START;
-    }
+    /* Premiums are set by faction_init_routes once the sea exists; a
+     * world built without one leaves them at the base rate rather than
+     * at zero, which would insure everything free. */
+    for (i = 0; i < SEA_MAX_ROUTES; i++)
+        f->route_premium[i] = INSURANCE_PREMIUM_START;
 }
 
 /* Linear elastic quote from a base price and the current inventory:

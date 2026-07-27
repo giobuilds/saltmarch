@@ -363,6 +363,8 @@ static void put_orderbook(W *w, const OrderBook *b)
         w_u64(w, bk->return_tick);
         w_i32(w, bk->delivered);
         w_i32(w, bk->route_id);
+        w_i32(w, bk->raided);
+        w_i32(w, bk->insured_value);
     }
 }
 
@@ -408,7 +410,9 @@ static int get_orderbook(R *r, OrderBook *b)
         bk->arrive_tick = r_u64(r);
         bk->return_tick = r_u64(r);
         bk->delivered   = r_i32(r);
-        bk->route_id    = r_i32(r);
+        bk->route_id      = r_i32(r);
+        bk->raided        = r_i32(r);
+        bk->insured_value = r_i32(r);
     }
     return !r->bad;
 }
@@ -459,9 +463,7 @@ static void put_faction(W *w, const Faction *f)
     { int c; for (c = 0; c < FACTION_CHART_ROUTES; c++) w_u32(w, f->chart_order[c]); }
     w_u32(w, f->chart_cursor);
     w_u32(w, f->revert_timer);
-    for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
-        for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
-            w_i16(w, f->lane_premium[i][j]);
+    for (i = 0; i < SEA_MAX_ROUTES; i++) w_i16(w, f->route_premium[i]);
     for (i = 0; i < RES_COUNT; i++)
         for (j = 0; j < FACTION_HIST_LEN; j++)
             w_i16(w, f->hist[i][j]);
@@ -487,9 +489,7 @@ static void get_faction(R *r, Faction *f)
     { int c; for (c = 0; c < FACTION_CHART_ROUTES; c++) f->chart_order[c] = r_u32(r); }
     f->chart_cursor = r_u32(r);
     f->revert_timer = r_u32(r);
-    for (i = 0; i < MAX_ISLANDS_FOR_LANES; i++)
-        for (j = 0; j < MAX_ISLANDS_FOR_LANES; j++)
-            f->lane_premium[i][j] = r_i16(r);
+    for (i = 0; i < SEA_MAX_ROUTES; i++) f->route_premium[i] = r_i16(r);
     for (i = 0; i < RES_COUNT; i++)
         for (j = 0; j < FACTION_HIST_LEN; j++)
             f->hist[i][j] = r_i16(r);
@@ -516,6 +516,7 @@ static void put_island(W *w, const Island *isl)
      * is derived from the buildings and needs no bytes. */
     w_i32(w, isl->merchants_out);
     w_i32(w, isl->hulls_out);
+    w_i32(w, isl->insure_shipments);
     w_i32(w, (int32_t)isl->agent_assign_timer);
     put_stockpile(w, &isl->stockpile);
 
@@ -563,6 +564,7 @@ static int get_island(R *r, Island *isl)
     for (i = 0; i < RES_COUNT; i++) isl->escrow[i] = r_i32(r);
     isl->merchants_out = r_i32(r);
     isl->hulls_out     = r_i32(r);
+    isl->insure_shipments = r_i32(r);
     isl->agent_assign_timer = (int)r_i32(r);
     get_stockpile(r, &isl->stockpile);
 

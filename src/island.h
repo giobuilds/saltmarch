@@ -61,6 +61,10 @@
  * whole thing stays integer, and are clamped to a sane band.
  */
 #define INSURANCE_PREMIUM_START   80    /* 8.0% of declared value      */
+/* A private passage starts dearer to insure, because it is dearer to
+ * sail: it is fast precisely because it runs outside patrolled water
+ * (MARITIME_PLAN Phase 3c). Experience moves both from here. */
+#define INSURANCE_PREMIUM_PRIVATE 220   /* 22.0%                       */
 #define INSURANCE_PREMIUM_MIN     20
 #define INSURANCE_PREMIUM_MAX    400
 #define INSURANCE_EMA_SHIFT        3    /* how fast experience moves it */
@@ -143,6 +147,17 @@ typedef struct {
      * Sim state: hashed, replayed, integer. */
     int32_t    merchants_out;
     int32_t    hulls_out;
+
+    /* Standing marine policy (MARITIME_PLAN Phase 3c). When set, every
+     * shipment dispatched from this harbour is insured at the route's
+     * current premium, paid to the market when the booking is made.
+     *
+     * A standing policy rather than a per-order flag because Command
+     * has four payload slots and an order already uses all of them —
+     * and because it reads better as what it is: a decision a port
+     * makes about how it does business, like docking_allowed, not a
+     * box ticked on every consignment. */
+    int32_t    insure_shipments;
 } Island;
 
 /* The NPC market's own player id (MARITIME_PLAN Phase 2). It owns its

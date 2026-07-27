@@ -318,6 +318,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     /* The market starts at baseline, so day-one quotes equal the old
      * fixed SELL_PRICE/BUY_PRICE until the player trades. */
     faction_init(&gs->faction);
+    faction_init_routes(&gs->faction, &gs->sea);
     orderbook_init(&gs->book);
     knowledge_init(&gs->knowledge);
 
@@ -1073,8 +1074,13 @@ void sim_run_one_tick(GameState *gs)
                         payout, i);
             }
         }
-        faction_lane_experience(&gs->faction, sh->from_island, sh->to_island,
-                                raided);
+        /* A player ship sails the public lane: it carries cargo, not a
+         * chart. Its experience therefore prices the lane, which is
+         * the water it was actually on. */
+        faction_route_experience(&gs->faction,
+            sea_route_id(&gs->sea,
+                sea_route_between(&gs->sea, sh->from_island, sh->to_island)),
+            raided);
         sh->insured       = 0;
         sh->insured_value = 0;
     }
@@ -1145,6 +1151,7 @@ uint64_t sim_hash(const GameState *gs)
          * which are hashed just below. */
         fnv_bytes(&h, &isl->merchants_out, sizeof(isl->merchants_out));
         fnv_bytes(&h, &isl->hulls_out, sizeof(isl->hulls_out));
+        fnv_bytes(&h, &isl->insure_shipments, sizeof(isl->insure_shipments));
 
         for (b = 0; b < isl->building_count; b++) {
             const Building *bd = &isl->buildings[b];
@@ -1216,6 +1223,8 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &bk->return_tick, sizeof(bk->return_tick));
         fnv_bytes(&h, &bk->delivered, sizeof(bk->delivered));
         fnv_bytes(&h, &bk->route_id, sizeof(bk->route_id));
+        fnv_bytes(&h, &bk->raided, sizeof(bk->raided));
+        fnv_bytes(&h, &bk->insured_value, sizeof(bk->insured_value));
     }
 
     for (s = 0; s < gs->ship_count; s++) {
@@ -1251,7 +1260,7 @@ uint64_t sim_hash(const GameState *gs)
     fnv_bytes(&h, &gs->faction.gold, sizeof(gs->faction.gold));
     fnv_bytes(&h, gs->faction.inventory, sizeof(gs->faction.inventory));
     fnv_bytes(&h, &gs->faction.revert_timer, sizeof(gs->faction.revert_timer));
-    fnv_bytes(&h, gs->faction.lane_premium, sizeof(gs->faction.lane_premium));
+    fnv_bytes(&h, gs->faction.route_premium, sizeof(gs->faction.route_premium));
 
     /* The price history too (UI_PLAN M3). It is state the sim produces
      * and the UI renders, so a replay that reproduced everything except
@@ -2040,7 +2049,9 @@ int game_insurance_quote(const GameState *gs, int ship_idx, int dest_island)
     }
     if (value <= 0) return 0;
 
-    premium = faction_lane_premium(&gs->faction, sh->at_island, dest_island);
+    premium = faction_route_premium(&gs->faction,
+        sea_route_id(&gs->sea,
+            sea_route_between(&gs->sea, sh->at_island, dest_island)));
     cost    = (value * premium) / 1000;
     if (cost < INSURANCE_MIN_PREMIUM_GOLD) cost = INSURANCE_MIN_PREMIUM_GOLD;
     return cost;
@@ -2314,6 +2325,15 @@ int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
 int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty)
 {
     return game_escrow_take_nonce(gs, island_idx, res, qty, 0u);
+}
+
+int game_set_insurance(GameState *gs, int island_idx, int on)
+{
+    Command c = {0};
+    c.kind = CMD_SET_INSURANCE;
+    c.a    = island_idx;
+    c.b    = on ? 1 : 0;
+    return command_submit(gs, &c);
 }
 
 int game_set_docking(GameState *gs, int island_idx, int allow)
@@ -2829,8 +2849,32 @@ static void book_settle_arrivals(GameState *gs)
         to   = &gs->islands[bk->to_island];
         from = &gs->islands[bk->from_island];
 
-        /* Outbound: the cargo lands and the seller is paid. */
-        if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick) {
+        /* Outbound. A raided shipment lands nothing: the goods are
+         * gone with the pirates, and the buyer — who paid at posting
+         * and did not choose the passage — gets their gold back. The
+         * seller dispatched and the seller bears it, which is what
+         * makes insurance worth buying and what makes choosing the
+         * fast passage a decision rather than a free upgrade. */
+        if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick &&
+            bk->raided) {
+            trade_credit(gs, bk->buyer, bk->to_island, trade_gold(),
+                         bk->qty * bk->price);
+            if (bk->insured_value > 0) {
+                int payout = bk->insured_value;
+                if (payout > gs->faction.gold) payout = gs->faction.gold;
+                gs->faction.gold -= payout;
+                trade_credit(gs, bk->seller, bk->from_island, trade_gold(),
+                             payout);
+                sim_log("Insurance paid %d Gold on a raided shipment", payout);
+            }
+            faction_route_experience(&gs->faction, bk->route_id, 1);
+            sim_log("Pirates took %d %s off %s", bk->qty,
+                    bk->what.kind == TRADE_ROUTE_CHART ? "chart(s)"
+                                                       : RESOURCE_NAMES[bk->what.id],
+                    bk->route_id >= 0 ? gs->sea.route[bk->route_id].name
+                                      : "the crossing");
+            bk->delivered = 1;
+        } else if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick) {
             trade_credit(gs, bk->buyer, bk->to_island, bk->what, bk->qty);
             trade_credit(gs, bk->seller, bk->from_island, trade_gold(),
                          bk->qty * bk->price);
@@ -2844,6 +2888,8 @@ static void book_settle_arrivals(GameState *gs)
                 sim_log("Order filled: %d %s delivered to %s at %d each",
                         bk->qty, RESOURCE_NAMES[bk->what.id], to->name,
                         bk->price);
+
+            faction_route_experience(&gs->faction, bk->route_id, 0);
         }
 
         /* Homeward: the merchant and the hull are free again. Only now
@@ -2935,6 +2981,46 @@ static void book_match(GameState *gs)
              * same island this tick sees them already committed. */
             gs->islands[ask->island].merchants_out++;
             gs->islands[ask->island].hulls_out++;
+
+            /* Whether pirates take it, decided now and not on arrival:
+             * the shipment's fate is a function of its own identity,
+             * so a replay reaches the same answer without being told.
+             * Recording it at dispatch also means a raid cannot be
+             * conjured by a late tick after the goods have landed. */
+            {
+                Booking *bk    = &b->booking[slot];
+                Island  *from  = &gs->islands[ask->island];
+                int      chance;
+                int      value = qty * bk->price;
+
+                chance = (bk->route_id >= 0 &&
+                          gs->sea.route[bk->route_id].is_private)
+                       ? PIRACY_CHANCE_PRIVATE : PIRACY_CHANCE_PER_MILLE;
+
+                bk->raided = shipment_is_raided(gs->world_seed, bk->route_id,
+                                                gs->sim_tick_no, ask->owner,
+                                                chance);
+
+                /* A standing policy insures at the route's premium, so
+                 * the fast passage costs more to cover than the lane —
+                 * which is the whole point of pricing risk per route
+                 * rather than per pair of islands. The premium is paid
+                 * at dispatch, out of the seller's own purse. */
+                if (from->insure_shipments && value > 0) {
+                    int prem = faction_route_premium(&gs->faction,
+                                                     bk->route_id);
+                    int cost = (value * prem) / 1000;
+                    if (cost < INSURANCE_MIN_PREMIUM_GOLD)
+                        cost = INSURANCE_MIN_PREMIUM_GOLD;
+                    if (trade_balance(gs, ask->owner, ask->island,
+                                      trade_gold()) >= cost) {
+                        trade_credit(gs, ask->owner, ask->island,
+                                     trade_gold(), -cost);
+                        gs->faction.gold += cost;
+                        bk->insured_value = value;
+                    }
+                }
+            }
 
             /* The buyer reserved at their limit; a fill at the resting
              * price can only be cheaper, and the difference goes back.
@@ -3068,6 +3154,10 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         /* Ownership is the order's, not an island's, and is checked in
          * the body where the order can be looked up. */
         return sim_cancel_order(gs, (uint32_t)c->a, c->player_id);
+    case CMD_SET_INSURANCE:
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        gs->islands[c->a].insure_shipments = c->b ? 1 : 0;
+        return REJ_OK;
     default:
         return REJ_UNAVAILABLE;
     }
