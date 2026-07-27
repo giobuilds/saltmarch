@@ -397,8 +397,20 @@ retrofitting it after combat exists means touching combat too.
    on each order, because `Command`'s four payload slots are already
    spent and because it reads better as what it is.
 
-   Still to come in this phase: the survey and research missions, now
-   unblocked — see Settled.
+   **3d is built:** the survey mission. An expedition commits one
+   scholar, one research boat and one blank chart; it takes 900 ticks
+   and may come back with a passage, with nothing, or not at all. The
+   chart is spent on departure either way — that is the gamble — and a
+   lost expedition takes the boat and a resident of the Scholars' House
+   that sent them. Research boats are laid down at a Shipyard.
+
+   You cannot name the route you are looking for: a survey is aimed at
+   an *island*, and the sim picks an undiscovered passage between here
+   and there. Asking for a route by id would mean already knowing it
+   existed, which is what the expedition is paying to find out.
+
+   **Phase 3 is complete** except chart expiry, which is deferred: see
+   below.
 4. **Server authority** ([SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)) —
    turns "everyone knows where the fast route is" into real
    concealment, and makes stockpiles private.
@@ -432,7 +444,11 @@ upgrades it rather than gating it.
   dice roll with a fee: the crew is at risk, so sending one is a
   decision about people as well as money.
 - **Route charts expire after a year**, and when one does a new private
-  route is generated in its place. This is what stops the map from
+  route is generated in its place. *Not built* — and it is the one
+  remaining piece with an architectural cost, because generating a
+  replacement route means `Sea` stops being a pure function of the seed
+  and becomes mutable world state that a snapshot must carry. sea.h
+  currently states the opposite in bold. Worth doing deliberately. This is what stops the map from
   being solved: a passage learned is not a passage owned forever, the
   sea keeps changing shape, and the Chart House has a standing reason
   to exist rather than a one-off job.

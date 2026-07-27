@@ -40,6 +40,7 @@
 #include "sea.h"
 #include "orderbook.h"
 #include "knowledge.h"
+#include "survey.h"
 #include "intent.h"
 
 /* Gold a new game's starting island begins with. */
@@ -272,6 +273,12 @@ typedef struct GameState {
      * hashed, snapshotted, replayed, because which route a booking
      * takes depends on what its seller knows. */
     Knowledge knowledge;
+
+    /* Expeditions in progress (MARITIME_PLAN Phase 3d). World state:
+     * hashed, snapshotted, replayed. Each one has a scholar, a boat
+     * and a blank chart committed to it, and an outcome fixed when it
+     * sailed. */
+    SurveyBoard surveys;
 
     /* Who this client is (Phase 5). CLIENT state, not world state: it
      * is never hashed and never saved — it says which player's commands
@@ -788,6 +795,19 @@ int game_set_docking(GameState *gs, int island_idx, int allow);
  * here is insured at its ROUTE's premium — so covering a fast private
  * passage costs more than covering the patrolled lane. */
 int game_set_insurance(GameState *gs, int island_idx, int on);
+
+/* Owner only: lay down a research boat at `island_idx`, which needs a
+ * Shipyard (MARITIME_PLAN Phase 3d). */
+int game_build_research_boat(GameState *gs, int island_idx);
+
+/* Owner only: send an expedition from `from_island` to look for an
+ * uncharted passage to `to_island`. Commits a scholar, a research boat
+ * and a blank chart; the chart is spent either way, and a failed
+ * expedition may not come home at all.
+ *
+ * You cannot name the route — that is what you are paying to find
+ * out. The sim picks an undiscovered private passage between the two. */
+int game_survey(GameState *gs, int from_island, int to_island);
 
 /* Post an order at `island_idx`'s harbour (MARITIME_PLAN Phase 2).
  * `qty` carries the side: positive buys, negative sells. `limit` is the

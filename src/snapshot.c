@@ -19,6 +19,7 @@
 #include "simlog.h"
 #include "orderbook.h"
 #include "knowledge.h"
+#include "survey.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -422,6 +423,50 @@ static int get_orderbook(R *r, OrderBook *b)
  * places that matter, and a sparse encoding of "which routes does this
  * player know" is exactly the kind of cleverness that goes wrong
  * silently on the decode side. */
+/* Expeditions in progress (MARITIME Phase 3d). Live entries only, like
+ * the order book: a mission is addressed by nothing, so compacting the
+ * dead slots out loses no identity. */
+static void put_surveys(W *w, const SurveyBoard *b)
+{
+    int i, live = 0;
+
+    for (i = 0; i < b->count; i++) if (b->mission[i].active) live++;
+    w_i32(w, (int32_t)live);
+    for (i = 0; i < b->count; i++) {
+        const Survey *m = &b->mission[i];
+        if (!m->active) continue;
+        w_u32(w, m->owner);
+        w_i32(w, m->from_island);
+        w_i32(w, m->to_island);
+        w_i32(w, m->route_id);
+        w_u64(w, m->finish_tick);
+        w_i32(w, m->succeeds);
+        w_i32(w, m->lost);
+    }
+}
+
+static int get_surveys(R *r, SurveyBoard *b)
+{
+    int i, n;
+
+    survey_init(b);
+    n = (int)r_i32(r);
+    if (r->bad || n < 0 || n > MAX_SURVEYS) return 0;
+    b->count = n;
+    for (i = 0; i < n; i++) {
+        Survey *m = &b->mission[i];
+        m->active      = 1;
+        m->owner       = r_u32(r);
+        m->from_island = r_i32(r);
+        m->to_island   = r_i32(r);
+        m->route_id    = r_i32(r);
+        m->finish_tick = r_u64(r);
+        m->succeeds    = r_i32(r);
+        m->lost        = r_i32(r);
+    }
+    return !r->bad;
+}
+
 static void put_knowledge(W *w, const Knowledge *k)
 {
     int p, i;
@@ -517,6 +562,9 @@ static void put_island(W *w, const Island *isl)
     w_i32(w, isl->merchants_out);
     w_i32(w, isl->hulls_out);
     w_i32(w, isl->insure_shipments);
+    w_i32(w, isl->research_boats);
+    w_i32(w, isl->research_boats_out);
+    w_i32(w, isl->scholars_out);
     w_i32(w, (int32_t)isl->agent_assign_timer);
     put_stockpile(w, &isl->stockpile);
 
@@ -565,6 +613,9 @@ static int get_island(R *r, Island *isl)
     isl->merchants_out = r_i32(r);
     isl->hulls_out     = r_i32(r);
     isl->insure_shipments = r_i32(r);
+    isl->research_boats     = r_i32(r);
+    isl->research_boats_out = r_i32(r);
+    isl->scholars_out       = r_i32(r);
     isl->agent_assign_timer = (int)r_i32(r);
     get_stockpile(r, &isl->stockpile);
 
@@ -623,6 +674,7 @@ int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
     put_faction(&w, &gs->faction);
     put_orderbook(&w, &gs->book);
     put_knowledge(&w, &gs->knowledge);
+    put_surveys(&w, &gs->surveys);
 
     w_i32(&w, (int32_t)gs->ship_count);
     for (i = 0; i < gs->ship_count; i++) put_ship(&w, &gs->ships[i]);
@@ -715,6 +767,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     get_faction(&r, &tmp->faction);
     if (!get_orderbook(&r, &tmp->book)) goto bad;
     get_knowledge(&r, &tmp->knowledge);
+    if (!get_surveys(&r, &tmp->surveys)) goto bad;
 
     tmp->ship_count = (int)r_i32(&r);
     if (r.bad || tmp->ship_count < 0 || tmp->ship_count > MAX_SHIPS)
@@ -756,6 +809,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     gs->faction        = tmp->faction;
     gs->book           = tmp->book;
     gs->knowledge      = tmp->knowledge;
+    gs->surveys        = tmp->surveys;
     gs->sea            = tmp->sea;
     gs->sim_tick_no    = tmp->sim_tick_no;
     gs->world_seed     = tmp->world_seed;

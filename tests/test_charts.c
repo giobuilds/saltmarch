@@ -24,6 +24,7 @@
 #include "orderbook.h"
 #include "sea.h"
 #include "ship.h"
+#include "survey.h"
 #include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -439,6 +440,266 @@ int main(void)
               "so the loss is paid out rather than simply borne");
 
         game_free(gs);
+    }
+
+    printf("\n=== an expedition needs a scholar, a boat and paper ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        Island    *isl;
+        int        rid;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        isl = &gs->islands[0];
+        fastest_private(&gs->sea, 0, 1, &rid);
+
+        CHECK(island_scholar_capacity(isl) == 0,
+              "an island with no Scholars' House can send nobody");
+
+        AS(gs, 1u, game_survey(gs, 0, 1));
+        run_ticks(gs, 2);
+        CHECK(survey_active_count(&gs->surveys, 1u) == 0,
+              "and a survey from it does not sail");
+
+        /* Give it a scholar. Still no boat. */
+        {
+            int i = isl->building_count++;
+            isl->buildings[i].active   = 1;
+            isl->buildings[i].type     = BUILDING_HOUSE_SCHOLAR;
+            isl->pop_data[i].active    = 1;
+            isl->pop_data[i].residents = 6;
+        }
+        CHECK(island_scholar_capacity(isl) == 1, "a lived-in one can");
+        AS(gs, 1u, game_survey(gs, 0, 1));
+        run_ticks(gs, 2);
+        CHECK(survey_active_count(&gs->surveys, 1u) == 0,
+              "but not without a hull to put them in");
+
+        /* A research boat needs a Shipyard to build. */
+        AS(gs, 1u, game_build_research_boat(gs, 0));
+        run_ticks(gs, 2);
+        CHECK(isl->research_boats == 0, "no Shipyard, no research boat");
+
+        {
+            int i = isl->building_count++;
+            isl->buildings[i].active = 1;
+            isl->buildings[i].type   = BUILDING_SHIPYARD;
+        }
+        AS(gs, 1u, game_build_research_boat(gs, 0));
+        run_ticks(gs, 2);
+        CHECK(isl->research_boats == 1, "with one, the yard lays one down");
+
+        /* Still no blank chart. */
+        isl->stockpile.amount[RES_CHARTS] = 0;
+        AS(gs, 1u, game_survey(gs, 0, 1));
+        run_ticks(gs, 2);
+        CHECK(survey_active_count(&gs->surveys, 1u) == 0,
+              "and nothing sails without paper to draw on");
+
+        isl->stockpile.amount[RES_CHARTS] = 1;
+        AS(gs, 1u, game_survey(gs, 0, 1));
+        run_ticks(gs, 2);
+        CHECK(survey_active_count(&gs->surveys, 1u) == 1,
+              "with all three, the expedition sails");
+        CHECK(isl->stockpile.amount[RES_CHARTS] == 0,
+              "the blank chart is spent on departure, not on return");
+        CHECK(isl->scholars_out == 1 && isl->research_boats_out == 1,
+              "and the scholar and the boat are committed");
+
+        /* One scholar means one expedition. */
+        isl->stockpile.amount[RES_CHARTS] = 1;
+        AS(gs, 1u, game_survey(gs, 0, 2));
+        run_ticks(gs, 2);
+        CHECK(survey_active_count(&gs->surveys, 1u) == 1,
+              "a second cannot sail while the first is out");
+
+        game_free(gs);
+    }
+
+    printf("\n=== what an expedition comes back with ===\n");
+    {
+        /* The outcome is a function of the mission's identity, so the
+         * honest test is that both outcomes occur and that each has
+         * the consequences it should — not that any one mission
+         * succeeds. */
+        int i, wins = 0, losses = 0, sunk = 0;
+
+        for (i = 0; i < 300; i++) {
+            if (survey_succeeds(4242u, 7, (uint64_t)i, 1u)) wins++;
+            else if (survey_is_lost(4242u, 7, (uint64_t)i, 1u)) sunk++;
+            else losses++;
+        }
+        CHECK(wins > 0 && losses > 0 && sunk > 0,
+              "expeditions succeed, fail, and are lost");
+        CHECK(wins > sunk, "most that sail come home");
+        CHECK(survey_is_lost(4242u, 7, 3u, 1u) == 0 ||
+              survey_succeeds(4242u, 7, 3u, 1u) == 0,
+              "and one that found the passage is never also lost");
+        CHECK(survey_succeeds(4242u, 7, 11u, 1u) ==
+              survey_succeeds(4242u, 7, 11u, 1u),
+              "the same expedition always has the same fate");
+
+        /* And the odds must hold for EVERY passage over the SPAN THE
+         * GAME ACTUALLY ASKS ABOUT — low route ids, early ticks — not
+         * merely on average across a large sample. The first version
+         * of this derivation passed every other test here while giving
+         * one route a 0% loss rate over two hundred consecutive ticks.
+         * Widen the sample and it looked fine; that is exactly why the
+         * sample here is narrow.
+         *
+         * A derived outcome that is deterministic but visibly lumpy is
+         * worse than a random one: it reads to a player as the game
+         * having decided something about them. */
+        {
+            int r, worst = 100000, best = 0;
+
+            for (r = 0; r < 12; r++) {
+                int t, lost = 0;
+                for (t = 0; t < 200; t++)
+                    if (survey_is_lost(4242u, r, (uint64_t)t, 1u)) lost++;
+                if (lost < worst) worst = lost;
+                if (lost > best)  best  = lost;
+            }
+            /* Expected 14% of 200 = 28. The band is wide enough not to
+             * fail on the constants being retuned, and narrow enough
+             * that a passage which is quietly never dangerous, or
+             * always is, does not get through. */
+            CHECK(worst >= 10 && best <= 50,
+                  "and no passage is quietly safe or quietly lethal");
+        }
+    }
+
+    printf("\n=== a survey that finds it hands over the passage ===\n");
+    {
+        GameState *gs = two_traders(4242u);
+        Island    *isl;
+        int        rid, tries, charted = 0;
+
+        if (!gs) { printf("game_init failed\n"); return 1; }
+        isl = &gs->islands[0];
+        fastest_private(&gs->sea, 0, 1, &rid);
+
+        {
+            int i = isl->building_count++;
+            isl->buildings[i].active   = 1;
+            isl->buildings[i].type     = BUILDING_HOUSE_SCHOLAR;
+            isl->pop_data[i].active    = 1;
+            isl->pop_data[i].residents = 8;
+            i = isl->building_count++;
+            isl->buildings[i].active = 1;
+            isl->buildings[i].type   = BUILDING_SHIPYARD;
+        }
+        isl->research_boats = 4;
+
+        for (tries = 0; tries < 8 && !charted; tries++) {
+            isl->stockpile.amount[RES_CHARTS] = 1;
+            AS(gs, 1u, game_survey(gs, 0, 1));
+            run_ticks(gs, SURVEY_TICKS + 4);
+            if (knowledge_charts(&gs->knowledge, 1u, rid) > 0) charted = 1;
+        }
+
+        CHECK(charted, "sooner or later an expedition charts the passage");
+        CHECK(knowledge_knows(&gs->knowledge, 1u, rid, 1),
+              "and the player knows it thereafter");
+        CHECK(isl->scholars_out == 0 && isl->research_boats_out == 0,
+              "the crew is released either way");
+
+        /* A pair has TWO private passages, so charting one leaves
+         * something still worth looking for — the next expedition aims
+         * at the other. Only when both are known is there nothing left
+         * to find, and then the survey is refused rather than quietly
+         * burning the paper. */
+        {
+            int v, remaining = 0;
+            for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+                const Route *r = sea_route_variant(&gs->sea, 0, 1, v);
+                int          id;
+                if (!r || !r->is_private) continue;
+                id = sea_route_id(&gs->sea, r);
+                if (!knowledge_knows(&gs->knowledge, 1u, id, 1)) remaining++;
+            }
+            CHECK(remaining >= 1, "the pair still has an unknown passage");
+
+            /* Learn every private passage between the two, and the
+             * expedition has nowhere left to go. */
+            for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
+                const Route *r = sea_route_variant(&gs->sea, 0, 1, v);
+                if (r && r->is_private)
+                    knowledge_add_charts(&gs->knowledge, 1u,
+                                         sea_route_id(&gs->sea, r), 1);
+            }
+        }
+        isl->stockpile.amount[RES_CHARTS] = 1;
+        AS(gs, 1u, game_survey(gs, 0, 1));
+        run_ticks(gs, 2);
+        CHECK(isl->stockpile.amount[RES_CHARTS] == 1,
+              "a survey for a crossing you have fully charted is refused, "
+              "rather than quietly burning the paper");
+
+        game_free(gs);
+    }
+
+    printf("\n=== an expedition lost takes the scholar with it ===\n");
+    {
+        int attempt, seen = 0;
+
+        /* A fresh world per attempt, each dispatching at a different
+         * tick. One world cannot supply enough samples: an expedition
+         * that succeeds charts its passage, a pair has only two, and
+         * after fourteen the player knows every private route out of
+         * their island and nothing further can sail at all. */
+        for (attempt = 0; attempt < 60 && !seen; attempt++) {
+            GameState *gs = two_traders(4242u);
+            Island    *isl;
+            int        house, idx = -1, j;
+
+            if (!gs) { printf("game_init failed\n"); return 1; }
+            isl = &gs->islands[0];
+
+            house = isl->building_count++;
+            isl->buildings[house].active   = 1;
+            isl->buildings[house].type     = BUILDING_HOUSE_SCHOLAR;
+            isl->pop_data[house].active    = 1;
+            isl->pop_data[house].residents = 40;
+            j = isl->building_count++;
+            isl->buildings[j].active = 1;
+            isl->buildings[j].type   = BUILDING_SHIPYARD;
+            isl->research_boats = 4;
+
+            run_ticks(gs, attempt);
+            isl->stockpile.amount[RES_CHARTS] = 1;
+            AS(gs, 1u, game_survey(gs, 0, 1));
+            run_ticks(gs, 2);
+
+            for (j = 0; j < gs->surveys.count; j++)
+                if (gs->surveys.mission[j].active) idx = j;
+
+            if (idx >= 0 && gs->surveys.mission[idx].lost) {
+                uint64_t finish = gs->surveys.mission[idx].finish_tick;
+                int      boats_before, residents_before;
+
+                seen = 1;
+
+                /* Measure across the tick that RESOLVES the mission,
+                 * not across the whole voyage: residents rise and fall
+                 * on their own over nine hundred ticks, and a
+                 * before-and-after spanning all of it would be
+                 * measuring the food supply instead. */
+                while (gs->sim_tick_no + 1 < finish) sim_run_one_tick(gs);
+                boats_before     = isl->research_boats;
+                residents_before = isl->pop_data[house].residents;
+                run_ticks(gs, 2);
+
+                CHECK(isl->research_boats == boats_before - 1,
+                      "a lost expedition does not give the boat back");
+                CHECK(isl->pop_data[house].residents == residents_before - 1,
+                      "and the house that sent them is one smaller");
+                CHECK(isl->scholars_out == 0,
+                      "the commitment ends even though the scholar did not "
+                      "come home");
+            }
+            game_free(gs);
+        }
+        CHECK(seen, "an expedition is lost sooner or later");
     }
 
     printf("\n=== knowledge survives a checkpoint ===\n");
