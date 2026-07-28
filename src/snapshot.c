@@ -20,6 +20,7 @@
 #include "orderbook.h"
 #include "knowledge.h"
 #include "survey.h"
+#include "pirate.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -476,6 +477,49 @@ static int get_surveys(R *r, SurveyBoard *b)
     return !r->bad;
 }
 
+/* The fleets (MARITIME Phase 5b). Their lairs regenerate from the seed
+ * with the rest of the sea, but where they have WANDERED to and what
+ * they are sitting on does not — so the whole fleet is written rather
+ * than only the live ones, because a dead fleet is a fact about the
+ * world (that lair is clear) and not an empty slot. */
+static void put_pirates(W *w, const PirateSea *ps)
+{
+    int i, r;
+
+    w_i32(w, ps->count);
+    for (i = 0; i < ps->count; i++) {
+        const Pirate *p = &ps->fleet[i];
+        w_i32(w, p->active);
+        w_i32(w, p->waypoint);
+        w_i32(w, p->guns);
+        w_i32(w, p->hull);
+        for (r = 0; r < RES_COUNT; r++) w_i32(w, p->plunder[r]);
+        w_i32(w, p->chart);
+        w_u64(w, p->last_move_tick);
+    }
+}
+
+static int get_pirates(R *r, PirateSea *ps)
+{
+    int i, k, n;
+
+    memset(ps, 0, sizeof(*ps));
+    n = (int)r_i32(r);
+    if (r->bad || n < 0 || n > MAX_PIRATES) return 0;
+    ps->count = n;
+    for (i = 0; i < n; i++) {
+        Pirate *p = &ps->fleet[i];
+        p->active   = r_i32(r);
+        p->waypoint = r_i32(r);
+        p->guns     = r_i32(r);
+        p->hull     = r_i32(r);
+        for (k = 0; k < RES_COUNT; k++) p->plunder[k] = r_i32(r);
+        p->chart    = r_i32(r);
+        p->last_move_tick = r_u64(r);
+    }
+    return !r->bad;
+}
+
 static void put_knowledge(W *w, const Knowledge *k)
 {
     int p, i;
@@ -803,6 +847,7 @@ int snapshot_encode(const GameState *gs, unsigned char **out, size_t *out_len)
     put_orderbook(&w, &gs->book);
     put_knowledge(&w, &gs->knowledge);
     put_surveys(&w, &gs->surveys);
+    put_pirates(&w, &gs->pirates);
     {
         int p;
         for (p = 0; p < SEA_MAX_PAIRS; p++) w_u8(&w, gs->sea.pair_cursor[p]);
@@ -901,6 +946,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     if (!get_orderbook(&r, &tmp->book)) goto bad;
     get_knowledge(&r, &tmp->knowledge);
     if (!get_surveys(&r, &tmp->surveys)) goto bad;
+    if (!get_pirates(&r, &tmp->pirates)) goto bad;
 
     /* Which private passages are in play (MARITIME Phase 3e). Read
      * here, where it was written, but APPLIED after sea_init below —
@@ -962,6 +1008,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     gs->book           = tmp->book;
     gs->knowledge      = tmp->knowledge;
     gs->surveys        = tmp->surveys;
+    gs->pirates        = tmp->pirates;
     gs->sea            = tmp->sea;
     gs->sim_tick_no    = tmp->sim_tick_no;
     gs->world_seed     = tmp->world_seed;

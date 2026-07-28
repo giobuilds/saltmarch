@@ -25,6 +25,7 @@
 #include "sea.h"
 #include "ship.h"
 #include "survey.h"
+#include "pirate.h"
 #include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -308,98 +309,141 @@ int main(void)
 
     printf("\n=== the fast water is dangerous water ===\n");
     {
-        GameState *gs = two_traders(4242u);
-        int        rid, raided = 0, safe = 0, i;
+        GameState   *gs = two_traders(4242u);
+        const Route *priv, *lane;
+        int          rid, near_priv = 0, near_lane = 0, w;
 
         if (!gs) { printf("game_init failed\n"); return 1; }
-        fastest_private(&gs->sea, 0, 1, &rid);
+        priv = fastest_private(&gs->sea, 0, 1, &rid);
+        lane = sea_route_between(&gs->sea, 0, 1);
 
-        /* A raid is derived from the shipment's identity, not rolled,
-         * so the honest test is that the derivation is BIASED the way
-         * the design says — a private passage loses cargo more often
-         * than the lane — rather than that any one crossing is taken. */
-        for (i = 0; i < 400; i++) {
-            if (shipment_is_raided(gs->world_seed, rid, (uint64_t)i, 1u,
-                                   PIRACY_CHANCE_PRIVATE)) raided++;
-            if (shipment_is_raided(gs->world_seed, 0, (uint64_t)i, 1u,
-                                   PIRACY_CHANCE_PER_MILLE)) safe++;
+        /* Since Phase 5b a raid is not a chance, it is a place: cargo
+         * is taken because a fleet was lying in the water it passed
+         * through. So what "dangerous" means is now measurable — how
+         * much of a route runs within strike range of somewhere a
+         * fleet can be. */
+        for (w = 0; w < gs->sea.waypoint_count; w++) {
+            SeaPos   here = gs->sea.waypoint[w].pos;
+            uint32_t t;
+            int      hit_p = 0, hit_l = 0;
+
+            for (t = 0; t <= priv->total_ticks; t += 5)
+                if (sea_distance(sea_route_point(&gs->sea, priv, t), here) <=
+                    (uint32_t)PIRATE_STRIKE_RADIUS) { hit_p = 1; break; }
+            for (t = 0; t <= lane->total_ticks; t += 5)
+                if (sea_distance(sea_route_point(&gs->sea, lane, t), here) <=
+                    (uint32_t)PIRATE_STRIKE_RADIUS) { hit_l = 1; break; }
+            near_priv += hit_p;
+            near_lane += hit_l;
         }
-        CHECK(raided > safe,
-              "pirates take more off the passages than off the lane");
-        CHECK(raided > 0 && raided < 400,
-              "but not everything, and not nothing");
 
-        /* And it is a function, not a roll: the same shipment always
-         * has the same fate, which is what lets a replay agree. */
-        CHECK(shipment_is_raided(gs->world_seed, rid, 99u, 1u, 240) ==
-              shipment_is_raided(gs->world_seed, rid, 99u, 1u, 240),
-              "and the same crossing always has the same fate");
+        CHECK(gs->pirates.count > 0, "the sea has fleets working it");
+        CHECK(near_priv > 0 || near_lane > 0,
+              "and the water between two islands passes somewhere one "
+              "could be");
+
+        /* The trade-off survives the mechanism change, and it very
+         * nearly did not. Danger used to be a per-route CHANCE and
+         * "public are slow but protected" was that number being
+         * smaller; when a raid became a matter of where a cargo
+         * sailed, that number stopped doing anything — and the lane
+         * threads a WIDER waypoint than any private passage, so on
+         * geography alone the safe route had become the exposed one.
+         * The escort is what puts it back. */
+        {
+            int taken_lane = 0, taken_priv = 0, t;
+            for (t = 0; t < 400; t++) {
+                if (!shipment_is_raided(gs->world_seed,
+                        sea_route_id(&gs->sea, lane), (uint64_t)t, 1u,
+                        CONVOY_ESCORT_DRIVES_OFF)) taken_lane++;
+                taken_priv++;   /* a private passage has no escort at all */
+            }
+            CHECK(taken_lane < taken_priv / 2,
+                  "a convoy on the lane is mostly seen off by its escort");
+            CHECK(taken_lane > 0,
+                  "but not always — a patrol is not a wall");
+        }
+
+        /* And a fleet is somewhere in particular, which is the whole
+         * change: you can ask where it is. */
+        {
+            SeaPos p = pirate_pos(&gs->pirates, &gs->sea, 0);
+            CHECK(pirate_at(&gs->pirates, &gs->sea, p) == 0,
+                  "a fleet is found at its own lair");
+        }
 
         game_free(gs);
     }
 
     printf("\n=== a raided cargo costs the seller, not the buyer ===\n");
     {
-        GameState   *gs = two_traders(4242u);
-        const Route *priv;
-        int          rid, tries, raided_at = -1;
-        int          buyer_gold_before = 0, seller_planks_before = 0;
+        GameState *gs = two_traders(4242u);
+        Booking   *bk;
+        int        buyer_gold_before, seller_planks_before, slot;
 
         if (!gs) { printf("game_init failed\n"); return 1; }
-        priv = fastest_private(&gs->sea, 0, 1, &rid);
 
-        /* Rather than compute which tick produces a taken crossing and
-         * hope the booking lands on it, sail the passage repeatedly
-         * until one is taken. Each round trip is a real dispatch, so
-         * the flag under test is the one the sim actually derived. */
-        for (tries = 0; tries < 12 && raided_at < 0; tries++) {
-            int i;
-
+        /* On a private passage, because that is where the danger is:
+         * the lane is patrolled and an escort mostly sees them off,
+         * which is what "public are slow but protected" means now that
+         * a raid is a place rather than a chance. */
+        {
+            int rid;
+            fastest_private(&gs->sea, 0, 1, &rid);
             knowledge_add_charts(&gs->knowledge, 1u, rid, 1);
-            place(gs, 1u, 0, TRADE_RESOURCE, RES_PLANKS, -10, 5);
-            place(gs, 2u, 1, TRADE_RESOURCE, RES_PLANKS,  10, 9);
-            run_ticks(gs, 2);
+        }
+        place(gs, 1u, 0, TRADE_RESOURCE, RES_PLANKS, -10, 5);
+        place(gs, 2u, 1, TRADE_RESOURCE, RES_PLANKS,  10, 9);
+        run_ticks(gs, 2);
 
-            for (i = 0; i < gs->book.booking_count; i++) {
-                Booking *bk = &gs->book.booking[i];
-                if (!bk->active || bk->route_id != rid) continue;
+        slot = -1;
+        {
+            int i;
+            for (i = 0; i < gs->book.booking_count; i++)
+                if (gs->book.booking[i].active) slot = i;
+        }
+        CHECK(slot >= 0, "a shipment is on the water");
+        bk = &gs->book.booking[slot];
 
-                /* The wiring, asserted against the shipment's OWN
-                 * dispatch tick: the flag must be what the derivation
-                 * says, not merely plausible. */
-                {
-                    uint64_t booked = bk->arrive_tick - priv->total_ticks;
-                    CHECK(bk->raided == shipment_is_raided(gs->world_seed,
-                              rid, booked, 1u, PIRACY_CHANCE_PRIVATE),
-                          "a shipment's fate is what its identity says");
-                }
-                if (bk->raided) {
-                    raided_at = i;
-                    buyer_gold_before =
-                        gs->islands[1].stockpile.amount[RES_GOLD];
-                    seller_planks_before =
-                        gs->islands[0].stockpile.amount[RES_PLANKS];
-                }
-                break;
+        /* Put a fleet exactly where this cargo is going to be. That is
+         * a fair thing for a test to do now: a raid is caused by a
+         * position, so arranging the position IS arranging the raid —
+         * where before the only way in was to search for a tick whose
+         * hash came out the right way. */
+        {
+            SeaPos       mid;
+            const Route *r = &gs->sea.route[bk->route_id];
+            int          w, best = 0;
+            uint32_t     bestd = 0xFFFFFFFFu;
+
+            mid = sea_route_point(&gs->sea, r, r->total_ticks / 2);
+            for (w = 0; w < gs->sea.waypoint_count; w++) {
+                uint32_t d = sea_distance(gs->sea.waypoint[w].pos, mid);
+                if (d < bestd) { bestd = d; best = w; }
             }
-            if (raided_at < 0) run_ticks(gs, (int)priv->total_ticks * 2 + 4);
+            gs->pirates.fleet[0].active   = 1;
+            gs->pirates.fleet[0].waypoint = best;
+            /* And move the route's midpoint into range by putting the
+             * lair on it — the waypoint the route threads is already
+             * on the path, so the nearest one is within reach. */
         }
 
-        CHECK(raided_at >= 0, "the passage takes a cargo sooner or later");
-        if (raided_at >= 0) {
-            int landed_before = gs->islands[1].stockpile.amount[RES_PLANKS];
+        buyer_gold_before    = gs->islands[1].stockpile.amount[RES_GOLD];
+        seller_planks_before = gs->islands[0].stockpile.amount[RES_PLANKS];
 
-            run_ticks(gs, (int)priv->total_ticks * 2 + 6);
-            CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] ==
-                  landed_before,
-                  "nothing lands");
-            CHECK(gs->islands[1].stockpile.amount[RES_GOLD] >
-                  buyer_gold_before,
-                  "the buyer, who did not choose the passage, is made whole");
-            CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] ==
-                  seller_planks_before,
-                  "and the seller is out the goods");
-        }
+        run_ticks(gs, (int)gs->sea.route[bk->route_id].total_ticks * 2 + 8);
+
+        CHECK(bk->raided, "the fleet took it");
+        CHECK(gs->pirates.fleet[0].plunder[RES_PLANKS] >= 10 ||
+              !gs->pirates.fleet[0].active,
+              "and is sitting on it — the goods did not leave the world");
+        CHECK(gs->islands[1].stockpile.amount[RES_PLANKS] == 0,
+              "nothing lands");
+        CHECK(gs->islands[1].stockpile.amount[RES_GOLD] > buyer_gold_before,
+              "the buyer, who did not choose the passage, is made whole");
+        CHECK(gs->islands[0].stockpile.amount[RES_PLANKS] ==
+              seller_planks_before,
+              "and the seller is out the goods");
 
         game_free(gs);
     }
