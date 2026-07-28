@@ -140,6 +140,15 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
      * mode does not spend a backlog of stored-up ticks in one frame. */
     if (game_scrubbing(gs)) return;
 
+    /* Who is computing the world (SERVER_AUTHORITY.md Phase 2). Set
+     * every frame rather than at connect, so losing the session puts
+     * the client straight back to simulating everything — which is
+     * what "disconnect degrades to single player" has always meant.
+     *
+     * Offline this is 0 and nothing below changes at all. */
+    gs->predict_only = net_server_authoritative(gs->net)
+                     ? gs->local_player_id : 0u;
+
     gs->sim_acc_ns += frame_ns;
     if (gs->sim_acc_ns > SIM_TICK_NS * 8)
         gs->sim_acc_ns = SIM_TICK_NS * 8;

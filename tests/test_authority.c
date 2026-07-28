@@ -176,6 +176,91 @@ int main(void)
               "until the server tells it where it really is");
     }
 
+    printf("\n=== a client guesses only about itself ===\n");
+    {
+        GameState *a = game_init(), *b = game_init();
+        int        j, mine_a = -1, theirs = -1;
+
+        if (!a || !b) { printf("game_init failed\n"); return 1; }
+        game_new_seeded(a, 4242u);
+        game_new_seeded(b, 4242u);
+        for (j = 0; j < 2; j++) {
+            GameState *g = j ? b : a;
+            int        k;
+
+            g->islands[1].settled = 1;
+            g->islands[1].owner   = 2u;
+            stockpile_init(&g->islands[1].stockpile);
+
+            /* Both islands need something that actually TICKS, or the
+             * test proves nothing: a bare island's stockpile is
+             * unchanged whether it was simulated or skipped, and an
+             * assertion that cannot tell the two apart passes happily
+             * against no implementation at all. Houses eat. */
+            for (k = 0; k < 2; k++) {
+                Island *isl = &g->islands[k];
+                int     bi  = isl->building_count++;
+                isl->buildings[bi].active   = 1;
+                isl->buildings[bi].type     = BUILDING_HOUSE;
+                isl->pop_data[bi].active    = 1;
+                isl->pop_data[bi].residents = 8;
+                isl->stockpile.amount[RES_FISH]  = 500;
+                isl->stockpile.amount[RES_GRAIN] = 500;
+            }
+        }
+        mine_a = 1;   /* player 2's */
+        theirs = 0;   /* player 1's */
+
+        /* `a` simulates the whole world, as offline play and the
+         * server do. `b` predicts as player 2 would. */
+        b->predict_only = 2u;
+        /* Past NEEDS_INTERVAL several times over, so the difference
+         * between simulating an island and skipping it is visible. */
+        for (j = 0; j < 1200; j++) { sim_run_one_tick(a); sim_run_one_tick(b); }
+
+        CHECK(a->islands[theirs].pop_data[0].residents < 8,
+              "the fully simulated world let the other island's houses "
+              "rise and fall");
+
+        CHECK(a->sim_tick_no == b->sim_tick_no,
+              "a predicting client keeps its own clock");
+        CHECK(b->islands[mine_a].pop_data[0].residents ==
+              a->islands[mine_a].pop_data[0].residents,
+              "and predicts its own island exactly as the server will");
+        CHECK(b->islands[theirs].pop_data[0].residents == 8 &&
+              b->islands[theirs].pop_data[0].residents !=
+              a->islands[theirs].pop_data[0].residents,
+              "while leaving somebody else's alone — it has no business "
+              "guessing at a harbour it cannot even see");
+        CHECK(b->islands[theirs].stockpile.amount[RES_GOLD] ==
+              a->islands[theirs].stockpile.amount[RES_GOLD] + 25,
+              "and does not collect a rival's charter upkeep for them");
+
+        game_free(a);
+        game_free(b);
+    }
+
+    printf("\n=== and the flag is off everywhere it must be ===\n");
+    {
+        /* The hazard this field carries is not that it might be wrong,
+         * it is that it might be SET somewhere it must not be: on the
+         * server, in a replay, or offline. Any of those stops the sim
+         * being a pure function of (seed, log), which is the sentence
+         * the whole codebase is built on. */
+        GameState *offline = game_init();
+
+        if (!offline) { printf("game_init failed\n"); return 1; }
+        game_new_seeded(offline, 4242u);
+        CHECK(offline->predict_only == 0u,
+              "a fresh world simulates all of itself");
+
+        CHECK(hg->predict_only == 0u,
+              "and so does the authoritative server, having never been "
+              "told otherwise");
+
+        game_free(offline);
+    }
+
     printf("\n=== commands still travel ===\n");
     {
         /* Authority is not much use if the client cannot act. A

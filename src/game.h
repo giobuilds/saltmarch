@@ -287,6 +287,26 @@ typedef struct GameState {
      * by the host at join and keeps it after a disconnect. */
     uint32_t  local_player_id;
 
+    /* Predict only this player's own islands (SERVER_AUTHORITY.md
+     * Phase 2). 0 means "simulate the whole world", which is what
+     * offline play, the dedicated server, every replay and every test
+     * do — and what this field must stay at for all of them.
+     *
+     * When a server is the authority the client is not computing the
+     * world, it is GUESSING AHEAD of the next push. Guessing about
+     * somebody else's island is wasted work at best and visible
+     * nonsense at worst, because since Phase 3 those islands arrive
+     * redacted: a client that ran production on them would be
+     * simulating an empty harbour and drawing the result.
+     *
+     * CLIENT STATE, NOT WORLD STATE. Never hashed, never saved, never
+     * snapshotted, and set in exactly one place — client.c, from
+     * net_server_authoritative(). If this is ever non-zero on the
+     * server or in a replay, the sim stops being a pure function of
+     * (seed, log) and every guarantee in this codebase built on that
+     * sentence goes with it. */
+    uint32_t  predict_only;
+
     /* The lockstep co-op session, or NULL offline (Phase 5). Client
      * infrastructure like local_player_id: owned by App (main.c),
      * referenced here only so command_submit can route submissions and
