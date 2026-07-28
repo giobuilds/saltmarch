@@ -881,6 +881,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->world_open)
         world_ui_draw(app->r, SCREEN_W, SCREEN_H, &gs->sea,
                       gs->islands, MAX_ISLANDS, gs->current_island,
+                      gs->local_player_id,
                       gs->ships, gs->ship_count, gs->world_selected_ship,
                       app->feed.ghosts, app->feed.ghost_count, wall_unix_ms(),
                       &gs->faction,

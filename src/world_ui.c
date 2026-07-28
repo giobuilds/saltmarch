@@ -1,6 +1,7 @@
 /*  world_ui.c  --  The archipelago overview overlay  */
 
 #include "world_ui.h"
+#include "ui_kit.h"
 #include "render.h"
 #include "fonts.h"
 #include "map.h"
@@ -191,6 +192,7 @@ static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
 
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Sea *sea, const Island islands[], int island_count, int current,
+                   uint32_t local_player,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
@@ -251,10 +253,24 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             font_draw_text(renderer, FONT_SMALL, "Uncharted",
                            (int)(nb.x + 8.0f), (int)(nb.y + nb.h + 26.0f), dim);
         } else {
-            SDL_snprintf(buf, sizeof(buf), "Pop %d",
-                        pop_total(isl->pop_data, isl->building_count));
+            /* This line was the plan's example of the problem, and it
+             * was not hypothetical: a rival's island arrives with an
+             * empty building list, pop_total() over it is 0, and the
+             * map cheerfully labelled every held island in the world
+             * "Pop 0". A populated colony reading as deserted is the
+             * screen inventing a fact about somebody else.
+             *
+             * UI_PLAN N2: a number you were not told is a mark, never a
+             * value. */
+            int known = (isl->owner == local_player);
+            char pop[32];
+
+            ui_fmt_known(pop, sizeof(pop), known, "%d",
+                         pop_total(isl->pop_data, isl->building_count));
+            SDL_snprintf(buf, sizeof(buf), "Pop %s", pop);
             font_draw_text(renderer, FONT_SMALL, buf,
-                           (int)(nb.x + 8.0f), (int)(nb.y + nb.h + 26.0f), label);
+                           (int)(nb.x + 8.0f), (int)(nb.y + nb.h + 26.0f),
+                           known ? label : (SDL_Color){ 170, 185, 200, 255 });
         }
     }
 

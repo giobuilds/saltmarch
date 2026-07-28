@@ -261,4 +261,44 @@ size_t ui_clean_label(char *dst, size_t cap, const char *src);
  * refused" holds by construction. Never returns NULL. */
 const char *ui_reject_text(RejectReason reason);
 
+
+/* ---- absence has a look (UI_PLAN N2) ----------------------
+ * Since SERVER_AUTHORITY Phase 3 the client is not told a rival's
+ * numbers, and what arrives instead is zero. Every drawing function in
+ * this project would render that as "0" — and "0 Planks" reads as a
+ * market to sell into, not as an island you know nothing about. The
+ * screen would be telling the player something false, and they would
+ * act on it.
+ *
+ * So a number the player has not been told is drawn as a MARK, never as
+ * a value. Three candidates were considered:
+ *
+ *   dim it      -- still reads as a value, just a quiet one. Worst of
+ *                  the three, because it is the most likely to be
+ *                  believed.
+ *   leave a gap -- honest, but the eye skips a gap. "I did not see a
+ *                  number" and "there was no number" are different
+ *                  thoughts and only one of them is had.
+ *   mark it     -- an em dash sits where the digits would be. It
+ *                  occupies the column, so the eye stops on it, and it
+ *                  cannot be mistaken for a quantity.
+ *
+ * The mark wins because it is the only one that is *present*. Absence
+ * you can see is information; absence you cannot see is a wrong number.
+ *
+ * These live in ui_kit rather than in each drawer so that every surface
+ * says it the same way — a player should learn the mark once. */
+#define UI_UNKNOWN_MARK "\u2014"          /* em dash */
+
+/* Format `value` into `out`, or the unknown mark if `known` is false.
+ * `fmt` is applied only in the known case and must consume exactly one
+ * int. Always NUL-terminates. */
+void ui_fmt_known(char *out, size_t n, int known, const char *fmt, int value);
+
+/* The label for a whole line that cannot be shown at all — a stores
+ * list, a building count — as opposed to a single number. Kept
+ * separate because "we are not told this" reads differently as a
+ * sentence than as a cell. */
+const char *ui_unknown_label(void);
+
 #endif /* UI_KIT_H */

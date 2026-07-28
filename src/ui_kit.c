@@ -6,6 +6,7 @@
 
 #include "ui_kit.h"
 #include <string.h>
+#include <stdio.h>
 
 /* ---- rectangles ------------------------------------------ */
 
@@ -346,4 +347,26 @@ const char *ui_reject_text(RejectReason reason)
     if (reason < 0 || reason >= REJ_COUNT || !TEXT[reason])
         return "Not possible right now";
     return TEXT[reason];
+}
+
+/* ---- absence has a look (UI_PLAN N2) ---------------------- */
+
+void ui_fmt_known(char *out, size_t n, int known, const char *fmt, int value)
+{
+    if (!out || n == 0) return;
+
+    if (!known) {
+        /* The mark, not a formatted zero. This function exists so that
+         * the decision is made once: a caller that had to remember to
+         * check `known` before every snprintf would eventually forget,
+         * and forgetting fails silently as a plausible number. */
+        snprintf(out, n, "%s", UI_UNKNOWN_MARK);
+        return;
+    }
+    snprintf(out, n, fmt, value);
+}
+
+const char *ui_unknown_label(void)
+{
+    return "Not known";
 }
