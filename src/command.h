@@ -36,7 +36,7 @@
  *                        an Academy — SUPPLY_CHAIN Phase 8 gave a
  *                        house two possible futures, so which one is
  *                        part of the command)
- *   CMD_BUILD_SHIP      a=island b=shipyard index (unused today)
+ *   CMD_BUILD_SHIP      a=island b=ShipClass b=shipyard index (unused today)
  *   CMD_SHIP_TRANSFER   a=ship   b=resource c=qty (sign=load/unload) d=island
  *   CMD_SHIP_DEPART     a=ship   b=destination island c=insure (0/1)
  *   CMD_COLONISE        a=ship   b=island index
@@ -52,6 +52,7 @@
  *   CMD_SET_INSURANCE   a=island b=on (0/1 — insure shipments from here)
  *   CMD_BUILD_RESEARCH_BOAT  a=island
  *   CMD_SURVEY          a=island (from) b=island (to)
+ *   CMD_SET_ESCORT      a=ship b=ship it escorts (-1 to release)
  *   CMD_PLACE_ORDER     a=island b=TRADE_PACK(kind,id) c=qty (sign is
  *                        the side: >0 buys, <0 sells) d=limit price
  *                        (MARITIME_PLAN Phase 2). The identity is
@@ -114,6 +115,7 @@ typedef enum {
     CMD_SET_INSURANCE,   /* owner: standing marine policy for this port  */
     CMD_BUILD_RESEARCH_BOAT, /* owner: a hull for expeditions, at a yard */
     CMD_SURVEY,          /* owner: send a scholar to find a passage      */
+    CMD_SET_ESCORT,      /* owner: assign a hull to guard another         */
     CMD_COUNT
 } CommandKind;
 

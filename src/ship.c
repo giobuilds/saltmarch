@@ -10,7 +10,7 @@ int ship_transfer_at(Ship *sh, Island *isl, ResourceType res, int qty)
 
     if (qty > 0) {                        /* island -> ship */
         if (res != RES_GOLD) {
-            int space = SHIP_CARGO_CAPACITY - sh->cargo[res];
+            int space = ship_hold_capacity(sh) - sh->cargo[res];
             if (qty > space) qty = space;
         }
         if (qty > isl->stockpile.amount[res]) qty = isl->stockpile.amount[res];
@@ -49,7 +49,7 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty)
 
     if (qty > 0) {                        /* escrow -> ship */
         if (res != RES_GOLD) {
-            int space = SHIP_CARGO_CAPACITY - sh->cargo[res];
+            int space = ship_hold_capacity(sh) - sh->cargo[res];
             if (qty > space) qty = space;
         }
         if (qty > isl->escrow[res]) qty = isl->escrow[res];
@@ -106,7 +106,8 @@ static void route_turnaround(Ship *s, Island islands[], int island_count,
     }
 
     if (inbound != RES_COUNT)
-        ship_transfer_at(s, &islands[s->at_island], inbound, -SHIP_CARGO_CAPACITY);
+        ship_transfer_at(s, &islands[s->at_island], inbound,
+                         -ship_hold_capacity(s));
     if (outbound != RES_COUNT)
         ship_transfer_at(s, &islands[s->at_island], outbound, s->route_qty);
 
@@ -164,13 +165,41 @@ int voyage_is_raided(uint32_t world_seed, int ship_id,
     return (int)(h % 1000u) < PIRACY_CHANCE_PER_MILLE;
 }
 
+int intercept_odds(int attacker_guns, int defender_guns)
+{
+    int total, odds;
+
+    if (attacker_guns < 0) attacker_guns = 0;
+    if (defender_guns < 0) defender_guns = 0;
+
+    /* Two unarmed hulls: a boarding scuffle, and the attacker's only
+     * advantage is having chosen the moment. */
+    total = attacker_guns + defender_guns;
+    if (total == 0) return INTERCEPT_ATTACKER_ODDS;
+
+    odds = attacker_guns * 100 / total;
+
+    if (odds < INTERCEPT_MIN_ODDS) odds = INTERCEPT_MIN_ODDS;
+    if (odds > INTERCEPT_MAX_ODDS) odds = INTERCEPT_MAX_ODDS;
+    return odds;
+}
+
 int intercept_attacker_wins(uint32_t world_seed,
                             int attacker_ship, uint64_t attacker_departure,
-                            int target_ship, uint64_t target_departure)
+                            int target_ship, uint64_t target_departure,
+                            int attacker_guns, int defender_guns)
 {
+    /* Byte-wise FNV with a finishing avalanche, for the reason
+     * survey.c records at length: fed whole words, and read through a
+     * small modulus, FNV's low bits stay correlated across the narrow
+     * ranges this is actually called with. Measured over eight ship
+     * indices the old word-wise version returned between 52% and 61%
+     * for a nominal 55% — not degenerate, but visibly not the number
+     * it claimed, and "some ships are luckier than others" is not a
+     * thing a player should be able to notice. */
     uint32_t h = 2166136261u;
     uint32_t parts[6];
-    int      i;
+    int      i, b;
 
     parts[0] = world_seed;
     parts[1] = (uint32_t)attacker_ship;
@@ -179,11 +208,19 @@ int intercept_attacker_wins(uint32_t world_seed,
     parts[4] = (uint32_t)(target_departure & 0xFFFFFFFFu);
     parts[5] = 0x9E3779B9u;   /* a different mix from the piracy roll */
 
-    for (i = 0; i < 6; i++) {
-        h ^= parts[i];
-        h *= 16777619u;
-    }
-    return (int)(h % 100u) < INTERCEPT_ATTACKER_ODDS;
+    for (i = 0; i < 6; i++)
+        for (b = 0; b < 4; b++) {
+            h ^= (parts[i] >> (b * 8)) & 0xFFu;
+            h *= 16777619u;
+        }
+
+    h ^= h >> 16;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    h *= 0xC2B2AE35u;
+    h ^= h >> 16;
+
+    return (int)(h % 100u) < intercept_odds(attacker_guns, defender_guns);
 }
 
 /* The raid itself: pirates take a share of everything aboard. Called
@@ -302,4 +339,40 @@ int ships_cargo_total(const Ship ships[], int ship_count, ResourceType res)
             total += ships[i].cargo[res];
 
     return total;
+}
+
+/* ---- ship classes (MARITIME_PLAN Phase 5) ----------------
+ * Guns cost hold, and that is the whole design. A merchantman moves
+ * fifty of a good and cannot stop anyone taking it; a warship stops
+ * anyone and moves five. Neither is a good answer to "I want to move
+ * cargo through dangerous water" — a merchantman WITH AN ESCORT is,
+ * and that is a decision about a fleet rather than about a ship.
+ *
+ * The merchantman's numbers are exactly what every ship had before
+ * this phase, so nothing recorded then changes meaning. */
+const ShipClassDef SHIP_CLASSES[SHIP_CLASS_COUNT] = {
+    { "Merchantman", 0,  4, SHIP_CARGO_CAPACITY, SHIP_BUILD_COST_GOLD },
+    { "Cutter",      3,  6, 20,                  SHIP_BUILD_COST_GOLD * 2 },
+    { "Warship",     8, 12, 5,                   SHIP_BUILD_COST_GOLD * 4 }
+};
+
+int ship_hold_capacity(const struct Ship *sh)
+{
+    if (!sh) return SHIP_CARGO_CAPACITY;
+    if (sh->klass < 0 || sh->klass >= SHIP_CLASS_COUNT)
+        return SHIP_CARGO_CAPACITY;
+    return SHIP_CLASSES[sh->klass].hold;
+}
+
+int ship_fighting_strength(const struct Ship *sh)
+{
+    int full, str;
+
+    if (!sh || !sh->active || sh->guns <= 0) return 0;
+    full = (sh->klass >= 0 && sh->klass < SHIP_CLASS_COUNT)
+         ? SHIP_CLASSES[sh->klass].hull : 1;
+    if (full <= 0) full = 1;
+
+    str = sh->guns * sh->hull / full;
+    return str < 1 ? 1 : str;
 }

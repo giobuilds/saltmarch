@@ -423,6 +423,33 @@ retrofitting it after combat exists means touching combat too.
 5. **Predation.** Interception with ship attributes and escorts, and
    pirates as something you can hunt rather than a dice roll.
 
+   **5a is built:** a hull is now a choice at the yard, and the choice
+   is real because the axes trade against each other — guns cost hold.
+   A merchantman carries the cargo that makes trading worth doing and
+   cannot defend it; a warship takes anything at sea and carries almost
+   nothing. The answer to "how do I move cargo through dangerous water"
+   is therefore a second ship rather than a compromise ship, which is a
+   decision about a fleet.
+
+   An escort sails when its charge sails — on the same tick, to the
+   same place, because the intercept rule matches on departure and "we
+   left together" has to be true in the data. Its guns join the
+   defence, so a raider's odds against a convoy are worse than against
+   the merchantman alone.
+
+   Losing costs the hold and wears the hull, and a worn hull fights
+   worse. It never costs the ship: test_intercept has said since it was
+   written that *"a hold is a setback, a ship is an evening"*, and PvP
+   that can cost you the evening is PvP most people decline to be in.
+   Damage is a reason to go home — a Shipyard refits, slowly enough
+   that a refit is a real absence from the water.
+
+   **Still to come:** pirates as entities rather than a derived
+   boolean. Today `shipment_is_raided` decides a raid happened; nothing
+   was there to fight, and the settled design says hunting pirates
+   should yield geography as well as cargo (charts are rare NPC loot).
+   That is the half of this phase with no existing mechanic behind it.
+
 Phases 2 and 3 work under the current architecture; they are simply
 less secret without phase 4. That is the point of this ordering — the
 game design lands and is playable first, and the architecture change

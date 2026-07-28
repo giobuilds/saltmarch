@@ -576,8 +576,13 @@ typedef struct {
  * v23 (MARITIME_PLAN Phase 3e): private passages rotate. Each pair now
  * generates a pool and keeps two in play, and which two changes as the
  * world runs — so a v22 log's cargoes sail water this world is not
- * using. */
-#define SAVE_VERSION 23u
+ * using.
+ *
+ * v24 (MARITIME_PLAN Phase 5): ships have a class, guns and a hull, an
+ * interception is decided by those rather than a flat coin flip, and
+ * CMD_BUILD_SHIP's `b` now names which hull to lay down where it used
+ * to be an ignored index. A v23 log's shipyards would build nothing. */
+#define SAVE_VERSION 24u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -913,7 +918,7 @@ static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
                                   uint64_t target_departure, uint32_t player)
 {
     Ship *mine, *target;
-    int   attacker_wins, r;
+    int   attacker_wins, r, defence = 0, escorts = 0;
     Ship *winner, *loser;
 
     if (my_idx < 0 || my_idx >= gs->ship_count)         return REJ_UNAVAILABLE;
@@ -934,26 +939,65 @@ static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
      * something that no longer exists. */
     if (target->departure_tick != target_departure) return REJ_NO_TARGET;
 
+    /* The defence is the target's guns plus every escort sailing with
+     * them — same owner, same crossing, same tick out of harbour. An
+     * escort that has not left port, or left on a different voyage, is
+     * not there to help, which is what makes forming a convoy a
+     * decision rather than a label. */
+    {
+        int e;
+        defence = ship_fighting_strength(target);
+        for (e = 0; e < gs->ship_count; e++) {
+            const Ship *esc = &gs->ships[e];
+            if (!esc->active || e == target_idx) continue;
+            if (esc->escorting != target_idx) continue;
+            if (esc->owner != target->owner) continue;
+            if (esc->at_island >= 0) continue;             /* still in port */
+            if (esc->departure_tick != target->departure_tick) continue;
+            if (esc->to_island != target->to_island) continue;
+            defence += ship_fighting_strength(esc);
+            escorts++;
+        }
+    }
+
     attacker_wins = intercept_attacker_wins(gs->world_seed, my_idx,
                                             mine->departure_tick,
                                             target_idx,
-                                            target->departure_tick);
+                                            target->departure_tick,
+                                            ship_fighting_strength(mine),
+                                            defence);
     winner = attacker_wins ? mine   : target;
     loser  = attacker_wins ? target : mine;
 
     for (r = 0; r < RES_COUNT; r++) {
         int room, take;
         if (loser->cargo[r] <= 0) continue;
-        room = SHIP_CARGO_CAPACITY - winner->cargo[r];
+        room = ship_hold_capacity(winner) - winner->cargo[r];
         if (room <= 0) continue;
         take = loser->cargo[r] < room ? loser->cargo[r] : room;
         loser->cargo[r]  -= take;
         winner->cargo[r] += take;
     }
 
-    sim_log("Ship %d intercepted ship %d at sea — %s prevailed",
-            my_idx, target_idx, attacker_wins ? "the attacker"
-                                              : "the defender");
+    /* A fight costs the loser more than its cargo: guns wear a hull
+     * down, and a worn hull fights worse (see intercept_strength).
+     * That gives losing a consequence which outlasts the engagement
+     * without ever taking the ship — test_intercept has said since it
+     * was written that "a hold is a setback, a ship is an evening",
+     * and it is right. Sinking a hull somebody spent an evening on is
+     * a different game from this one, and PvP that can cost you the
+     * evening is PvP most people decline to be in.
+     *
+     * So the floor is 1 and the repair is a Shipyard: come home, refit,
+     * go out again. */
+    loser->hull -= winner->guns > 0 ? winner->guns : 1;
+    if (loser->hull < 1) loser->hull = 1;
+
+    sim_log("Ship %d intercepted ship %d at sea (%d guns against %d, %d "
+            "escort%s) — %s prevailed",
+            my_idx, target_idx, mine->guns, defence, escorts,
+            escorts == 1 ? "" : "s",
+            attacker_wins ? "the attacker" : "the defender");
     return REJ_OK;
 }
 
@@ -1125,6 +1169,33 @@ void sim_run_one_tick(GameState *gs)
         sh->insured_value = 0;
     }
 
+    /* Ships in port refit, where there is a yard to do it
+     * (MARITIME_PLAN Phase 5). Damage from an interception is not
+     * permanent — it is a reason to go home. */
+    for (i = 0; i < gs->ship_count; i++) {
+        Ship   *sh = &gs->ships[i];
+        Island *isl;
+        int     b, has_yard = 0, full;
+
+        if (!sh->active || sh->at_island < 0) continue;
+        if (sh->klass < 0 || sh->klass >= SHIP_CLASS_COUNT) continue;
+        full = SHIP_CLASSES[sh->klass].hull;
+        if (sh->hull >= full) continue;
+
+        isl = &gs->islands[sh->at_island];
+        for (b = 0; b < isl->building_count; b++)
+            if (isl->buildings[b].active &&
+                isl->buildings[b].type == BUILDING_SHIPYARD) { has_yard = 1; break; }
+        if (!has_yard) continue;
+
+        /* Staggered by ship index so a fleet in one harbour does not
+         * all gain a point on the same tick — cosmetic, but it also
+         * keeps the work spread rather than spiking. */
+        if ((gs->sim_tick_no + (uint64_t)i) % SHIP_REFIT_TICKS_PER_HULL != 0)
+            continue;
+        sh->hull++;
+    }
+
     /* 4. Charters fall due (MMO_PLAN later phases). Before the market
      * tick so an island that just paid its upkeep is priced against the
      * same faction gold every other trade this tick saw. */
@@ -1291,6 +1362,11 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->route_leg, sizeof(sh->route_leg));
         fnv_bytes(&h, &sh->insured, sizeof(sh->insured));
         fnv_bytes(&h, &sh->insured_value, sizeof(sh->insured_value));
+        /* What kind of hull, and who it is guarding (Phase 5). */
+        fnv_bytes(&h, &sh->klass, sizeof(sh->klass));
+        fnv_bytes(&h, &sh->guns, sizeof(sh->guns));
+        fnv_bytes(&h, &sh->hull, sizeof(sh->hull));
+        fnv_bytes(&h, &sh->escorting, sizeof(sh->escorting));
     }
 
     /* Which passages are currently in play (MARITIME Phase 3e). The
@@ -1951,13 +2027,17 @@ void game_upgrade_house(GameState *gs, int idx, int branch)
  * Returns the new ship's slot index, or -1 on failure. Slot choice
  * (reuse-first-inactive, else append) is a deterministic function of
  * the ship array, so a replayed log lands the ship in the same slot. */
-static int sim_build_ship(GameState *gs, int island, uint32_t player)
+static int sim_build_ship(GameState *gs, int island, int klass,
+                          uint32_t player)
 {
     Island *isl = &gs->islands[island];
-    int     i, slot = -1;
+    int     i, slot = -1, cost;
 
     if (!isl->settled) return -1;
-    if (isl->stockpile.amount[RES_GOLD] < SHIP_BUILD_COST_GOLD) return -1;
+    if (klass < 0 || klass >= SHIP_CLASS_COUNT) return -1;
+
+    cost = SHIP_CLASSES[klass].gold;
+    if (isl->stockpile.amount[RES_GOLD] < cost) return -1;
 
     for (i = 0; i < gs->ship_count; i++)
         if (!gs->ships[i].active) { slot = i; break; }
@@ -1972,19 +2052,38 @@ static int sim_build_ship(GameState *gs, int island, uint32_t player)
     gs->ships[slot].at_island   = island;
     gs->ships[slot].from_island = island;
     gs->ships[slot].to_island   = island;
+    gs->ships[slot].klass       = klass;
+    gs->ships[slot].guns        = SHIP_CLASSES[klass].guns;
+    gs->ships[slot].hull        = SHIP_CLASSES[klass].hull;
+    gs->ships[slot].escorting   = -1;
 
-    stockpile_add(&isl->stockpile, RES_GOLD, -SHIP_BUILD_COST_GOLD);
+    stockpile_add(&isl->stockpile, RES_GOLD, -cost);
 
-    sim_log("Ship %d launched at %s", slot, isl->name);
+    sim_log("%s %d launched at %s", SHIP_CLASSES[klass].name, slot,
+            isl->name);
     return slot;
 }
 
-int game_build_ship(GameState *gs)
+int game_build_ship_class(GameState *gs, int klass)
 {
     Command c = {0};
     c.kind = CMD_BUILD_SHIP;
     c.a    = gs->current_island;
-    c.b    = -1;   /* shipyard index: not used by the sim yet */
+    c.b    = klass;   /* which hull; slot b used to be an unused index */
+    return command_submit(gs, &c);
+}
+
+int game_build_ship(GameState *gs)
+{
+    return game_build_ship_class(gs, SHIP_MERCHANTMAN);
+}
+
+int game_set_escort(GameState *gs, int ship_idx, int target_idx)
+{
+    Command c = {0};
+    c.kind = CMD_SET_ESCORT;
+    c.a    = ship_idx;
+    c.b    = target_idx;
     return command_submit(gs, &c);
 }
 
@@ -2096,6 +2195,34 @@ static RejectReason sim_ship_depart(GameState *gs, int ship_idx, int dest,
     sh->at_island      = -1;                 /* now at sea           */
     sh->departure_tick = gs->sim_tick_no;    /* fixes the whole voyage */
     sh->progress       = 0.0f;
+
+    /* The convoy sails together (MARITIME_PLAN Phase 5). An escort
+     * that had to be ordered out separately would be an escort that
+     * arrives on a different tick and defends nobody — and it is the
+     * DEPARTURE TICK the intercept rule matches on, so "we left
+     * together" has to be true in the data and not merely in the
+     * player's intention.
+     *
+     * Escorts are not insured with their charge: a policy is bought
+     * per hull, and a warship carrying nothing has nothing to declare. */
+    {
+        int e;
+        for (e = 0; e < gs->ship_count; e++) {
+            Ship *esc = &gs->ships[e];
+            if (e == ship_idx || !esc->active) continue;
+            if (esc->escorting != ship_idx) continue;
+            if (esc->owner != sh->owner) continue;
+            if (esc->at_island != sh->from_island) continue;  /* not here */
+
+            esc->from_island    = esc->at_island;
+            esc->to_island      = dest;
+            esc->at_island      = -1;
+            esc->departure_tick = sh->departure_tick;
+            esc->progress       = 0.0f;
+            esc->insured        = 0;
+            esc->insured_value  = 0;
+        }
+    }
     return REJ_OK;
 }
 
@@ -2252,7 +2379,7 @@ static int sim_toggle_route(GameState *gs, int ship_idx)
     if (sh->from_island != sh->to_island) {
         sh->route_a      = sh->from_island;
         sh->route_b      = sh->to_island;
-        sh->route_qty    = SHIP_CARGO_CAPACITY;
+        sh->route_qty    = ship_hold_capacity(sh);
         sh->route_leg    = (sh->at_island == sh->route_b) ? 0 : 1;
         sh->route_active = 1;
         return 1;
@@ -3413,7 +3540,7 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         return sim_upgrade_house(gs, c->a, c->b, c->c);
     case CMD_BUILD_SHIP:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
-        return sim_build_ship(gs, c->a, c->player_id) >= 0 ? REJ_OK : REJ_UNAVAILABLE;
+        return sim_build_ship(gs, c->a, c->b, c->player_id) >= 0 ? REJ_OK : REJ_UNAVAILABLE;
     case CMD_SHIP_TRANSFER:
         /* Your ship, any island — WHOSE island decides stockpile vs
          * escrow inside the body. */
@@ -3462,6 +3589,21 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         /* Ownership is the order's, not an island's, and is checked in
          * the body where the order can be looked up. */
         return sim_cancel_order(gs, (uint32_t)c->a, c->player_id);
+    case CMD_SET_ESCORT: {
+        Ship *sh;
+        if (c->a < 0 || c->a >= gs->ship_count) return REJ_UNAVAILABLE;
+        sh = &gs->ships[c->a];
+        if (!sh->active || sh->owner != c->player_id) return REJ_NOT_OWNER;
+        if (c->b < 0) { sh->escorting = -1; return REJ_OK; }
+        if (c->b >= gs->ship_count || c->b == c->a) return REJ_NO_TARGET;
+        /* You escort your own. A hull that could attach itself to a
+         * stranger's convoy would be a way to read where they are
+         * going, which is exactly what Phase 3 stopped telling you. */
+        if (!gs->ships[c->b].active ||
+            gs->ships[c->b].owner != c->player_id) return REJ_NOT_OWNER;
+        sh->escorting = c->b;
+        return REJ_OK;
+    }
     case CMD_SET_INSURANCE:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         gs->islands[c->a].insure_shipments = c->b ? 1 : 0;
