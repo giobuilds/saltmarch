@@ -577,6 +577,173 @@ phase that is looking at the confirm layer anyway.
 
 ---
 
+## The maritime UI — the sim has outrun the screen
+
+Everything above is done. Since it was written the simulation gained an
+order book, merchants and hulls as capital, an NPC market with home
+ports, three routes between every pair of islands, charts and per-player
+knowledge of the sea, per-route insurance, survey expeditions, chart
+expiry, ship classes and escorts, huntable pirate fleets, server
+authority and per-client concealment.
+
+**None of it has a screen.** A player running the game today cannot post
+an order, buy a chart, send an expedition, choose a hull, form a convoy,
+or hunt a fleet. All of it works, all of it is tested, and none of it is
+reachable. That is now the largest gap in the project and it is in no
+other plan.
+
+### The five decisions survive, and three are stronger
+
+Nothing below asks to revisit them.
+
+**Decision 1 (UI is a pure function of a snapshot) has quietly become a
+security property.** When it was written it was hygiene: a `UiSnapshot`
+argument made "the UI stepped the RNG" a compile error. Since
+SERVER_AUTHORITY Phase 3 the client's own `GameState` is *already*
+redacted — a rival's stockpile is not hidden from the UI, it is absent
+from the process. So the snapshot builder cannot leak what it does not
+have, and concealment needs no discipline from UI code at all. This is
+worth stating because the opposite instinct is very natural and would be
+a disaster: **the UI must never become the thing that hides.** The
+moment a screen decides not to draw something it holds, concealment is
+one modified client away from failing.
+
+**Decision 5 (pending vs confirmed) now carries prediction too.** It was
+written for lockstep latency. Under server authority the client is
+guessing between pushes, so "submitted but unapplied" and "predicted but
+unconfirmed" want the same visual grammar, and the grammar already
+exists.
+
+**Decision 2's frozen list ordering was written for pagination and now
+has to carry concurrency** — see below.
+
+### Three problems the plan has never faced
+
+**1. Absence is not zero, and the UI has no word for it.**
+
+This is the important one. Every existing overlay renders state the
+player owns or the market publishes, so every number on screen is
+*true*. Under concealment a foreign island arrives with an empty
+building list and a zeroed stockpile — and those mean **"you were not
+told"**, not "there is nothing there".
+
+Rendering unknown as zero is not a cosmetic problem. It is the screen
+telling the player something false about a rival, and the player will
+act on it: an island showing 0 Planks reads as a market to sell into,
+not as an island you know nothing about. Every foreign-data surface
+needs a vocabulary for absence before it shows any foreign data at all,
+which is why it is a phase of its own and comes first.
+
+The distinction the snapshot must carry is not per-field. It is one flag
+per island — *is this mine* — because the redaction is all-or-nothing
+per island and pretending otherwise invites a UI that guesses.
+
+**2. The world changes without you.**
+
+Every surface built so far renders things only the player moves: their
+stockpile, their buildings, a faction quote that drifts on a slow timer.
+The order book is the first screen where **another player's action
+changes what is in front of you mid-read** — a resting order is filled
+by somebody else and the row you were about to click is gone.
+
+Decision 2 already says list ordering is frozen while an overlay is
+open, and that rule was written to stop *pagination* reflowing a row
+under a click. It now has to carry real concurrency, and it is nearly
+enough: freeze the order of what is displayed, but let rows go stale
+visibly (struck through, greyed) rather than vanishing. A row that
+disappears between the frame that drew it and the click that hits it is
+the one failure this must not have — and the `RejectReason` path already
+exists to say *that order is gone* when the click lands anyway.
+
+**3. The sea is a place and the map is a node graph.**
+
+`world_ui.c` draws eight nodes and lines between them. The sim now has
+positions, named waypoints, three routes per pair with real geometry,
+pirate lairs, and shipments moving along paths at known positions. Most
+of the new content is *spatial*, and the map is both its natural home
+and the least developed surface in the project.
+
+This is also where concealment becomes legible rather than abstract:
+a chart is worth buying when you can see the passage it opens, and a
+pirate lair matters when you can see your lane runs through it.
+
+### Phases
+
+Ordered by what gates what, not by what is most interesting.
+
+**N1 — the snapshot grows.** Everything else is blocked on it. Add to
+`UiSnapshot`: open orders and in-flight bookings; the charts the local
+player holds and the routes they know; the routes currently in play per
+pair; expeditions in progress; the fleets the player has reason to know
+about; ship class, guns, hull and escort; trade and scholar capacity;
+the insurance flag. Plus the one flag decision 1 now needs: whether each
+island is the local player's.
+
+*Do not copy the sea into the snapshot.* Routes are ~200 entries of
+fixed geometry, regenerated from the seed and mutable only in one byte
+per pair. Copying them every frame would take the snapshot from under
+10 KB to 60 KB for data that does not change. The UI should read `Sea`
+directly and take only the per-pair cursor through the snapshot — the
+one exception to decision 1, and it is safe precisely because a `Sea` is
+generated rather than owned.
+
+**N2 — absence has a look.** The vocabulary for "not told", applied to
+the island panel and the world map, before any screen shows foreign
+data. No new sim work. This is small and it must not be skipped.
+
+**N3 — the order book.** The exchange surface's third builder,
+`exchange_view_book()`, per decision 4. Post a buy or a sell with a limit
+price, see your resting orders, cancel one. Your side of the book only —
+depth is a later question and possibly an intelligence one.
+
+First because it gates the rest: charts are bought and sold through it,
+so nothing downstream is reachable without it.
+
+**N4 — charts and routes.** What you know, what you hold, what a passage
+saves, what a chart costs on the book. Includes the expiry clock, since
+a chart that quietly stops working is worse than no chart.
+
+**N5 — the sea.** `world_ui` grows routes as paths, waypoints by name,
+shipments moving along them, and the lairs the player knows of. The map
+becomes the intelligence surface the design has assumed since
+MARITIME_PLAN was written.
+
+**N6 — the yard and the fleet.** Choosing a hull at the shipyard (the
+guns-versus-hold trade is invisible today), forming a convoy, and hull
+damage and refit.
+
+**N7 — expeditions.** Dispatching a survey, what it costs, what is at
+risk, and what came back.
+
+**N8 — insurance and capacity.** The standing policy toggle, merchants
+and hulls committed versus available, research boats. Small additions to
+the island panel; last because each is one number and a switch.
+
+### Risks
+
+**The ExchangeKind if-ladder.** Decision 4 warned that if per-kind
+branches start appearing per-column, the unification has failed. N3 adds
+a *third* kind to a struct designed around two, and an order book has
+genuinely different columns (limit price, quantity resting, age) from a
+quote screen. This is the most likely place for that prediction to come
+true. The mitigation is to notice early and split rather than to defend
+the unification: one screen that is three screens in a trench coat is
+worse than three screens.
+
+**Snapshot growth.** Under 10 KB was the number decision 1 was argued
+on. Orders, bookings, charts and expeditions are all bounded and small;
+the sea is not, which is why N1 keeps it out. If the snapshot passes
+~50 KB per frame the argument needs re-making rather than assuming.
+
+**The temptation to conceal in the UI.** Stated above and repeated here
+because it is the one mistake in this document that would undo work
+already done.
+
+**Text throughput.** Inherited and still unaddressed. Every phase here
+adds rows of text, and the order book adds the most.
+
+---
+
 ## Explicitly out of scope
 
 - `world_ui.c` stays projected map geometry (v1 decision stands); it gains
