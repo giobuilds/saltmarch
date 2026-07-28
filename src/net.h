@@ -120,12 +120,15 @@ typedef struct NetSession NetSession;
  *    saying which private passages are in play — and the snapshot
  *    carries it. A peer on 16 regenerates the pool and then disagrees
  *    about which two of it are real.
+ * 19: ship classes and escorts (MARITIME_PLAN Phase 5). Four more
+ *    fields per ship in the snapshot, a new command kind, and
+ *    interception resolved from guns rather than a constant.
  * 18: server authority (SERVER_AUTHORITY.md Phase 1). MSG_STATE, and
  *    MSG_WELCOME grew a flag saying whether the server's word is
  *    final. A peer on 17 would read the flag as absent, keep waiting
  *    for tick authorisation that an authoritative server never sends,
  *    and sit still. */
-#define NET_PROTO_VERSION     18u
+#define NET_PROTO_VERSION     19u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

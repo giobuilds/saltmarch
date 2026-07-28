@@ -27,12 +27,70 @@
 #include <stddef.h>   /* size_t */
 
 #define MAX_SHIPS            8
-/* Per-resource hold limit for physical goods. RES_GOLD is exempt
+
+/* ---- what a hull is for (MARITIME_PLAN Phase 5) -----------
+ * A ship used to be one thing: a hold that moved. Interception was a
+ * flat 55% coin flip, which meant a fight was something that happened
+ * TO you rather than something you had prepared for — and no decision
+ * anywhere in the game led to being better at it.
+ *
+ * Now a hull is a choice made at the shipyard, and it is a real one
+ * because the axes trade against each other: guns cost hold. A
+ * merchantman carries the cargo that makes trading worth doing and
+ * cannot defend it; a warship can take anything at sea and has almost
+ * nowhere to put it. Which is why escorts exist — the answer to "how
+ * do I move cargo through dangerous water" is a second ship, not a
+ * compromise ship.
+ *
+ * Class 0 is the merchantman ON PURPOSE: every ship built before this
+ * phase was one, and a log recorded then still means what it meant. */
+struct Ship;
+
+typedef enum {
+    SHIP_MERCHANTMAN = 0,   /* the hold that moves; no teeth          */
+    SHIP_CUTTER      = 1,   /* escort work: guns enough to matter     */
+    SHIP_WARSHIP     = 2,   /* takes anything at sea, carries nothing */
+    SHIP_CLASS_COUNT
+} ShipClass;
+
+typedef struct {
+    const char *name;
+    int         guns;       /* what it brings to a fight             */
+    int         hull;       /* what it survives                      */
+    int         hold;       /* units of each good it can carry       */
+    int         gold;       /* what the yard charges                 */
+} ShipClassDef;
+
+extern const ShipClassDef SHIP_CLASSES[SHIP_CLASS_COUNT];
+
+/* The hold of a specific ship, which is its class's. Ships built
+ * before classes existed decode as merchantmen and keep the capacity
+ * they always had. */
+int ship_hold_capacity(const struct Ship *sh);
+
+/* What a hull actually brings to a fight: its guns, scaled by how much
+ * of it is still there. A warship fresh from the yard is worth its full
+ * broadside; one that has taken three fights and not gone home is not,
+ * and that is the pressure that makes a Shipyard near contested water
+ * worth building. Never below 1 for an armed ship — a gun is a gun.
+ *
+ * Exposed rather than hidden in the intercept rule because a UI has to
+ * be able to tell a player what they are about to sail into. */
+int ship_fighting_strength(const struct Ship *sh);
+/* The merchantman's hold, and the historical value of this constant.
+ * Kept as the class table's entry rather than deleted, because the
+ * comment below is still the reason RES_GOLD is exempt.
+ *
+ * Per-resource hold limit for physical goods. RES_GOLD is exempt
  * (see game_ship_transfer) for the same reason it is exempt from
  * stockpile capacity: it is currency, not something that takes up
  * hold space -- and a colony's founding grant is far larger than
  * any sane bulk-cargo limit. */
 #define SHIP_CARGO_CAPACITY  50
+
+/* Gold the yard charges for a merchantman; the other classes are
+ * multiples of it in the table below. */
+#define SHIP_BUILD_COST_GOLD 350
 #define SHIP_VOYAGE_SECONDS  20.0f /* one island-to-island crossing */
 /* The crossing length in whole sim ticks. A voyage departing at tick D
  * arrives at tick D + SHIP_VOYAGE_TICKS (Phase 2: derived from
@@ -45,7 +103,7 @@
  * comment: a colony that cannot pay for anything is stranded. */
 #define COLONY_FOUNDING_GOLD 400
 
-typedef struct {
+typedef struct Ship {
     int   active;
 
     /* Phase 5: who commands this ship. Set at build time from the
@@ -85,6 +143,19 @@ typedef struct {
     ResourceType route_res_ab, route_res_ba;
     int          route_qty;
     int          route_leg;      /* 0 = A->B, 1 = B->A */
+
+    /* ---- what kind of ship (MARITIME_PLAN Phase 5) --------
+     * Set at the yard and never changed. `hull` is the only one that
+     * moves: a ship that loses a fight is damaged, and a ship out of
+     * hull is gone. All sim state, hashed and snapshotted. */
+    int32_t      klass;
+    int32_t      guns;
+    int32_t      hull;
+
+    /* The ship this one escorts, or -1. An escort sails when its
+     * charge sails and adds its guns to the defence — which is the
+     * whole reason to own a ship that cannot carry anything. */
+    int32_t      escorting;
 } Ship;
 
 /* Move `qty` units of `res` between a ship's hold and a SPECIFIC
@@ -161,12 +232,44 @@ int shipment_is_raided(uint32_t world_seed, int route_id, uint64_t booked_tick,
  * the sea resolves it at a tick boundary. There is nothing to aim and
  * nothing to dodge, which is what keeps the feed a dumb log.
  */
+/* The odds when neither side has a gun between them: a boarding
+ * scuffle, and the attacker's advantage is only that they chose the
+ * moment. Everything above this is decided by what the ships are. */
 #define INTERCEPT_ATTACKER_ODDS   55   /* percent, out of 100          */
 
-/* Does the attacker prevail? Pure and seeded, like the piracy roll. */
+/* Nothing at sea is ever certain, however lopsided. A convoy that
+ * could not possibly be taken would make escorting a solved problem
+ * rather than a judgement, and a warship that could not possibly lose
+ * would make attacking one. */
+/* Ticks in port, at an island with a Shipyard, per point of hull
+ * restored. A fight costs a warship several points, so a refit is a
+ * real absence from the water rather than a formality — which is what
+ * makes wear a pressure and a Shipyard near contested water worth
+ * building. */
+#define SHIP_REFIT_TICKS_PER_HULL 60
+
+#define INTERCEPT_MIN_ODDS         8
+#define INTERCEPT_MAX_ODDS        92
+
+/* Does the attacker prevail? Pure and seeded, like the piracy roll —
+ * the same voyage always resolves the same way, which is what lets
+ * both players' clients and the server agree without exchanging a
+ * shot.
+ *
+ * `attacker_guns` and `defender_guns` are the strengths brought to it;
+ * the defender's includes every escort sailing with them
+ * (MARITIME_PLAN Phase 5). Odds are the attacker's share of the total,
+ * clamped, so a warship against an unescorted merchantman is nearly
+ * certain and two cutters are nearly a coin flip. */
 int intercept_attacker_wins(uint32_t world_seed,
                             int attacker_ship, uint64_t attacker_departure,
-                            int target_ship, uint64_t target_departure);
+                            int target_ship, uint64_t target_departure,
+                            int attacker_guns, int defender_guns);
+
+/* The odds themselves, out of 100. Exposed so a UI can tell a player
+ * what they are about to do, and so the tests can assert the shape of
+ * the curve rather than sampling it. */
+int intercept_odds(int attacker_guns, int defender_guns);
 
 void ships_update(const Sea *sea, Ship ships[], int ship_count,
                   Island islands[], int island_count, uint64_t sim_tick_no,

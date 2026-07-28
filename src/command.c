@@ -29,7 +29,7 @@ static const char *const KIND_NAMES[CMD_COUNT] = {
     "SHIP_DEPART", "COLONISE", "SET_ROUTE_RES", "TOGGLE_ROUTE",
     "GRANT_START", "ESCROW_PUT", "ESCROW_TAKE", "SET_DOCKING",
     "INTERCEPT", "PLACE_ORDER", "CANCEL_ORDER", "SET_INSURANCE",
-    "BUILD_RESEARCH_BOAT", "SURVEY"
+    "BUILD_RESEARCH_BOAT", "SURVEY", "SET_ESCORT"
 };
 
 const char *command_kind_name(CommandKind kind)
@@ -76,7 +76,12 @@ void command_describe(const Command *c, char *out, size_t n)
         snprintf(out, n, "UPGRADE_HOUSE  island %d  building %d", c->a, c->b);
         break;
     case CMD_BUILD_SHIP:
-        snprintf(out, n, "BUILD_SHIP  island %d", c->a);
+        snprintf(out, n, "BUILD_SHIP  island %d  class %d", c->a, c->b);
+        break;
+    case CMD_SET_ESCORT:
+        if (c->b < 0) snprintf(out, n, "SET_ESCORT  ship %d  released", c->a);
+        else snprintf(out, n, "SET_ESCORT  ship %d  guards ship %d",
+                      c->a, c->b);
         break;
     case CMD_SHIP_TRANSFER:
         snprintf(out, n, "SHIP_TRANSFER  ship %d  res %d  qty %d  island %d",

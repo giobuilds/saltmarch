@@ -295,6 +295,11 @@ static void put_ship(W *w, const Ship *s)
     w_i32(w, (int32_t)s->route_res_ba);
     w_i32(w, (int32_t)s->route_qty);
     w_i32(w, (int32_t)s->route_leg);
+    /* What kind of hull, and who it guards (MARITIME Phase 5). */
+    w_i32(w, s->klass);
+    w_i32(w, s->guns);
+    w_i32(w, s->hull);
+    w_i32(w, s->escorting);
 }
 
 static void get_ship(R *r, Ship *s)
@@ -319,6 +324,10 @@ static void get_ship(R *r, Ship *s)
     s->route_res_ba  = (ResourceType)r_i32(r);
     s->route_qty     = (int)r_i32(r);
     s->route_leg     = (int)r_i32(r);
+    s->klass         = r_i32(r);
+    s->guns          = r_i32(r);
+    s->hull          = r_i32(r);
+    s->escorting     = r_i32(r);
 }
 
 /* The order book (MARITIME_PLAN Phase 2). Live entries only — an

@@ -723,13 +723,23 @@ void game_demolish_building(GameState *gs, int idx);
  * Scholars where an Academy stands. */
 void game_upgrade_house(GameState *gs, int idx, int branch);
 
-/* Gold cost of laying down a new ship at a Shipyard. */
-#define SHIP_BUILD_COST_GOLD 350
+/* SHIP_BUILD_COST_GOLD moved to ship.h with the class table
+ * (MARITIME_PLAN Phase 5) — what a hull costs is a property of the
+ * hull, and the yard now offers three of them. */
 
 /* Builds a ship, docked at the current island, paid for out of that
  * island's stockpile. Returns the new ship's index, or -1 if the
  * fleet is full or the island cannot afford it. */
 int game_build_ship(GameState *gs);
+
+/* The same, choosing which hull the yard lays down (MARITIME_PLAN
+ * Phase 5). game_build_ship() is this with SHIP_MERCHANTMAN. */
+int game_build_ship_class(GameState *gs, int klass);
+
+/* Owner only: set `ship_idx` to escort `target_idx`, or -1 to release
+ * it. An escort sails when its charge sails and adds its guns to the
+ * defence if the convoy is intercepted. */
+int game_set_escort(GameState *gs, int ship_idx, int target_idx);
 
 /* Move `qty` units of `res` between the current island's stockpile
  * and ship `ship_idx`'s hold. Positive qty loads onto the ship,
