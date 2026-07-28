@@ -52,6 +52,7 @@ for src in "$root"/tests/test_*.c; do
     case "$name" in
         test_headless) link_objs="";        link_sdl="" ;;
         test_ui_kit)   link_objs="$uilib";  link_sdl="" ;;
+        test_ui_snapshot) link_objs="$uilib"; link_sdl="" ;;
         test_exchange) link_objs="$uilib";  link_sdl="" ;;
         test_hud)      link_objs="$uilib";  link_sdl="" ;;
         test_vitals)   link_objs="$uilib";  link_sdl="" ;;

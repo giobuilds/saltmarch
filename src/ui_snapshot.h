@@ -60,6 +60,22 @@ typedef struct {
     uint8_t  docking_allowed;
     uint32_t owner;              /* player id, PLAYER_NONE if unowned  */
 
+    /* Is this island's detail KNOWN, or merely absent (UI_PLAN N1)?
+     *
+     * The most important byte in this struct, and the one it is easiest
+     * to do without and be wrong. Since SERVER_AUTHORITY Phase 3 a
+     * foreign island arrives with an empty building list and a zeroed
+     * stockpile — and those mean "you were not told", not "there is
+     * nothing there". A screen that renders the second reading is
+     * telling the player something false about a rival, and they will
+     * act on it: 0 Planks reads as a market to sell into rather than as
+     * an island you know nothing about.
+     *
+     * It is one flag for the whole island rather than one per field,
+     * because redaction is all-or-nothing per island and a per-field
+     * version would invite a UI that guesses which zeros are real. */
+    uint8_t  detail_known;
+
     int32_t  stock[RES_COUNT];
     int32_t  escrow[RES_COUNT];
     uint32_t escrow_nonce;       /* island_escrow_nonce() (UI_PLAN M5) */
@@ -69,6 +85,16 @@ typedef struct {
 
     UiBuilding buildings[MAX_BUILDINGS];
     int32_t    building_count;
+
+    /* What this harbour can currently put to sea, and what it has out
+     * (UI_PLAN N1). Capacities are derived from the buildings above,
+     * but resolved here so no overlay reproduces the rule. Meaningful
+     * only when detail_known. */
+    int32_t  merchants_out, merchant_capacity;
+    int32_t  hulls_out, hull_capacity;
+    int32_t  scholars_out, scholar_capacity;
+    int32_t  research_boats;
+    uint8_t  insure_shipments;
 } UiIsland;
 
 /* The snapshot-side twin of island_has_building() (island.h): is an
@@ -103,6 +129,58 @@ typedef struct {
  * machinery as "this farm has no worker", on the principle that the
  * player is the monitoring system: a stall should be visible seconds
  * after it starts rather than at the next desync. */
+/* ---- the maritime world, in UI terms (UI_PLAN N1) ---------
+ * Bounds mirror the sim's so a full world always fits; they are named
+ * separately so a UI file never has to include the sim's headers to
+ * know how big an array is. Static asserts in ui_snapshot.c keep them
+ * honest. */
+#define UI_MAX_ORDERS    256
+#define UI_MAX_BOOKINGS   64
+#define UI_MAX_ROUTES    512
+#define UI_MAX_PAIRS     120
+#define UI_MAX_SURVEYS    32
+#define UI_MAX_PIRATES     6
+
+typedef struct {
+    uint32_t id;                 /* stable identity, never a row index */
+    uint32_t owner;
+    int32_t  island;
+    uint16_t kind;               /* TradeKind                          */
+    uint16_t what;               /* resource, or route id for a chart  */
+    int32_t  side;               /* OrderSide                          */
+    int32_t  qty;                /* units still unfilled               */
+    int32_t  limit;
+    uint64_t placed_tick;
+    uint8_t  mine;               /* the local player posted it         */
+} UiOrder;
+
+typedef struct {
+    uint16_t kind, what;
+    int32_t  qty, price;
+    int32_t  from_island, to_island;
+    int32_t  route_id;
+    uint64_t arrive_tick;
+    uint8_t  delivered;
+    uint8_t  raided;
+    uint8_t  mine;               /* the local player is buyer or seller */
+} UiBooking;
+
+typedef struct {
+    int32_t  from_island, to_island;
+    int32_t  route_id;
+    uint64_t finish_tick;
+} UiSurvey;
+
+/* A fleet the player has reason to know about. Where they lair is
+ * generated from the seed and therefore not a secret; what they are
+ * sitting on is only known once you have been there, which is a
+ * question for N5 rather than a field here. */
+typedef struct {
+    int32_t  waypoint;
+    int32_t  guns;
+    uint8_t  active;
+} UiPirate;
+
 typedef struct {
     int32_t  replay_state;       /* GameState.replay_state (0..3)      */
     uint32_t backlog_ticks;      /* ticks the accumulator owes         */
@@ -134,6 +212,32 @@ typedef struct {
     /* The market's recent mid-prices, oldest first (UI_PLAN M3). */
     int16_t  price_hist[RES_COUNT][FACTION_HIST_LEN];
     int32_t  price_hist_count[RES_COUNT];
+
+    /* ---- the maritime world (UI_PLAN N1) ------------------
+     * Everything the last twelve phases of simulation added, in the
+     * form the screens will read it. Bounded and small; the one thing
+     * deliberately NOT here is the Sea itself — see ui_snapshot.c. */
+
+    UiOrder    order[UI_MAX_ORDERS];
+    int32_t    order_count;
+    UiBooking  booking[UI_MAX_BOOKINGS];
+    int32_t    booking_count;
+
+    /* What the local player knows of the sea. Charts are indexed by
+     * sea route id, which is the id a chart trades under. */
+    uint8_t    chart_held[UI_MAX_ROUTES];
+    uint8_t    route_known[UI_MAX_ROUTES];
+
+    /* Which two private passages are in play for each island pair —
+     * the one mutable byte of the Sea, so the UI can read the rest of
+     * it directly and still be looking at the same world. */
+    uint8_t    pair_cursor[UI_MAX_PAIRS];
+
+    UiSurvey   survey[UI_MAX_SURVEYS];
+    int32_t    survey_count;
+
+    UiPirate   pirate[UI_MAX_PIRATES];
+    int32_t    pirate_count;
 
     /* The pending confirmation, copied whole (UI_PLAN Phase 6). The
      * popup's builder is a pure function of the snapshot like every

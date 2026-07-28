@@ -671,7 +671,8 @@ pirate lair matters when you can see your lane runs through it.
 
 Ordered by what gates what, not by what is most interesting.
 
-**N1 — the snapshot grows.** Everything else is blocked on it. Add to
+**N1 — the snapshot grows.** ~~Everything else is blocked on it.~~
+**Done.** Add to
 `UiSnapshot`: open orders and in-flight bookings; the charts the local
 player holds and the routes they know; the routes currently in play per
 pair; expeditions in progress; the fleets the player has reason to know
@@ -679,7 +680,7 @@ about; ship class, guns, hull and escort; trade and scholar capacity;
 the insurance flag. Plus the one flag decision 1 now needs: whether each
 island is the local player's.
 
-*Do not copy the sea into the snapshot.* Routes are ~200 entries of
+*Do not copy the sea into the snapshot* — and it does not. Routes are ~200 entries of
 fixed geometry, regenerated from the seed and mutable only in one byte
 per pair. Copying them every frame would take the snapshot from under
 10 KB to 60 KB for data that does not change. The UI should read `Sea`

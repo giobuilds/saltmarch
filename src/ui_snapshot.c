@@ -10,13 +10,19 @@
  */
 
 #include "ui_snapshot.h"
+#include "sea.h"
+#include "pirate.h"
+#include "survey.h"
+#include "knowledge.h"
+#include "orderbook.h"
 #include "game.h"
 #include "faction.h"
 #include "population.h"
 #include "simclock.h"
 #include <string.h>
 
-static void snapshot_island(UiIsland *out, const Island *isl)
+static void snapshot_island(UiIsland *out, const Island *isl,
+                            uint32_t local_player)
 {
     int i;
 
@@ -29,6 +35,21 @@ static void snapshot_island(UiIsland *out, const Island *isl)
     out->capacity        = isl->stockpile.capacity;
     out->escrow_nonce    = island_escrow_nonce(isl);
     out->residents       = pop_total(isl->pop_data, isl->building_count);
+
+    /* Whether what follows is knowledge or absence (UI_PLAN N1). The
+     * test is ownership because that is exactly what redact_for() keys
+     * on: your own islands come through whole, everybody else's come
+     * through as their public face and a great many zeroes. */
+    out->detail_known = (uint8_t)(isl->owner == local_player ? 1 : 0);
+
+    out->merchants_out     = isl->merchants_out;
+    out->merchant_capacity = island_merchant_capacity(isl);
+    out->hulls_out         = isl->hulls_out;
+    out->hull_capacity     = island_hull_capacity(isl);
+    out->scholars_out      = isl->scholars_out;
+    out->scholar_capacity  = island_scholar_capacity(isl);
+    out->research_boats    = isl->research_boats;
+    out->insure_shipments  = (uint8_t)(isl->insure_shipments ? 1 : 0);
 
     for (i = 0; i < RES_COUNT; i++) {
         out->stock[i]  = isl->stockpile.amount[i];
@@ -59,6 +80,117 @@ static void snapshot_island(UiIsland *out, const Island *isl)
     }
 }
 
+/* The bounds this header declares must actually hold the sim's world,
+ * and the two sets of constants live in different files on purpose —
+ * a UI file should not have to include orderbook.h to know how many
+ * rows a list can have. These make "on purpose" checkable rather than
+ * a comment somebody keeps in step by hand. */
+typedef char ui_snapshot_bounds_check[
+    (UI_MAX_ORDERS   >= ORDERBOOK_MAX_ORDERS   &&
+     UI_MAX_BOOKINGS >= ORDERBOOK_MAX_BOOKINGS &&
+     UI_MAX_ROUTES   >= SEA_MAX_ROUTES         &&
+     UI_MAX_PAIRS    >= SEA_MAX_PAIRS          &&
+     UI_MAX_SURVEYS  >= MAX_SURVEYS            &&
+     UI_MAX_PIRATES  >= MAX_PIRATES) ? 1 : -1];
+
+/* ---- the maritime world (UI_PLAN N1) ----------------------
+ * THE SEA IS NOT COPIED. Routes are about two hundred entries of fixed
+ * geometry — positions, names, per-leg durations — regenerated from
+ * the world seed and identical on every client. Copying them every frame
+ * would take this snapshot from under 10 KB to about 60 KB to say the
+ * same thing every time.
+ *
+ * So the UI reads `Sea` directly, and takes through here only the one
+ * part of it that is world state: the per-pair cursor saying which two
+ * private passages are currently in play. That is a deliberate,
+ * recorded exception to UI_PLAN decision 1, and it is safe precisely
+ * because a Sea is GENERATED rather than owned — there is nothing in
+ * it a UI could mutate that would not be rebuilt identically.
+ */
+static void snapshot_market(UiSnapshot *out, const struct GameState *gs)
+{
+    int i, n;
+
+    n = 0;
+    for (i = 0; i < gs->book.order_count && n < UI_MAX_ORDERS; i++) {
+        const Order *o = &gs->book.order[i];
+        UiOrder     *u;
+
+        if (!o->active) continue;
+        u = &out->order[n++];
+        u->id          = o->id;
+        u->owner       = o->owner;
+        u->island      = o->island;
+        u->kind        = o->what.kind;
+        u->what        = o->what.id;
+        u->side        = o->side;
+        u->qty         = o->qty;
+        u->limit       = o->limit;
+        u->placed_tick = o->placed_tick;
+        u->mine        = (uint8_t)(o->owner == gs->local_player_id);
+    }
+    out->order_count = n;
+
+    n = 0;
+    for (i = 0; i < gs->book.booking_count && n < UI_MAX_BOOKINGS; i++) {
+        const Booking *b = &gs->book.booking[i];
+        UiBooking     *u;
+
+        if (!b->active) continue;
+        u = &out->booking[n++];
+        u->kind        = b->what.kind;
+        u->what        = b->what.id;
+        u->qty         = b->qty;
+        u->price       = b->price;
+        u->from_island = b->from_island;
+        u->to_island   = b->to_island;
+        u->route_id    = b->route_id;
+        u->arrive_tick = b->arrive_tick;
+        u->delivered   = (uint8_t)(b->delivered ? 1 : 0);
+        u->raided      = (uint8_t)(b->raided ? 1 : 0);
+        u->mine        = (uint8_t)(b->buyer  == gs->local_player_id ||
+                                   b->seller == gs->local_player_id);
+    }
+    out->booking_count = n;
+
+    /* What the local player knows of the sea. Only ever their own —
+     * the rest is not in this process to copy. */
+    for (i = 0; i < UI_MAX_ROUTES; i++) {
+        int priv = (i < gs->sea.route_count) ? gs->sea.route[i].is_private : 0;
+        out->chart_held[i]  = (uint8_t)knowledge_charts(&gs->knowledge,
+                                  gs->local_player_id, i);
+        out->route_known[i] = (uint8_t)knowledge_knows(&gs->knowledge,
+                                  gs->local_player_id, i, priv);
+    }
+    for (i = 0; i < UI_MAX_PAIRS; i++)
+        out->pair_cursor[i] = gs->sea.pair_cursor[i];
+
+    n = 0;
+    for (i = 0; i < gs->surveys.count && n < UI_MAX_SURVEYS; i++) {
+        const Survey *m = &gs->surveys.mission[i];
+        UiSurvey     *u;
+
+        if (!m->active) continue;
+        u = &out->survey[n++];
+        u->from_island = m->from_island;
+        u->to_island   = m->to_island;
+        u->route_id    = m->route_id;
+        u->finish_tick = m->finish_tick;
+    }
+    out->survey_count = n;
+
+    /* Where the fleets are is generated from the seed and therefore no
+     * secret. What they are sitting on is not copied: knowing that
+     * without having been there would make hunting a lookup. */
+    out->pirate_count = gs->pirates.count < UI_MAX_PIRATES
+                      ? gs->pirates.count : UI_MAX_PIRATES;
+    for (i = 0; i < out->pirate_count; i++) {
+        out->pirate[i].waypoint = gs->pirates.fleet[i].waypoint;
+        out->pirate[i].guns     = gs->pirates.fleet[i].guns;
+        out->pirate[i].active   = (uint8_t)(gs->pirates.fleet[i].active ? 1 : 0);
+    }
+}
+
 void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
 {
     int i, r;
@@ -80,7 +212,8 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
     out->current_island  = gs->current_island;
 
     for (i = 0; i < MAX_ISLANDS; i++)
-        snapshot_island(&out->islands[i], &gs->islands[i]);
+        snapshot_island(&out->islands[i], &gs->islands[i],
+                        gs->local_player_id);
 
     out->ship_count = gs->ship_count;
     for (i = 0; i < gs->ship_count && i < MAX_SHIPS; i++) {
@@ -108,6 +241,8 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
     }
     out->counterparty_gold = gs->faction.gold;
     out->confirm           = gs->confirm;
+
+    snapshot_market(out, gs);
 }
 
 /* ---- reading a snapshot ------------------------------------
