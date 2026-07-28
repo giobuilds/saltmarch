@@ -11,6 +11,8 @@
  */
 
 #include "game.h"
+#include "pirate.h"
+#include "knowledge.h"
 #include "ship.h"
 #include <stdio.h>
 #include <string.h>
@@ -48,6 +50,105 @@ static void two_at_sea(GameState *gs, int cargo_a, int cargo_b)
     gs->ships[1].cargo[RES_FISH] = cargo_b;
 
     gs->replay_valid = 0;
+}
+
+static void test_pirates_can_be_hunted(void)
+{
+    /* The point of Phase 5b. Piracy used to be a hash: cargo vanished
+     * and there was nothing to go after. Now the fleet is somewhere,
+     * it is sitting on what it took, and a hull with guns can go and
+     * get it back — which is also the only reason to arm that is not
+     * aimed at another player. */
+    GameState *gs = game_init();
+    Ship      *sh;
+    Pirate    *pr;
+    int        i;
+
+    if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
+    game_new_seeded(gs, 7u);
+    gs->islands[0].stockpile.amount[RES_GOLD] = 100000;
+
+    CHECK(gs->pirates.count > 0, "the world has fleets in it");
+
+    pr = &gs->pirates.fleet[0];
+    pr->plunder[RES_FISH] = 30;
+    pr->chart             = 4;      /* a passage they took off somebody */
+
+    game_build_ship_class(gs, SHIP_WARSHIP);
+    sim_run_one_tick(gs);
+    sh = &gs->ships[0];
+
+    /* You have to be there. Attacking from harbour is a menu item, not
+     * a place. */
+    {
+        Command c;
+        memset(&c, 0, sizeof(c));
+        c.kind      = CMD_ATTACK_PIRATE;
+        c.a         = 0;
+        c.b         = 0;
+        c.player_id = 1u;
+        CHECK(sim_apply_reason(gs, &c) == REJ_NO_TARGET ||
+              sim_apply_reason(gs, &c) == REJ_UNAVAILABLE,
+              "a fleet cannot be attacked from your own harbour");
+    }
+
+    /* Put the warship exactly on the lair. A ship's position is
+     * derived from its voyage and cannot be assigned, so the way to
+     * place one somewhere is to pick a route THROUGH that somewhere
+     * and wind its departure back by the leg that reaches it. The
+     * public lane always threads a waypoint, which is what makes this
+     * possible at all rather than a search.
+     *
+     * The earlier version of this test looked for a lair near the
+     * harbour and printed "nothing to test here" when it found none —
+     * which it always did. Every assertion below it was skipped, and
+     * the test reported success. */
+    {
+        const Route *r = sea_route_between(&gs->sea, 0, 1);
+
+        if (!r || r->waypoint_count < 1) {
+            printf("  FAIL: the lane threads no waypoint to meet at\n");
+            failures++;
+            game_free(gs);
+            return;
+        }
+        pr->waypoint = r->waypoint[0];
+
+        sh->at_island      = -1;
+        sh->from_island    = 0;
+        sh->to_island      = 1;
+        sh->departure_tick = gs->sim_tick_no - r->leg_ticks[0];
+
+        {
+            SeaPos me = sea_route_point(&gs->sea, r, r->leg_ticks[0]);
+            CHECK(sea_distance(me, pirate_pos(&gs->pirates, &gs->sea, 0)) <=
+                  (uint32_t)PIRATE_STRIKE_RADIUS,
+                  "the hunter is on top of the lair");
+        }
+    }
+
+    /* A warship against a fleet wins most of the time; give it as many
+     * attempts as it needs, which is what a hunt is. */
+    for (i = 0; i < 40 && pr->active; i++) {
+        Command c;
+        memset(&c, 0, sizeof(c));
+        c.kind      = CMD_ATTACK_PIRATE;
+        c.a         = 0;
+        c.b         = 0;
+        c.player_id = 1u;
+        (void)sim_apply(gs, &c);
+        sh->departure_tick++;      /* a fresh engagement, not the same one */
+    }
+
+    CHECK(!pr->active, "a warship clears the lair");
+    CHECK(sh->cargo[RES_FISH] > 0,
+          "and comes home with what the fleet was sitting on — which was "
+          "somebody else's, so clearing it is a service to the lane");
+    CHECK(knowledge_charts(&gs->knowledge, 1u, 4) > 0,
+          "and with the chart they carried, so hunting yields geography "
+          "as well as goods");
+
+    game_free(gs);
 }
 
 static void test_a_convoy_defends_itself(void)
@@ -342,6 +443,7 @@ static void test_replays(void)
 int main(void)
 {
     printf("== interception ==\n");
+    test_pirates_can_be_hunted();
     test_a_convoy_defends_itself();
     test_wear_and_refit();
     test_guns_decide_it();

@@ -444,11 +444,25 @@ retrofitting it after combat exists means touching combat too.
    Damage is a reason to go home — a Shipyard refits, slowly enough
    that a refit is a real absence from the water.
 
-   **Still to come:** pirates as entities rather than a derived
-   boolean. Today `shipment_is_raided` decides a raid happened; nothing
-   was there to fight, and the settled design says hunting pirates
-   should yield geography as well as cargo (charts are rare NPC loot).
-   That is the half of this phase with no existing mechanic behind it.
+   **5b is built:** a pirate is a thing in the water. Fleets lair at
+   waypoints — generated from the seed, so every client agrees where
+   the bad water is — and wander every so often, so a lane that has
+   been quiet is not quiet by right. A raid is now CAUSED: your cargo
+   was taken because it passed the Coffin Race and somebody was waiting
+   there, not because a hash said so.
+
+   The fleet keeps what it takes, so loss is recoverable — go and get
+   it, possibly somebody else's, which makes clearing a lair a service
+   to every trader on that water. And it carries the charts it has
+   taken, so hunting yields geography as well as goods. A warship
+   finally has something to shoot at that is not a neighbour.
+
+   **Phase 5 is complete.**
+
+   *Still inconsistent, and recorded here rather than hidden:* player
+   SHIP voyages are still raided by the old derived roll in
+   `ships_update`, not by proximity. Bookings and ships should be
+   raided by the same thing, and are not.
 
 Phases 2 and 3 work under the current architecture; they are simply
 less secret without phase 4. That is the point of this ordering — the
@@ -476,6 +490,14 @@ upgrades it rather than gating it.
   blank chart. That is what makes a survey an expedition rather than a
   dice roll with a fee: the crew is at risk, so sending one is a
   decision about people as well as money.
+- **The lane is patrolled, and that is what makes it safe.** Danger
+  used to be a per-route chance, with "public are slow but protected"
+  being that number set lower. Once a raid became a matter of where a
+  cargo sailed, the number stopped doing anything — and the property
+  nearly went with it the wrong way round, because the lane threads a
+  wider waypoint than any private passage and so is MORE exposed on
+  geography alone. A convoy escort that mostly drives a fleet off is
+  what puts it back, and it is the fiction the design always had.
 - **Route charts expire after a year**, and when one does a new private
   route comes into play in its place. Built in Phase 3e, and the
   architectural cost was paid the cheap way: each pair GENERATES a pool

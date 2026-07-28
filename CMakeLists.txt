@@ -73,6 +73,7 @@ set(SALTMARCH_SIM_SOURCES
     src/orderbook.c
     src/knowledge.c
     src/survey.c
+    src/pirate.c
 )
 
 add_library(saltmarch_sim STATIC ${SALTMARCH_SIM_SOURCES})

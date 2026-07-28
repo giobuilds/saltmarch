@@ -53,6 +53,7 @@
  *   CMD_BUILD_RESEARCH_BOAT  a=island
  *   CMD_SURVEY          a=island (from) b=island (to)
  *   CMD_SET_ESCORT      a=ship b=ship it escorts (-1 to release)
+ *   CMD_ATTACK_PIRATE   a=ship b=pirate fleet index
  *   CMD_PLACE_ORDER     a=island b=TRADE_PACK(kind,id) c=qty (sign is
  *                        the side: >0 buys, <0 sells) d=limit price
  *                        (MARITIME_PLAN Phase 2). The identity is
@@ -116,6 +117,7 @@ typedef enum {
     CMD_BUILD_RESEARCH_BOAT, /* owner: a hull for expeditions, at a yard */
     CMD_SURVEY,          /* owner: send a scholar to find a passage      */
     CMD_SET_ESCORT,      /* owner: assign a hull to guard another         */
+    CMD_ATTACK_PIRATE,   /* owner: take a warship to a pirate lair         */
     CMD_COUNT
 } CommandKind;
 

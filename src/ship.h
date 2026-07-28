@@ -203,7 +203,22 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty);
  * and this is the price of that (MARITIME_PLAN Phase 3c). Without it
  * "unsafe" is a word in a design document: a shortcut with no extra
  * risk is simply a better route, and no one would ever sail the lane. */
-#define PIRACY_CHANCE_PRIVATE   240    /* 24% of private crossings     */
+/* What the convoy escort is for (MARITIME_PLAN Phase 5b).
+ *
+ * Danger used to be a per-route CHANCE, and "public are slow but
+ * protected" was that number being smaller. Since a raid became a
+ * matter of where a cargo sailed, that number does nothing — and the
+ * property nearly went with it. Worse than nearly: the lane threads a
+ * WIDER waypoint than any private passage, so on geography alone the
+ * safe route had become the more exposed one.
+ *
+ * So the protection is now the thing it always was in the fiction: the
+ * lane is patrolled. A fleet lying on convoy water mostly finds an
+ * escort there and lets the convoy pass. A private passage is fast
+ * because nobody patrols it, and nothing about that is free. */
+#define CONVOY_ESCORT_DRIVES_OFF 820   /* per mille of lane traffic    */
+
+#define PIRACY_CHANCE_PRIVATE   240    /* legacy; see above            */
 #define PIRACY_TAKE_NUMERATOR     1    /* pirates take half the hold   */
 #define PIRACY_TAKE_DENOMINATOR   2
 

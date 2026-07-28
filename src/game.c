@@ -322,6 +322,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     orderbook_init(&gs->book);
     knowledge_init(&gs->knowledge);
     survey_init(&gs->surveys);
+    pirate_init(&gs->pirates, &gs->sea, seed);
 
     /* A fresh world is a fresh history: discard any previous command
      * log and reset the world clock. The starting state above is a
@@ -581,8 +582,14 @@ typedef struct {
  * v24 (MARITIME_PLAN Phase 5): ships have a class, guns and a hull, an
  * interception is decided by those rather than a flat coin flip, and
  * CMD_BUILD_SHIP's `b` now names which hull to lay down where it used
- * to be an ignored index. A v23 log's shipyards would build nothing. */
-#define SAVE_VERSION 24u
+ * to be an ignored index. A v23 log's shipyards would build nothing.
+ *
+ * v25 (MARITIME_PLAN Phase 5b): pirates are entities. A raid now
+ * happens because a fleet was in the water a cargo passed through,
+ * rather than because a hash of the shipment said so at dispatch — so
+ * a v24 log loses different cargoes, at different times, to something
+ * that is now somewhere. */
+#define SAVE_VERSION 25u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -914,6 +921,95 @@ int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
  * a failed attack costs the attacker the same way. Nothing is destroyed
  * that was not aboard, and no ship is ever sunk — losing a hold is a
  * setback, losing a ship would be an evening's work gone. */
+/* Take a hull to a pirate lair (MARITIME_PLAN Phase 5b).
+ *
+ * The same guns-and-hull rule as an interception, because a fight is a
+ * fight and having two combat systems would mean having one of them be
+ * wrong. What differs is the stake: a pirate has no cargo of its own
+ * and everything it holds was taken from somebody, so winning is
+ * recovery rather than robbery — often of goods that were never yours,
+ * which makes clearing a lair a service to every trader on that water.
+ *
+ * This is also the only reason to own guns that is not aimed at another
+ * player. Phase 5a gave hulls teeth and nothing but neighbours to bite. */
+static RejectReason sim_attack_pirate(GameState *gs, int ship_idx,
+                                      int pirate_idx, uint32_t player)
+{
+    Ship   *sh;
+    Pirate *pr;
+    int     wins, r;
+
+    if (ship_idx < 0 || ship_idx >= gs->ship_count) return REJ_UNAVAILABLE;
+    if (pirate_idx < 0 || pirate_idx >= gs->pirates.count) return REJ_NO_TARGET;
+
+    sh = &gs->ships[ship_idx];
+    pr = &gs->pirates.fleet[pirate_idx];
+
+    if (!sh->active || sh->owner != player) return REJ_NOT_OWNER;
+    if (sh->at_island >= 0) return REJ_UNAVAILABLE;   /* must be at sea */
+    if (!pr->active) return REJ_NO_TARGET;
+
+    /* You have to actually be there. A fleet you can attack from your
+     * own harbour is a menu item, not a place. */
+    {
+        const Route *route = sea_route_between(&gs->sea, sh->from_island,
+                                               sh->to_island);
+        SeaPos       me    = sea_route_point(&gs->sea, route,
+                                 (uint32_t)(gs->sim_tick_no -
+                                            sh->departure_tick));
+        if (sea_distance(me, pirate_pos(&gs->pirates, &gs->sea, pirate_idx)) >
+            (uint32_t)PIRATE_STRIKE_RADIUS)
+            return REJ_NO_TARGET;
+    }
+
+    wins = intercept_attacker_wins(gs->world_seed, ship_idx,
+                                   sh->departure_tick,
+                                   0x1E00 + pirate_idx, pr->last_move_tick,
+                                   ship_fighting_strength(sh), pr->guns);
+
+    if (wins) {
+        pr->hull -= sh->guns > 0 ? sh->guns : 1;
+        if (pr->hull <= 0) {
+            /* Cleared. Everything they were sitting on comes aboard,
+             * as far as the hold allows — a merchantman that beat a
+             * fleet cannot carry all of it, which is one more reason
+             * the hull you brought was a decision. */
+            for (r = 0; r < RES_COUNT; r++) {
+                int room, take;
+                if (pr->plunder[r] <= 0) continue;
+                room = ship_hold_capacity(sh) - sh->cargo[r];
+                if (room <= 0) continue;
+                take = pr->plunder[r] < room ? pr->plunder[r] : room;
+                sh->cargo[r]   += take;
+                pr->plunder[r] -= take;
+            }
+            /* And the chart they carried, which is how hunting yields
+             * geography as well as goods. */
+            if (pr->chart >= 0)
+                knowledge_add_charts(&gs->knowledge, player, pr->chart, 1);
+
+            sim_log("Ship %d cleared the fleet at %s", ship_idx,
+                    gs->sea.waypoint[pr->waypoint].name);
+            memset(pr, 0, sizeof(*pr));
+            pr->chart = -1;
+        } else {
+            sim_log("Ship %d drove off the fleet at %s", ship_idx,
+                    gs->sea.waypoint[pr->waypoint].name);
+        }
+    } else {
+        sh->hull -= pr->guns;
+        if (sh->hull < 1) sh->hull = 1;   /* a ship is an evening */
+        for (r = 0; r < RES_COUNT; r++) {
+            if (sh->cargo[r] <= 0) continue;
+            pr->plunder[r] += sh->cargo[r];
+            sh->cargo[r]    = 0;
+        }
+        sim_log("Ship %d was beaten off by the fleet at %s", ship_idx,
+                gs->sea.waypoint[pr->waypoint].name);
+    }
+    return REJ_OK;
+}
+
 static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
                                   uint64_t target_departure, uint32_t player)
 {
@@ -1367,6 +1463,20 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &sh->guns, sizeof(sh->guns));
         fnv_bytes(&h, &sh->hull, sizeof(sh->hull));
         fnv_bytes(&h, &sh->escorting, sizeof(sh->escorting));
+    }
+
+    /* The fleets: where they are, what they hold, what it cost them
+     * (MARITIME Phase 5b). */
+    for (s = 0; s < gs->pirates.count; s++) {
+        const Pirate *pr = &gs->pirates.fleet[s];
+        fnv_bytes(&h, &pr->active, sizeof(pr->active));
+        if (!pr->active) continue;
+        fnv_bytes(&h, &pr->waypoint, sizeof(pr->waypoint));
+        fnv_bytes(&h, &pr->guns, sizeof(pr->guns));
+        fnv_bytes(&h, &pr->hull, sizeof(pr->hull));
+        fnv_bytes(&h, pr->plunder, sizeof(pr->plunder));
+        fnv_bytes(&h, &pr->chart, sizeof(pr->chart));
+        fnv_bytes(&h, &pr->last_move_tick, sizeof(pr->last_move_tick));
     }
 
     /* Which passages are currently in play (MARITIME Phase 3e). The
@@ -2076,6 +2186,15 @@ int game_build_ship_class(GameState *gs, int klass)
 int game_build_ship(GameState *gs)
 {
     return game_build_ship_class(gs, SHIP_MERCHANTMAN);
+}
+
+int game_attack_pirate(GameState *gs, int ship_idx, int pirate_idx)
+{
+    Command c = {0};
+    c.kind = CMD_ATTACK_PIRATE;
+    c.a    = ship_idx;
+    c.b    = pirate_idx;
+    return command_submit(gs, &c);
 }
 
 int game_set_escort(GameState *gs, int ship_idx, int target_idx)
@@ -3268,6 +3387,83 @@ static int book_best_cross(const GameState *gs, OrderBook *b, TradeId what,
     return 0;
 }
 
+/* Where a shipment is right now, along the route it took. */
+static SeaPos booking_pos(const GameState *gs, const Booking *bk)
+{
+    const Route *r;
+    uint64_t     elapsed, total;
+    SeaPos       zero;
+
+    zero.x = 0;
+    zero.y = 0;
+    if (bk->route_id < 0 || bk->route_id >= gs->sea.route_count) return zero;
+
+    r     = &gs->sea.route[bk->route_id];
+    total = r->total_ticks;
+    if (bk->arrive_tick < total) return zero;
+
+    elapsed = gs->sim_tick_no - (bk->arrive_tick - total);
+    if (elapsed > total) elapsed = total;
+    return sea_route_point(&gs->sea, r, (uint32_t)elapsed);
+}
+
+/* Pirates take what passes them (MARITIME_PLAN Phase 5b). Checked every
+ * tick against every shipment still outbound, so a raid happens at a
+ * place and a time rather than being decided before the ship left.
+ *
+ * The fleet KEEPS what it takes. That is the whole reason this is worth
+ * more than the boolean it replaces: the goods are somewhere, and going
+ * to get them is a thing a player can decide to do. */
+static void book_raid_check(GameState *gs)
+{
+    OrderBook *b = &gs->book;
+    int        i;
+
+    for (i = 0; i < b->booking_count; i++) {
+        Booking *bk = &b->booking[i];
+        int      pi, r;
+
+        if (!bk->active || bk->delivered || bk->raided) continue;
+        if (gs->sim_tick_no >= bk->arrive_tick) continue;   /* as good as home */
+
+        pi = pirate_at(&gs->pirates, &gs->sea, booking_pos(gs, bk));
+        if (pi < 0) continue;
+
+        /* The lane is patrolled, and that is the whole of "public are
+         * slow but protected". Without this the property would have
+         * been lost with the chance constant it used to live in — and
+         * lost the wrong way round, because the lane threads a wider
+         * waypoint than any private passage and is therefore MORE
+         * exposed on geography alone.
+         *
+         * Derived, like everything else here, so a replay agrees about
+         * which convoys the escort happened to be with. */
+        if (bk->route_id >= 0 && !gs->sea.route[bk->route_id].is_private &&
+            shipment_is_raided(gs->world_seed, bk->route_id,
+                               bk->arrive_tick, bk->seller,
+                               CONVOY_ESCORT_DRIVES_OFF))
+            continue;
+
+        bk->raided = 1;
+
+        /* Into their hold, not out of the world. A chart is not cargo
+         * and does not travel this way — it is knowledge, and Phase 3b
+         * put it somewhere a hold cannot reach. */
+        if (bk->what.kind == TRADE_RESOURCE) {
+            r = (int)bk->what.id;
+            gs->pirates.fleet[pi].plunder[r] += bk->qty;
+        } else if (gs->pirates.fleet[pi].chart < 0) {
+            /* A stolen chart joins the one they carry, which is how a
+             * private passage leaks: hunt the fleet that took it and
+             * the passage is yours too. */
+            gs->pirates.fleet[pi].chart = (int32_t)bk->what.id;
+        }
+
+        sim_log("Pirates took a shipment near %s",
+                gs->sea.waypoint[gs->pirates.fleet[pi].waypoint].name);
+    }
+}
+
 static void book_settle_arrivals(GameState *gs)
 {
     OrderBook *b = &gs->book;
@@ -3341,6 +3537,8 @@ static void book_match(GameState *gs)
     OrderBook *b = &gs->book;
     int        kind, id, guard;
 
+    pirate_update(&gs->pirates, &gs->sea, gs->sim_tick_no, gs->world_seed);
+    book_raid_check(gs);
     book_settle_arrivals(gs);
     sea_rotation_update(gs);
     surveys_update(gs);
@@ -3417,24 +3615,20 @@ static void book_match(GameState *gs)
             gs->islands[ask->island].merchants_out++;
             gs->islands[ask->island].hulls_out++;
 
-            /* Whether pirates take it, decided now and not on arrival:
-             * the shipment's fate is a function of its own identity,
-             * so a replay reaches the same answer without being told.
-             * Recording it at dispatch also means a raid cannot be
-             * conjured by a late tick after the goods have landed. */
+            /* Whether pirates take it is no longer decided here
+             * (MARITIME_PLAN Phase 5b). It used to be a hash of the
+             * shipment's identity, fixed at dispatch; now a fleet
+             * either is or is not lying in the water the cargo will
+             * pass through, and book_raid_check finds out on the tick
+             * it happens. Your cargo is taken because of where it
+             * sailed, which is a thing a player can learn.
+             *
+             * The insurance below is still bought at dispatch, because
+             * an underwriter is paid before the voyage or not at all. */
             {
                 Booking *bk    = &b->booking[slot];
                 Island  *from  = &gs->islands[ask->island];
-                int      chance;
                 int      value = qty * bk->price;
-
-                chance = (bk->route_id >= 0 &&
-                          gs->sea.route[bk->route_id].is_private)
-                       ? PIRACY_CHANCE_PRIVATE : PIRACY_CHANCE_PER_MILLE;
-
-                bk->raided = shipment_is_raided(gs->world_seed, bk->route_id,
-                                                gs->sim_tick_no, ask->owner,
-                                                chance);
 
                 /* A standing policy insures at the route's premium, so
                  * the fast passage costs more to cover than the lane —
@@ -3589,6 +3783,8 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
         /* Ownership is the order's, not an island's, and is checked in
          * the body where the order can be looked up. */
         return sim_cancel_order(gs, (uint32_t)c->a, c->player_id);
+    case CMD_ATTACK_PIRATE:
+        return sim_attack_pirate(gs, c->a, c->b, c->player_id);
     case CMD_SET_ESCORT: {
         Ship *sh;
         if (c->a < 0 || c->a >= gs->ship_count) return REJ_UNAVAILABLE;

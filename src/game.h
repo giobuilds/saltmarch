@@ -41,6 +41,7 @@
 #include "orderbook.h"
 #include "knowledge.h"
 #include "survey.h"
+#include "pirate.h"
 #include "intent.h"
 
 /* Gold a new game's starting island begins with. */
@@ -279,6 +280,12 @@ typedef struct GameState {
      * and a blank chart committed to it, and an outcome fixed when it
      * sailed. */
     SurveyBoard surveys;
+
+    /* The fleets working the waypoints (MARITIME_PLAN Phase 5b). Where
+     * they lurk is generated from the seed; what they have taken, what
+     * damage they carry and whether they are still afloat is world
+     * state — hashed, snapshotted, replayed. */
+    PirateSea pirates;
 
     /* Who this client is (Phase 5). CLIENT state, not world state: it
      * is never hashed and never saved — it says which player's commands
@@ -740,6 +747,12 @@ int game_build_ship_class(GameState *gs, int klass);
  * it. An escort sails when its charge sails and adds its guns to the
  * defence if the convoy is intercepted. */
 int game_set_escort(GameState *gs, int ship_idx, int target_idx);
+
+/* Owner only: send `ship_idx`, which must be at sea and within strike
+ * range of the fleet, against pirate `pirate_idx`. Resolved by the same
+ * guns-and-hull rule as an interception. Winning takes their plunder —
+ * which may be somebody else's cargo, and rarely a route chart. */
+int game_attack_pirate(GameState *gs, int ship_idx, int pirate_idx);
 
 /* Move `qty` units of `res` between the current island's stockpile
  * and ship `ship_idx`'s hold. Positive qty loads onto the ship,
