@@ -65,6 +65,7 @@ typedef enum {
  * tooltip, clicking does nothing (they never enter the hit-test). */
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Sea *sea, const Island islands[], int island_count, int current,
+                   uint32_t local_player,
                    const Ship ships[], int ship_count, int selected_ship,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,

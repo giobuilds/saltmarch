@@ -5,6 +5,7 @@
  */
 
 #include "inventory_ui.h"
+#include "ui_kit.h"
 #include "fonts.h"
 #include "resource.h"
 
@@ -119,13 +120,21 @@ void inventory_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             cell(renderer, inventory_col_rect(w->rect, INV_COL_NAME),
                  row->name, TEXT);
 
-            SDL_snprintf(buf, sizeof(buf), "%d", row->amount);
+            /* A number you were not told is a mark, never a value
+             * (UI_PLAN N2). A stores list of zeroes for an island you
+             * do not hold would read as a surveyed, empty colony —
+             * which is a more confident lie than any single field. */
+            ui_fmt_known(buf, sizeof(buf), view->detail_known, "%d",
+                         row->amount);
             cell(renderer, inventory_col_rect(w->rect, INV_COL_AMOUNT),
-                 buf, row->full ? WARN : TEXT);
+                 buf, !view->detail_known ? HEAD : (row->full ? WARN : TEXT));
 
             /* Capacity as a bar, not just a number: "nearly full" is the
-             * thing worth seeing, and a fraction makes you do arithmetic. */
-            if (row->capacity > 0) {
+             * thing worth seeing, and a fraction makes you do arithmetic.
+             * Not drawn at all when the amount is unknown: a bar is a
+             * quantity with no way to say it does not know one, and an
+             * empty track reads as an empty warehouse. */
+            if (row->capacity > 0 && view->detail_known) {
                 UiRect track = inventory_col_rect(w->rect, INV_COL_CAPACITY);
                 UiRect fillr;
                 float  frac = (float)row->amount / (float)row->capacity;

@@ -38,7 +38,8 @@ void inventory_view_build(InventoryView *out, const UiSnapshot *snap,
 
     snprintf(out->title, sizeof(out->title), "Stores — %s", isl->name);
     island_hue(island, &out->hue_r, &out->hue_g, &out->hue_b);
-    out->residents = isl->residents;
+    out->residents    = isl->residents;
+    out->detail_known = isl->detail_known;
 
     /* Grouped by category like the exchange screen, for the same
      * reason: a page of related goods reads, an arbitrary slice of the

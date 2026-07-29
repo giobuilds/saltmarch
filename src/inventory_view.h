@@ -41,6 +41,15 @@ typedef struct {
     InventoryRow rows[INVENTORY_MAX_ROWS];
     int32_t      row_count;
     int32_t      residents;
+
+    /* Whether these numbers are knowledge or absence (UI_PLAN N2). The
+     * stores of an island you do not hold arrive as zeroes meaning "you
+     * were not told", and a warehouse list full of 0 is a much more
+     * confident lie than a single field: it reads as a surveyed, empty
+     * colony. The rows are still built — the drawer marks them — so
+     * that layout, scrolling and hit-testing do not acquire a second
+     * shape that only foreign islands ever take. */
+    uint8_t      detail_known;
 } InventoryView;
 
 /* Build from one island's snapshot. Ship cargo is counted per good

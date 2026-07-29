@@ -31,6 +31,8 @@
 #include "orderbook.h"
 #include "knowledge.h"
 #include "sea.h"
+#include "ui_kit.h"
+#include "inventory_view.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -166,6 +168,49 @@ int main(void)
         CHECK(snap.pirate[0].waypoint >= 0 &&
               snap.pirate[0].waypoint < gs->sea.waypoint_count,
               "at a waypoint the map can name");
+    }
+
+    printf("\n=== absence has a look ===\n");
+    {
+        char buf[32];
+
+        /* The vocabulary itself (UI_PLAN N2). It lives in ui_kit rather
+         * than in each drawer so every surface says it the same way —
+         * a player should learn the mark once. */
+        ui_fmt_known(buf, sizeof(buf), 1, "%d", 0);
+        CHECK(strcmp(buf, "0") == 0,
+              "a zero you were told is a zero");
+
+        ui_fmt_known(buf, sizeof(buf), 0, "%d", 0);
+        CHECK(strcmp(buf, "0") != 0,
+              "a zero you were NOT told is not a zero — which is the "
+              "whole of N2, and the difference a drawing function cannot "
+              "recover on its own");
+        CHECK(buf[0] != '\0', "and it is something rather than a gap: "
+              "the eye skips a gap, so absence has to be present to be "
+              "information");
+
+        ui_fmt_known(buf, sizeof(buf), 0, "%d", 4321);
+        CHECK(strcmp(buf, "4321") != 0,
+              "and a number you were not told never leaks through it");
+    }
+
+    printf("\n=== the stores of an island you do not hold ===\n");
+    {
+        InventoryView v;
+
+        ui_snapshot_build(&snap, gs);
+
+        inventory_view_build(&v, &snap, mine);
+        CHECK(v.detail_known, "your own warehouse is knowledge");
+
+        inventory_view_build(&v, &snap, theirs);
+        CHECK(!v.detail_known,
+              "a rival's is not — and the list is still built, so layout "
+              "and hit-testing do not grow a second shape that only "
+              "foreign islands ever take");
+        CHECK(v.row_count > 0,
+              "the rows are there to be marked, not removed");
     }
 
     printf("\n=== the snapshot is a copy, not a window ===\n");

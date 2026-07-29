@@ -688,9 +688,24 @@ directly and take only the per-pair cursor through the snapshot — the
 one exception to decision 1, and it is safe precisely because a `Sea` is
 generated rather than owned.
 
-**N2 — absence has a look.** The vocabulary for "not told", applied to
-the island panel and the world map, before any screen shows foreign
-data. No new sim work. This is small and it must not be skipped.
+**N2 — absence has a look.** ~~The vocabulary for "not told"~~ **Done.**
+`ui_fmt_known()` in `ui_kit`, so every surface says it the same way and
+a player learns the mark once. An em dash sits where the digits would
+be; the alternatives were dimming (still reads as a value, and is the
+most likely to be believed) and leaving a gap (the eye skips it, and
+"I did not see a number" is a different thought from "there was no
+number"). The mark wins because it is the only one that is *present*.
+
+It found a real one on the way in. The world map labelled every rival
+island **"Pop 0"** — `pop_total()` over a redacted building list is
+zero, so a held, populated colony read as deserted. That line was the
+plan's hypothetical example and it turned out to be live code.
+
+The stores overlay marks rather than hides: rows are still built and
+laid out, so scrolling and hit-testing do not grow a second shape that
+only foreign islands ever take. The capacity bar is the one thing
+dropped entirely — a bar is a quantity with no way to say it does not
+know one, and an empty track reads as an empty warehouse.
 
 **N3 — the order book.** The exchange surface's third builder,
 `exchange_view_book()`, per decision 4. Post a buy or a sell with a limit
