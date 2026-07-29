@@ -33,6 +33,12 @@ typedef struct {
      * (UI_PLAN Phase 4). */
     int inventory_toggle;
 
+    /* Edge-triggered on B: opens/closes the order book (UI_PLAN N3).
+     * A key rather than a building, because posting an order is gated
+     * on owning the island and nothing else — there is no counter to
+     * walk up to. */
+    int book_toggle;
+
     /* Edge-triggered on F8: the time-travel scrubber (MMO_PLAN later
      * phases). */
     int scrub_toggle;

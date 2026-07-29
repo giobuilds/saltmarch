@@ -24,6 +24,7 @@
 #include "ui_kit.h"       /* UI_PLAN Phase 0: widget kit, reject text   */
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
 #include "exchange_view.h"/* UI_PLAN Phase 1: the exchange surface      */
+#include "book_ui.h"      /* UI_PLAN N3: the order book (pulls its view)*/
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -46,6 +47,13 @@ typedef struct {
     UiState       ui;
     ExchangeView  exchange;
     UiList        exchange_list;
+    /* The book's view is the one overlay state that PERSISTS between
+     * frames rather than being rebuilt from the snapshot: it remembers
+     * the rows it drew so an order that fills can be struck through
+     * where it stood instead of vanishing under the cursor
+     * (UI_PLAN N3). Reset when the panel opens, not when it is built. */
+    BookView      book;
+    UiList        book_list;
     HudView       hud;
     UiList        hud_list;
     InventoryView inventory;
@@ -305,6 +313,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                        (float)SCREEN_W, (float)SCREEN_H);
     }
 
+    /* The order book folds this frame into the rows it already had,
+     * rather than rebuilding them (UI_PLAN N3) — which is why it is
+     * `update` and not `build`, and why the view lives on App. */
+    if (gs->book_open) {
+        book_view_update(&app->book, &app->snap, gs->current_island,
+                         &app->ui);
+        book_build(&app->book_list, &app->book, &app->ui,
+                   (float)SCREEN_W, (float)SCREEN_H);
+    }
+
     /* Shared feed (Phase 4): publish any departures the ticks above
      * just caused, and re-read the inbound feed on its poll interval.
      * Wall-clock, cosmetic, outside the sim — see feed.h. */
@@ -346,6 +364,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         app->ui.inventory_page = 0;
     }
 
+    /* B: the order book (UI_PLAN N3). Opening forgets the rows from
+     * last time — a struck-through order is a note about something that
+     * happened while you were watching, and you were not — and starts
+     * the draft from the market's own quote. */
+    if (gs->input.book_toggle) {
+        gs->book_open = !gs->book_open;
+        if (gs->book_open) {
+            book_view_reset(&app->book);
+            book_draft_default(&app->ui);
+        }
+    }
+
     /* UI_PLAN M1: remember the state this frame was drawn in, so a
      * click recorded below carries the screen the player was actually
      * looking at. Captured BEFORE the click is handled — afterwards the
@@ -358,6 +388,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         app->intent.ui.hud_category   = (uint8_t)app->ui.hud_category;
         app->intent.ui.exchange_page  = (uint16_t)app->ui.exchange_page;
         app->intent.ui.inventory_page = (uint16_t)app->ui.inventory_page;
+        app->intent.ui.book_page      = (uint16_t)app->ui.book_page;
+        app->intent.ui.book_side      = (uint8_t)app->ui.book_side;
+        app->intent.ui.book_res       = (uint8_t)app->ui.book_res;
+        app->intent.ui.book_qty       = app->ui.book_qty;
+        app->intent.ui.book_limit     = app->ui.book_limit;
         app->intent.ui.hovered_row    = (int16_t)gs->hovered_row;
         app->intent.ui.hovered_col    = (int16_t)gs->hovered_col;
         app->intent.ui.current_island = (int16_t)gs->current_island;
@@ -555,6 +590,56 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             case EXCHANGE_HIT_OUTSIDE:
             default:
                 gs->escrow_open = 0;
+                break;
+            }
+
+        /* The order book (UI_PLAN N3). Most of these clicks compose the
+         * draft rather than submitting anything: book_hit() returns the
+         * draft as it is AFTER the click and the assignment below is
+         * the whole of the fold, which is what keeps UiState derivable
+         * from the input stream alone. */
+        } else if (gs->book_open) {
+            BookHit bh = book_hit(&app->book_list, &app->book, &app->ui,
+                                  (float)gs->input.logical_x,
+                                  (float)gs->input.logical_y);
+            switch (bh.kind) {
+            case BOOK_HIT_POST:
+                /* The sign is the side, as CMD_PLACE_ORDER wants it.
+                 * The limit is the price the composer was SHOWING —
+                 * including when it was following the quote, since
+                 * that is still the number the player read. */
+                game_place_order(gs, gs->current_island, TRADE_RESOURCE,
+                                 (uint16_t)bh.res,
+                                 bh.side == ORDER_SELL ? -bh.qty : bh.qty,
+                                 bh.limit);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(bh.rect));
+                break;
+            case BOOK_HIT_CANCEL:
+                /* The full 32-bit id, out of the widget's value — the
+                 * id in the widget's identity is only its low half. */
+                game_cancel_order(gs, bh.order_id);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(bh.rect));
+                break;
+            case BOOK_HIT_PAGE:
+                app->ui.book_page = bh.page;
+                break;
+            case BOOK_HIT_SIDE:
+            case BOOK_HIT_GOOD:
+            case BOOK_HIT_QTY:
+            case BOOK_HIT_LIMIT:
+                app->ui.book_side  = bh.side;
+                app->ui.book_res   = bh.res;
+                app->ui.book_qty   = bh.qty;
+                app->ui.book_limit = bh.follow ? 0 : bh.limit;
+                break;
+            case BOOK_HIT_NONE:
+                break;      /* the panel: absorb it */
+            case BOOK_HIT_CLOSE:
+            case BOOK_HIT_OUTSIDE:
+            default:
+                gs->book_open = 0;
                 break;
             }
 
@@ -778,6 +863,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         case UI_OVERLAY_CONFIRM:   game_confirm_cancel(gs); break;
         case UI_OVERLAY_TRADE:     gs->trade_open     = 0; break;
         case UI_OVERLAY_ESCROW:    gs->escrow_open    = 0; break;
+        case UI_OVERLAY_BOOK:      gs->book_open      = 0; break;
         case UI_OVERLAY_INVENTORY: gs->inventory_open = 0; break;
         case UI_OVERLAY_WORLD:     gs->world_open     = 0; break;
         case UI_OVERLAY_NONE:
@@ -868,6 +954,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         trade_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->exchange_list,
                       &app->exchange, gs->input.logical_x,
                       gs->input.logical_y);
+
+    /* The order book has its own drawer, because it turned out to be
+     * its own screen (UI_PLAN N3). */
+    if (gs->book_open)
+        book_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->book_list,
+                     &app->book, gs->input.logical_x, gs->input.logical_y);
 
     /* The one confirmation, on top when open (UI_PLAN Phase 6). It
      * shows the literal Command it will submit; four popups used to be

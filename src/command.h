@@ -187,6 +187,12 @@ typedef enum {
     REJ_OFFER_CHANGED,        /* the quay moved under an open panel     */
     REJ_NO_TARGET,            /* that voyage is not there to intercept  */
     REJ_UNAVAILABLE,          /* generic: not possible right now        */
+    /* Appended after the generic one rather than filed beside
+     * REJ_NO_TARGET where it belongs by meaning: this enum is
+     * positional and its values travel to the client as command
+     * results, so inserting in the middle renames every reason after
+     * it for a peer that has not been rebuilt. */
+    REJ_ORDER_GONE,           /* the order filled or was withdrawn      */
 
     REJ_COUNT
 } RejectReason;

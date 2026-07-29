@@ -75,7 +75,14 @@ enum {
     UI_GROUP_BUY,           /* value = ResourceType; widget value=qty */
     UI_GROUP_ISLAND,        /* value = island index                  */
     UI_GROUP_SHIP,          /* value = ship index                    */
-    UI_GROUP_CATEGORY       /* value = BuildingCategory (HUD tabs)   */
+    UI_GROUP_CATEGORY,      /* value = BuildingCategory (HUD tabs)   */
+    /* An order id is 32 bits and this field is 16, so these two carry
+     * its low half and the widget's `value` carries the whole thing
+     * (UI_PLAN N3). Still an identity — a truncated id is content, not
+     * a position — but the id alone may not be trusted to name one
+     * order, which is why the cancel hit reads the value. */
+    UI_GROUP_ORDER,         /* value = order id, low 16 (the row)    */
+    UI_GROUP_CANCEL         /* value = order id, low 16 (the button) */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are
@@ -90,7 +97,17 @@ typedef enum {
     UI_ACTION_MENU,       /* the cog                                 */
     UI_ACTION_DEMOLISH,   /* the bulldozer tool                      */
     UI_ACTION_WORLD,      /* the archipelago overview                */
-    UI_ACTION_DOCKING     /* the harbour's open/closed lever          */
+    UI_ACTION_DOCKING,    /* the harbour's open/closed lever          */
+
+    /* The order book's draft composer (UI_PLAN N3). There is no text
+     * input in this game, so a price is entered with steppers: these
+     * four name the FIELD a button moves, and the widget's value is the
+     * step, decoded against the current draft at hit time. */
+    UI_ACTION_SIDE,       /* buy <-> sell                            */
+    UI_ACTION_QTY,        /* value = step                            */
+    UI_ACTION_LIMIT,      /* value = step                            */
+    UI_ACTION_MARKET,     /* drop the explicit limit, follow the quote*/
+    UI_ACTION_POST        /* submit the draft                        */
 } UiAction;
 
 /* ---- the layout cursor ------------------------------------

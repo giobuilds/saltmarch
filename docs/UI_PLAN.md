@@ -707,13 +707,88 @@ only foreign islands ever take. The capacity bar is the one thing
 dropped entirely — a bar is a quantity with no way to say it does not
 know one, and an empty track reads as an empty warehouse.
 
-**N3 — the order book.** The exchange surface's third builder,
-`exchange_view_book()`, per decision 4. Post a buy or a sell with a limit
-price, see your resting orders, cancel one. Your side of the book only —
-depth is a later question and possibly an intelligence one.
+**N3 — the order book. Done.** Post a buy or a sell with a limit price,
+see your resting orders, cancel one, on `B`. Your side of the book only
+— depth is a later question and possibly an intelligence one.
 
 First because it gates the rest: charts are bought and sold through it,
 so nothing downstream is reachable without it.
+
+The simulation half is already finished and N1 already carries every
+field the screen needs, so this is a UI phase in the strict sense:
+`sim_place_order` / `sim_cancel_order` reserve, cap and refund;
+`game_place_order` / `game_cancel_order` are through the funnel with
+`seq` stamped; `UiOrder` has id, side, qty, limit and `placed_tick`.
+Four things had to be decided before any of it was written.
+
+*The price is entered with buttons, because there is no text input in
+this game.* `InputState` carries clicks, a wheel and a few function
+keys; a text field would mean keystroke capture, a caret, focus, and
+recording every keypress as an Intent. So the book gets a draft strip —
+side, quantity, limit, Post — over stepper buttons, pre-filled from the
+live quote so the ordinary case is two clicks and the steppers cover the
+rest. Offsets from the quote alone ("bid −5%") were the cheaper option
+and were rejected: they cannot express a limit far from the market,
+which is most of what a book is for.
+
+That makes the draft the first *composed* UI state in the project.
+Everything until now was a page index. It lives in `UiState`, which is a
+pure fold over the input stream, so `IntentUiState` records it and the
+save version moves — a recorded log's bytes no longer line up.
+
+*The book is its own view, not a third `ExchangeKind`.* Decision 4's
+prediction was that per-column branching would mean the unification had
+failed, and it fails here before a line is written: the columns are
+disjoint (side, resting quantity, limit, age against yours, theirs, bid,
+ask, trend), the action cluster is one Cancel against six quantities,
+the composer exists only here, and the row identity is an order id
+rather than a `ResourceType`. `book_view.c` + `book_ui.c`, on the same
+builder/drawer convention as everything else. The plan named this
+`exchange_view_book()`; the plan's own mitigation says to split rather
+than defend, and the evidence arrived early exactly as it predicted.
+
+*Rows are retained, not rebuilt.* The snapshot carries live orders only,
+so a filled order is simply absent on the next frame and every row below
+it slides up under the cursor — the one failure this must not have. The
+builder therefore folds (previous view, snapshot) rather than reading
+the snapshot alone: an order that leaves is kept in place, struck
+through and greyed, and its Cancel is dead. Still a pure function, still
+headlessly testable, and the ordering is frozen by ascending order id
+rather than by array position. Where a click lands on a stale row
+anyway, `sim_cancel_order` refuses and the flash says so.
+
+*A widget id has sixteen bits and an order id has thirty-two.*
+`Order.id` is a monotonic counter that the NPC market burns through fast
+— it withdraws and re-posts its quotes at every refresh, across ports ×
+goods × two sides — so the low half wraps inside a long session. The
+identity in the widget id keeps the low sixteen bits and the full id
+rides in the widget's value, which is what the cancel hit reads. Content
+derived, never positional, so decision 2 still holds.
+
+Two smaller things. `sim_cancel_order` answered a vanished order with
+"Not possible right now"; the book needs *that order is gone*, so the
+vocabulary grows one entry. And chart orders can be seen and cancelled
+here but not posted: choosing which passage to sell a map of is a route
+picker, and route pickers are N4 — until then a chart row names itself
+by id.
+
+What the book does NOT do is hide. Every resting order in the world is
+in this client's memory: `redact_for()` does not touch the book, and
+showing your own orders only is a scoping decision about what is useful,
+never a concealment mechanism. If depth should be secret it is redacted
+at the server, not omitted by a drawer — the mistake this document warns
+about twice.
+
+Two things the building of it turned up. The retained fold's first
+version marked rows by INDEX as it matched them against the snapshot,
+which is wrong the moment a row is inserted or evicted: every mark after
+that point describes its neighbour, and a live order would read as gone
+for a frame. Ids do not move, so the fold collects the live ids and
+compares afterwards. And the recorded CI session had to be taught to
+post UNDER the market's ask — a buy priced at the quote crosses it
+immediately, so the first version of that recording posted an order that
+had already filled by the time the next click tried to cancel it, and
+tested nothing. Both are in `tests/test_book.c` now.
 
 **N4 — charts and routes.** What you know, what you hold, what a passage
 saves, what a chart costs on the book. Includes the expiry clock, since
@@ -745,6 +820,12 @@ quote screen. This is the most likely place for that prediction to come
 true. The mitigation is to notice early and split rather than to defend
 the unification: one screen that is three screens in a trench coat is
 worse than three screens.
+
+*It came true, at N3, and the mitigation was taken* — see the phase
+above. The prediction was right down to the mechanism: the divergence
+showed up in the columns first. Worth recording that the warning was
+worth writing, since the cost of the split was one file and the cost of
+defending the unification would have been every screen after it.
 
 **Snapshot growth.** Under 10 KB was the number decision 1 was argued
 on. Orders, bookings, charts and expeditions are all bounded and small;
@@ -864,4 +945,6 @@ that link failure *is* the purity test.
 | `src/command.c` / `.h` | M1 | (MMO-owned) `RejectReason` home, seq stamping |
 | `src/fx_reject.c` / `.h` | M1 | new — cosmetic rejection flashes |
 | `src/exchange_view.c` / `.h` | M3/M5 | faction + offer builders |
+| `src/book_view.c` / `.h` | N3 | new — resting orders, retained rows, the draft composer |
+| `src/book_ui.c` / `.h` | N3 | new — the book's drawer |
 | `src/fonts.c` | M4 | `TTF_Text` migration (scheduled) |

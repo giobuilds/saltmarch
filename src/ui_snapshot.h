@@ -257,6 +257,23 @@ typedef struct {
     int32_t   hud_category;      /* HUD tab (UI_PLAN Phase 3)          */
     int32_t   exchange_page;     /* trade screen page (Phase 1)        */
     int32_t   inventory_page;    /* inventory overlay page (Phase 4)   */
+
+    /* The order book's page, and the draft order being composed on it
+     * (UI_PLAN N3). Everything above is a page index; this is the first
+     * COMPOSED state the UI has ever held, and it is here rather than
+     * on GameState for the same reason the pages are: two clients
+     * disagreeing about a half-written order is not a desync, and a
+     * draft that never becomes a Command never touches the world.
+     *
+     * It stays a pure fold over the input stream — book_hit() returns
+     * the value each click produces and the caller assigns it — which
+     * is what lets a recorded session replay the composer click by
+     * click rather than replaying its result. */
+    int32_t   book_page;
+    int32_t   book_side;         /* OrderSide: 0 buy, 1 sell           */
+    int32_t   book_res;          /* ResourceType being composed        */
+    int32_t   book_qty;
+    int32_t   book_limit;        /* 0 => follow the market's quote     */
 } UiState;
 
 /* Note: which overlay is OPEN is not here. Phase 0 sketched a

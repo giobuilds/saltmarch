@@ -48,6 +48,17 @@ typedef struct {
     uint16_t exchange_page;
     uint16_t inventory_page;
 
+    /* The order book's page and the draft order on it (UI_PLAN N3).
+     * The draft is recorded for the same reason the pages are: it is
+     * part of the screen the click landed on, and a replay that
+     * rebuilt it from scratch would hit-test a composer showing
+     * different numbers than the one the player was looking at. */
+    uint16_t book_page;
+    uint8_t  book_side;
+    uint8_t  book_res;
+    int32_t  book_qty;
+    int32_t  book_limit;
+
     /* The tile under the cursor, as the frame computed it. Recorded
      * rather than re-derived because it comes from the camera, and the
      * camera is client state that never enters the log — a replay has

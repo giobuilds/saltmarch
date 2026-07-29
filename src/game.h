@@ -212,6 +212,12 @@ typedef struct GameState {
      * every other overlay, so island switches close it. */
     int  escrow_open;
 
+    /* The order book (UI_PLAN N3): your resting orders at the CURRENT
+     * island, and the strip that composes a new one. Like the others,
+     * a flag here and nothing else — the draft itself is UiState, on
+     * the client, because a half-written order is not world state. */
+    int  book_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed
@@ -489,7 +495,8 @@ typedef enum {
     UI_OVERLAY_TRADE,
     UI_OVERLAY_ESCROW,
     UI_OVERLAY_INVENTORY,
-    UI_OVERLAY_WORLD
+    UI_OVERLAY_WORLD,
+    UI_OVERLAY_BOOK         /* the order book (UI_PLAN N3)             */
 } GameOverlay;
 
 GameOverlay game_topmost_overlay(const GameState *gs);
