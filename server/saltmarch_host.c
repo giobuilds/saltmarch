@@ -35,6 +35,7 @@
 #include "game.h"
 #include "ghost_faction.h"
 #include "net.h"
+#include "account.h"
 #include "simclock.h"
 #include "simlog.h"
 
@@ -102,7 +103,8 @@ static void usage(const char *argv0)
 {
     fprintf(stderr,
         "usage: %s [--port N] [--world FILE] [--seed N]\n"
-        "          [--checkpoint-seconds N] [--ticks N] [--quiet]\n",
+        "          [--checkpoint-seconds N] [--ticks N] [--quiet]\n"
+        "          [--accounts [FILE]] [--registration open|closed]\n",
         argv0);
 }
 
@@ -118,6 +120,10 @@ int main(int argc, char *argv[])
     const char *ghosts[MAX_ISLANDS];
     int         ghost_islands[MAX_ISLANDS];
     int         ghost_count  = 0;
+    const char *accounts_path = NULL;      /* NULL = authentication off */
+    char        accounts_buf[512];
+    int         registration_open = 1;
+    AccountStore accounts;
 
     GameState  *gs;
     NetSession *ns;
@@ -146,6 +152,19 @@ int main(int argc, char *argv[])
             ghosts[ghost_count]        = spec;
             ghost_islands[ghost_count] = (int)strtol(colon + 1, NULL, 10);
             ghost_count++;
+        }
+        else if (strcmp(argv[i], "--accounts") == 0) {
+            /* Bare --accounts derives the path from the world, because
+             * an account file belongs to one world and pairing them by
+             * hand is a way to authenticate against the wrong one. */
+            if (i + 1 < argc && argv[i + 1][0] != '-') accounts_path = argv[++i];
+            else                                       accounts_path = "";
+        }
+        else if (strcmp(argv[i], "--registration") == 0 && i + 1 < argc) {
+            const char *v = argv[++i];
+            if      (strcmp(v, "open") == 0)   registration_open = 1;
+            else if (strcmp(v, "closed") == 0) registration_open = 0;
+            else { usage(argv[0]); return 2; }
         }
         else if (strcmp(argv[i], "--quiet") == 0)
             quiet = 1;
@@ -197,6 +216,68 @@ int main(int argc, char *argv[])
                    ghost_islands[i], n, ghosts[i]);
     }
 
+    /* ---- accounts (AUTH_PLAN Phase 1) ----------------------
+     * Authentication is a property of HAVING a store: no --accounts and
+     * the server behaves exactly as it did, which is what keeps co-op
+     * out of a login screen.
+     *
+     * The migration is explicit and noisy on purpose. An existing world
+     * has player_ids owning islands and no accounts at all; minting
+     * them silently, first-caller-wins, would reintroduce the very hole
+     * this closes on the one day it is most likely to be exploited. So
+     * every existing owner gets an account here, and its token is
+     * printed ONCE for the admin to hand out. */
+    account_store_init(&accounts);
+    if (accounts_path) {
+        int minted = 0;
+
+        if (accounts_path[0] == '\0') {
+            snprintf(accounts_buf, sizeof(accounts_buf), "%s.accounts",
+                     world_path);
+            accounts_path = accounts_buf;
+        }
+        if (!account_load(&accounts, accounts_path)) {
+            fprintf(stderr, "host: %s could not be read; refusing to start "
+                            "rather than authenticate nobody\n", accounts_path);
+            game_free(gs);
+            return 1;
+        }
+        accounts.registration_open = registration_open;
+
+        for (i = 0; i < MAX_ISLANDS; i++) {
+            uint32_t owner = gs->islands[i].owner;
+            uint8_t  token[ACCOUNT_TOKEN_BYTES];
+            char     hex[ACCOUNT_TOKEN_BYTES * 2 + 1];
+
+            if (owner == PLAYER_NONE || owner == PLAYER_FACTION) continue;
+            if (account_for_player(&accounts, owner)) continue;
+            if (account_create(&accounts, owner, NULL, token) != ACCOUNT_OK) {
+                fprintf(stderr, "host: could not mint an account for "
+                                "player %u\n", (unsigned)owner);
+                continue;
+            }
+            account_hex(hex, token, ACCOUNT_TOKEN_BYTES);
+            printf("host: account %u owns player %u — token %s\n",
+                   accounts.a[accounts.count - 1].id, (unsigned)owner, hex);
+            minted++;
+        }
+        if (minted > 0) {
+            printf("host: %d token(s) above are shown ONCE. Distribute them "
+                   "now; only their hashes are kept.\n", minted);
+            if (!account_save(&accounts, accounts_path)) {
+                fprintf(stderr, "host: could not write %s\n", accounts_path);
+                game_free(gs);
+                return 1;
+            }
+        }
+        printf("host: authenticating against %s (%d account(s), "
+               "registration %s)\n", accounts_path, accounts.count,
+               registration_open ? "open" : "closed");
+    } else {
+        printf("host: no --accounts: any client may claim any free "
+               "identity\n");
+    }
+
     ns = net_host(port);
     if (!ns) {
         fprintf(stderr, "host: could not listen on port %u\n",
@@ -211,6 +292,7 @@ int main(int argc, char *argv[])
      * protocol carries both, and which one you get is a property of
      * who is hosting rather than of the wire format. */
     net_set_authoritative(ns, 1);
+    if (accounts_path) net_set_accounts(ns, &accounts);
 
     signal(SIGINT,  on_signal);
     signal(SIGTERM, on_signal);
@@ -264,6 +346,14 @@ int main(int argc, char *argv[])
              * instead of growing with every command ever issued, and a
              * restart -- or a join -- costs what the world weighs
              * rather than how long it has been running. */
+            /* An account minted since the last checkpoint is an
+             * identity that exists on the wire and not on disk: a
+             * crash here would leave a player holding a token for an
+             * account nobody has heard of. */
+            if (accounts_path && net_accounts_dirty(ns) &&
+                !account_save(&accounts, accounts_path))
+                fprintf(stderr, "host: could not write %s\n", accounts_path);
+
             if (!game_save_checkpoint(gs, world_path)) {
                 fprintf(stderr, "host: checkpoint to %s FAILED\n", world_path);
                 rc = 1;
@@ -294,6 +384,10 @@ int main(int argc, char *argv[])
 
     printf("host: stopping at tick %llu, %d connected\n",
            (unsigned long long)gs->sim_tick_no, net_peer_count(ns));
+
+    if (accounts_path && !account_save(&accounts, accounts_path))
+        fprintf(stderr, "host: final account write to %s FAILED\n",
+                accounts_path);
 
     /* The final checkpoint is the one that must not be skipped: it is
      * what makes "the world is still there tomorrow" true. */

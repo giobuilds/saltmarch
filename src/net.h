@@ -131,7 +131,13 @@ typedef struct NetSession NetSession;
  *    final. A peer on 17 would read the flag as absent, keep waiting
  *    for tick authorisation that an authoritative server never sends,
  *    and sit still. */
-#define NET_PROTO_VERSION     20u
+/* 21: authentication (AUTH_PLAN Phase 1). MSG_HELLO carries an account
+ *    id and a 32-byte token after the resume id, and MSG_WELCOME can
+ *    return a freshly issued one. A server with no account store
+ *    ignores both and behaves exactly as before — but the frames
+ *    changed size, and a peer that cannot say who it is must be turned
+ *    away at the handshake rather than part way through a join. */
+#define NET_PROTO_VERSION     21u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a
@@ -156,7 +162,26 @@ void net_set_persistent(NetSession *ns, int persistent);
  * (PLAYER_NONE for "assign me one"). Blocks briefly for the connect,
  * then returns with gs untouched — the world arrives through net_pump.
  * Returns NULL on failure. */
-NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id);
+/* What a client presents to say who it is (AUTH_PLAN Phase 1). Zeroed
+ * — account_id 0 — means "I have no account", which is what every
+ * client says today and what a co-op host expects: on a server with
+ * registration open it is answered with a freshly minted one in
+ * MSG_WELCOME, and on a closed one it is refused.
+ *
+ * The token never reaches the sim, a snapshot, or the command log. It
+ * lives on the connection and in the client's own config file. */
+typedef struct {
+    uint32_t account_id;
+    uint8_t  token[32];
+} NetCredential;
+
+/* `cred` may be NULL, which is identical to a zeroed one. */
+NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id,
+                     const NetCredential *cred);
+
+/* A token the server issued during this session, or NULL if it issued
+ * none. The client saves it; there is no second chance to learn it. */
+const NetCredential *net_issued_credential(const NetSession *ns);
 
 /* How many connections this session currently holds. */
 int net_peer_count(const NetSession *ns);
@@ -180,6 +205,17 @@ NetSession *net_pair_mem(NetSession **out_guest);
  * for `resume_id` as net_join would. This is how the multi-player
  * server is tested without sockets. Returns NULL if the host is full. */
 NetSession *net_join_mem(NetSession *host, uint32_t resume_id);
+
+/* An in-memory host with nobody attached yet, so a test can set an
+ * account store up before the first HELLO arrives. */
+NetSession *net_host_mem(void);
+
+/* The same as net_join_mem, presenting a credential (AUTH_PLAN Phase 1). The in-memory
+ * transport exists so the protocol can be driven deterministically, and
+ * an authenticating handshake is exactly the kind of thing that must be
+ * tested without a socket. */
+NetSession *net_join_mem_as(NetSession *host, uint32_t resume_id,
+                            const NetCredential *cred);
 
 /* Free a session and its sockets. Never touches the world. */
 void net_close(NetSession *ns);
@@ -244,6 +280,22 @@ int net_tick_allowed(const NetSession *ns, uint64_t tick);
  *
  * Set before peers join. A co-op host may leave it off and keep the
  * lockstep behaviour; the dedicated server turns it on. */
+/* Install the account store this host authenticates against, or NULL
+ * for none. Authentication is OFF while this is NULL, which is what
+ * keeps co-op exactly as it was: the store is a property of running a
+ * dedicated server, not of hosting a friend.
+ *
+ * The session borrows the store; the host owns it, loads it, and is the
+ * only thing that writes it to disk. net.c never opens a file. */
+struct AccountStore;
+void net_set_accounts(NetSession *ns, struct AccountStore *accounts);
+
+/* Has an account been minted since this was last asked? Returns 1 and
+ * clears the flag. The host polls it on its checkpoint cadence: net.c
+ * knows when a registration happened, and only the host knows where the
+ * file lives. */
+int net_accounts_dirty(NetSession *ns);
+
 void net_set_authoritative(NetSession *ns, int on);
 
 /* Whether the server this client is talking to said it was the

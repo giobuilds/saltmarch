@@ -27,6 +27,7 @@
 #include "book_ui.h"      /* UI_PLAN N3: the order book (pulls its view)*/
 #include "chart_ui.h"     /* UI_PLAN N4: the passages (pulls its view)  */
 #include "yard_ui.h"      /* UI_PLAN N6: the yard and the fleet         */
+#include "config.h"       /* AUTH_PLAN Phase 2: where a token lives      */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -82,6 +83,15 @@ typedef struct {
      * how we learn what the click produced. */
     Intent        intent;
     uint32_t      intent_seq_before;
+
+    /* Client preferences, which since AUTH_PLAN Phase 2 means the
+     * tokens servers have issued us. Loaded once at startup; written
+     * back the moment a server issues a new one, because a token told
+     * once and not written down is a token lost. */
+    Config        cfg;
+    char          join_host[CONFIG_HOST_LEN];
+    uint16_t      join_port;
+    int           joined;
 } App;
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
@@ -167,6 +177,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
     fx_reject_init(&app->fx);
     SDL_memset(&app->intent, 0, sizeof(app->intent));
+    config_load(&app->cfg);
+    app->join_host[0] = '\0';
+    app->join_port    = 0;
+    app->joined       = 0;
     app->intent_seq_before = 0;
     app->ui.hud_category = BCAT_FARMING;
 
@@ -213,8 +227,19 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
                 want_join = 1;
             }
         }
-        if (want_join)
-            app->net = net_join(hostbuf, join_port, resume_id);
+        if (want_join) {
+            /* The token this machine already holds for this server, if
+             * any. `--as` survives as a request for a world identity,
+             * but on an authenticating server it is ignored in favour
+             * of whatever the credential owns (AUTH_PLAN Phase 1). */
+            const NetCredential *cred =
+                config_credential(&app->cfg, hostbuf, join_port);
+
+            app->net = net_join(hostbuf, join_port, resume_id, cred);
+            SDL_strlcpy(app->join_host, hostbuf, sizeof(app->join_host));
+            app->join_port = join_port;
+            app->joined    = app->net != NULL;
+        }
         if (app->net) net_attach(gs, app->net);
     }
 
@@ -256,6 +281,21 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             net_close(app->net);
             app->net = NULL;
             net_detach(gs);
+        }
+    }
+
+    /* A token the server minted for us during the handshake, written
+     * down the moment it arrives (AUTH_PLAN Phase 2). Told once and
+     * never again: a client that forgets it registers again, and on a
+     * server with registration closed there is no again. */
+    if (app->net && app->joined) {
+        const NetCredential *issued = net_issued_credential(app->net);
+        if (issued) {
+            config_set_credential(&app->cfg, app->join_host, app->join_port,
+                                  issued);
+            if (config_save(&app->cfg))
+                SDL_Log("Saved this server's account to %s", app->cfg.path);
+            app->joined = 0;      /* once per session */
         }
     }
 
