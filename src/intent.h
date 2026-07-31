@@ -59,6 +59,12 @@ typedef struct {
     int32_t  book_qty;
     int32_t  book_limit;
 
+    /* The passages overlay's page (UI_PLAN N4). A page index, like the
+     * three above it: which page a click landed on decides which rows
+     * were under the cursor, so a replay that guessed would hit-test a
+     * screen the player never saw. */
+    uint16_t chart_page;
+
     /* The tile under the cursor, as the frame computed it. Recorded
      * rather than re-derived because it comes from the camera, and the
      * camera is client state that never enters the log — a replay has

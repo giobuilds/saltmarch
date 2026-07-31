@@ -9,6 +9,7 @@
 
 #include "replay.h"
 #include "book_view.h"
+#include "chart_view.h"
 #include "camera.h"
 #include "confirm_view.h"
 #include "exchange_view.h"
@@ -316,6 +317,113 @@ static void click_book(GameState *gs, UiState *st, BookView *book,
     intent_record(gs, &in);
 }
 
+/* Click a widget on the passages screen (UI_PLAN N4). Same shape as the
+ * book's: the view is threaded through because its rows are retained,
+ * and the Sea comes from the world because that screen reads it
+ * directly. */
+static void click_charts(GameState *gs, UiState *st, ChartView *charts,
+                         uint32_t id)
+{
+    UiSnapshot      snap;
+    UiList          list;
+    Intent          in;
+    const UiWidget *w;
+    ChartHit        hit;
+    uint32_t        before = gs->cmd_seq_last;
+
+    ui_snapshot_build(&snap, gs);
+    chart_view_update(charts, &snap, &gs->sea, gs->current_island);
+    chart_build(&list, charts, st, (float)SCREEN_W, (float)SCREEN_H);
+
+    w = ui_list_find(&list, id);
+    if (!w || (w->flags & (UI_W_DISABLED | UI_W_HEADER))) return;
+
+    memset(&in, 0, sizeof(in));
+    in.tick              = snap.tick;
+    in.x                 = (int32_t)(w->rect.x + w->rect.w * 0.5f);
+    in.y                 = (int32_t)(w->rect.y + w->rect.h * 0.5f);
+    in.kind              = (uint8_t)INTENT_LEFT_CLICK;
+    in.ui.overlay        = (uint8_t)UI_OVERLAY_CHARTS;
+    in.ui.chart_page     = (uint16_t)st->chart_page;
+    in.ui.hovered_row    = -1;
+    in.ui.hovered_col    = -1;
+    in.ui.current_island = (int16_t)gs->current_island;
+
+    hit = chart_hit(&list, charts, st, (float)in.x, (float)in.y);
+
+    switch (hit.kind) {
+    case CHART_HIT_BUY:
+        game_place_order(gs, gs->current_island, TRADE_ROUTE_CHART,
+                         (uint16_t)hit.route_id, CHART_LOT, hit.limit);
+        break;
+    case CHART_HIT_SELL:
+        game_place_order(gs, gs->current_island, TRADE_ROUTE_CHART,
+                         (uint16_t)hit.route_id, -CHART_LOT, hit.limit);
+        break;
+    case CHART_HIT_PAGE:
+        st->chart_page = hit.page;
+        break;
+    default:
+        return;
+    }
+
+    in.seq = (gs->cmd_seq_last != before) ? gs->cmd_seq_last : 0u;
+    intent_record(gs, &in);
+}
+
+/* The route the market currently has a map of on the counter, or -1.
+ * Recorded sessions must click a passage the faction is actually
+ * offering: a Buy against a route with no resting ask is a disabled
+ * button, and a recording of clicks that do nothing tests nothing —
+ * the lesson N3's first fixture taught. */
+static int offered_route(const GameState *gs, const UiSnapshot *snap,
+                         const ChartView *v)
+{
+    int i, j;
+
+    for (i = 0; i < snap->order_count; i++) {
+        const UiOrder *o = &snap->order[i];
+        if (o->kind != (uint16_t)TRADE_ROUTE_CHART) continue;
+        if (o->side != ORDER_SELL) continue;
+        if (o->limit > snap->islands[gs->current_island].stock[RES_GOLD])
+            continue;
+        for (j = 0; j < v->row_count; j++)
+            if (!v->rows[j].header && v->rows[j].route_id == (int32_t)o->what)
+                return (int)o->what;
+    }
+    return -1;
+}
+
+static void record_chart_session(GameState *gs, UiState *st)
+{
+    ChartView  charts;
+    UiSnapshot snap;
+    int        rid, t;
+
+    memset(&charts, 0, sizeof(charts));
+    chart_view_reset(&charts);
+    st->chart_page = 0;
+
+    ui_snapshot_build(&snap, gs);
+    chart_view_update(&charts, &snap, &gs->sea, gs->current_island);
+
+    /* Buy a map of a passage out of this harbour, which is the click
+     * that has to name a ROUTE rather than a resource — the whole
+     * reason this screen exists (UI_PLAN N4). */
+    rid = offered_route(gs, &snap, &charts);
+    if (rid >= 0)
+        click_charts(gs, st, &charts, ui_id(UI_GROUP_CHART_BUY,
+                                            (uint16_t)rid));
+
+    for (t = 0; t < 10; t++) sim_run_one_tick(gs);
+
+    /* And a page turn, so a recorded frame exists with the passages on
+     * a page that is not the first. */
+    click_charts(gs, st, &charts, ui_id(UI_GROUP_ACTION, UI_ACTION_NEXT));
+
+    for (t = 0; t < 10; t++) sim_run_one_tick(gs);
+}
+
 /* The id of the first row's Cancel button, or 0 if the book is empty. */
 static uint32_t first_cancel_id(const UiList *l, int32_t *out_value)
 {
@@ -396,6 +504,9 @@ void replay_record_ui_session(GameState *gs, uint32_t seed)
     /* Then the order book: compose a draft, post it, cancel it
      * (UI_PLAN N3). */
     record_book_session(gs, &st);
+
+    /* And the passages: buy a chart, turn a page (UI_PLAN N4). */
+    record_chart_session(gs, &st);
 }
 
 /* ---- the UI harness (UI_PLAN M1) ---------------------------
@@ -417,11 +528,18 @@ typedef struct {
     ConfirmView   cf;    UiList cf_list;
     UiList        island_list;
     BookView      book;  UiList book_list;
+    ChartView     charts; UiList chart_list;
 } UiFrame;
 
 /* Rebuild every overlay for this frame. Lists are filled in a fixed
- * order so the golden dump is stable. */
-static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st)
+ * order so the golden dump is stable.
+ *
+ * `sea` rather than only the snapshot, because the passages screen reads
+ * route geometry directly (UI_PLAN N1's recorded exception). It is the
+ * replayed world's own Sea, regenerated from the same seed, so this is
+ * still a frame rebuilt from the log and nothing else. */
+static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st,
+                      const Sea *sea)
 {
     exchange_view_market(&f->ex, snap, snap->current_island);
     exchange_build(&f->ex_list, &f->ex, st, (float)SCREEN_W, (float)SCREEN_H);
@@ -441,6 +559,10 @@ static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st)
     /* update, not build: the fold is the point (UI_PLAN N3). */
     book_view_update(&f->book, snap, snap->current_island, st);
     book_build(&f->book_list, &f->book, st, (float)SCREEN_W, (float)SCREEN_H);
+
+    chart_view_update(&f->charts, snap, sea, snap->current_island);
+    chart_build(&f->chart_list, &f->charts, st, (float)SCREEN_W,
+                (float)SCREEN_H);
 }
 
 static int rects_on_screen(const UiList *l, const char *what, int verbose)
@@ -523,6 +645,24 @@ static int book_expected(const BookHit *hit, const UiSnapshot *snap,
     return 0;
 }
 
+/* And for the passages. Mirrors main.c's charts branch: one map per
+ * click, the sign is the side, and the limit is the price the row was
+ * displaying. */
+static int chart_expected(const ChartHit *hit, const UiSnapshot *snap,
+                          Command *out)
+{
+    memset(out, 0, sizeof(*out));
+
+    if (hit->kind != CHART_HIT_BUY && hit->kind != CHART_HIT_SELL) return 0;
+
+    out->kind = CMD_PLACE_ORDER;
+    out->a    = snap->current_island;
+    out->b    = TRADE_PACK(TRADE_ROUTE_CHART, (uint16_t)hit->route_id);
+    out->c    = (hit->kind == CHART_HIT_SELL) ? -CHART_LOT : CHART_LOT;
+    out->d    = hit->limit;
+    return 1;
+}
+
 static const Command *command_by_seq(const GameState *gs, uint32_t seq)
 {
     int i;
@@ -591,10 +731,11 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
         st.book_res       = in->ui.book_res;
         st.book_qty       = in->ui.book_qty;
         st.book_limit     = in->ui.book_limit;
+        st.chart_page     = in->ui.chart_page;
 
         game_set_current_island(gs, in->ui.current_island);
         ui_snapshot_build(&snap, gs);
-        build_all(frame, &snap, &st);
+        build_all(frame, &snap, &st, &gs->sea);
 
         visit(frame, &snap, &st, in, ctx);
     }
@@ -622,16 +763,22 @@ static void verify_one(const UiFrame *f, const UiSnapshot *snap,
     v->failures += rects_on_screen(&f->island_list, "island",    v->verbose);
     v->failures += rects_on_screen(&f->cf_list,     "confirm",   v->verbose);
     v->failures += rects_on_screen(&f->book_list,   "book",      v->verbose);
+    v->failures += rects_on_screen(&f->chart_list,  "charts",    v->verbose);
     v->checked++;
 
     /* Emission, where the mapping is pure. */
     if ((in->ui.overlay == (uint8_t)UI_OVERLAY_TRADE ||
-         in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK) && in->seq != 0) {
+         in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK  ||
+         in->ui.overlay == (uint8_t)UI_OVERLAY_CHARTS) && in->seq != 0) {
         Command        expect;
         const Command *actual = command_by_seq(v->gs, in->seq);
         int            have;
 
-        if (in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK) {
+        if (in->ui.overlay == (uint8_t)UI_OVERLAY_CHARTS) {
+            ChartHit chit = chart_hit(&f->chart_list, &f->charts, st,
+                                      (float)in->x, (float)in->y);
+            have = chart_expected(&chit, snap, &expect);
+        } else if (in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK) {
             BookHit bh = book_hit(&f->book_list, &f->book, st, (float)in->x,
                                   (float)in->y);
             have = book_expected(&bh, snap, &expect);
@@ -729,6 +876,7 @@ static void dump_one(const UiFrame *f, const UiSnapshot *snap,
     dump_list(d->out, "inventory", &f->inv_list);
     dump_list(d->out, "confirm",   &f->cf_list);
     dump_list(d->out, "book",      &f->book_list);
+    dump_list(d->out, "charts",    &f->chart_list);
 }
 
 void replay_dump_ui(GameState *gs, FILE *out)

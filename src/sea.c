@@ -459,6 +459,32 @@ int sea_rotate_pair(Sea *sea, int pair)
     return going ? sea_route_id(sea, going) : -1;
 }
 
+/* Pairs do NOT all turn over together: each is staggered by its own
+ * index across one lifetime, so the sea changes shape continuously
+ * rather than voiding every chart in the world on the same tick.
+ *
+ * The first rotation is a full lifetime in, not at the offset —
+ * otherwise every pair whose stagger works out to zero would rotate on
+ * tick 0, voiding charts in a world that has not had time to issue
+ * any. */
+uint64_t sea_pair_next_rotation(int island_count, int pair, uint64_t now)
+{
+    uint64_t pairs = (island_count > 1)
+                   ? (uint64_t)island_count * (uint64_t)(island_count - 1) / 2u
+                   : 1u;
+    uint64_t offset, first, since;
+
+    if (pair < 0 || pairs == 0u) return 0u;
+
+    offset = (uint64_t)pair * SEA_ROUTE_LIFETIME_TICKS / pairs;
+    first  = offset + SEA_ROUTE_LIFETIME_TICKS;
+
+    if (now <= first) return first;
+
+    since = (now - first) % SEA_ROUTE_LIFETIME_TICKS;
+    return since == 0u ? now : now + (SEA_ROUTE_LIFETIME_TICKS - since);
+}
+
 uint32_t sea_crossing_ticks(const Sea *sea, int island_a, int island_b)
 {
     const Route *r = sea_route_between(sea, island_a, island_b);

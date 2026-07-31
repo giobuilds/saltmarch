@@ -25,6 +25,7 @@
 #include "ui_snapshot.h"  /* UI_PLAN Phase 0: what the UI may see       */
 #include "exchange_view.h"/* UI_PLAN Phase 1: the exchange surface      */
 #include "book_ui.h"      /* UI_PLAN N3: the order book (pulls its view)*/
+#include "chart_ui.h"     /* UI_PLAN N4: the passages (pulls its view)  */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -54,6 +55,11 @@ typedef struct {
      * (UI_PLAN N3). Reset when the panel opens, not when it is built. */
     BookView      book;
     UiList        book_list;
+    /* And the passages, retained for the same reason: a route that goes
+     * out of use stays where it stood rather than the next one sliding
+     * into its place under the cursor (UI_PLAN N4). */
+    ChartView     charts;
+    UiList        chart_list;
     HudView       hud;
     UiList        hud_list;
     InventoryView inventory;
@@ -323,6 +329,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                    (float)SCREEN_W, (float)SCREEN_H);
     }
 
+    /* The passages fold too, and take the Sea directly — the one
+     * recorded exception to decision 1 (UI_PLAN N1), because route
+     * geometry is generated from the seed rather than owned and copying
+     * it per frame would quadruple the snapshot. */
+    if (gs->charts_open) {
+        chart_view_update(&app->charts, &app->snap, &gs->sea,
+                          gs->current_island);
+        chart_build(&app->chart_list, &app->charts, &app->ui,
+                    (float)SCREEN_W, (float)SCREEN_H);
+    }
+
     /* Shared feed (Phase 4): publish any departures the ticks above
      * just caused, and re-read the inbound feed on its poll interval.
      * Wall-clock, cosmetic, outside the sim — see feed.h. */
@@ -376,6 +393,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
     }
 
+    /* C: the passages (UI_PLAN N4). Opening forgets the rows for the
+     * same reason the book does — a passage marked "out of use" is a
+     * note about something that happened while you were watching. */
+    if (gs->input.chart_toggle) {
+        gs->charts_open = !gs->charts_open;
+        if (gs->charts_open) {
+            chart_view_reset(&app->charts);
+            app->ui.chart_page = 0;
+        }
+    }
+
     /* UI_PLAN M1: remember the state this frame was drawn in, so a
      * click recorded below carries the screen the player was actually
      * looking at. Captured BEFORE the click is handled — afterwards the
@@ -393,6 +421,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         app->intent.ui.book_res       = (uint8_t)app->ui.book_res;
         app->intent.ui.book_qty       = app->ui.book_qty;
         app->intent.ui.book_limit     = app->ui.book_limit;
+        app->intent.ui.chart_page     = (uint16_t)app->ui.chart_page;
         app->intent.ui.hovered_row    = (int16_t)gs->hovered_row;
         app->intent.ui.hovered_col    = (int16_t)gs->hovered_col;
         app->intent.ui.current_island = (int16_t)gs->current_island;
@@ -643,6 +672,43 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
+        /* The passages (UI_PLAN N4). Buy and Sell post chart orders
+         * through the same funnel as everything else — this screen is
+         * the route picker the book's composer could not be, because a
+         * chart is named by a passage rather than by a good. */
+        } else if (gs->charts_open) {
+            ChartHit ch = chart_hit(&app->chart_list, &app->charts, &app->ui,
+                                    (float)gs->input.logical_x,
+                                    (float)gs->input.logical_y);
+            switch (ch.kind) {
+            case CHART_HIT_BUY:
+                /* The price the row was DISPLAYING rides along as the
+                 * limit, so a market that moves between the frame and
+                 * the tick is refused rather than filled at a number
+                 * nobody read (UI_PLAN M3). */
+                game_place_order(gs, gs->current_island, TRADE_ROUTE_CHART,
+                                 (uint16_t)ch.route_id, CHART_LOT, ch.limit);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ch.rect));
+                break;
+            case CHART_HIT_SELL:
+                game_place_order(gs, gs->current_island, TRADE_ROUTE_CHART,
+                                 (uint16_t)ch.route_id, -CHART_LOT, ch.limit);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ch.rect));
+                break;
+            case CHART_HIT_PAGE:
+                app->ui.chart_page = ch.page;
+                break;
+            case CHART_HIT_NONE:
+                break;      /* the panel: absorb it */
+            case CHART_HIT_CLOSE:
+            case CHART_HIT_OUTSIDE:
+            default:
+                gs->charts_open = 0;
+                break;
+            }
+
         } else if (gs->inventory_open) {
             InventoryHit ihit = inventory_hit(&app->inventory_list, &app->ui,
                                               (float)gs->input.logical_x,
@@ -864,6 +930,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         case UI_OVERLAY_TRADE:     gs->trade_open     = 0; break;
         case UI_OVERLAY_ESCROW:    gs->escrow_open    = 0; break;
         case UI_OVERLAY_BOOK:      gs->book_open      = 0; break;
+        case UI_OVERLAY_CHARTS:    gs->charts_open    = 0; break;
         case UI_OVERLAY_INVENTORY: gs->inventory_open = 0; break;
         case UI_OVERLAY_WORLD:     gs->world_open     = 0; break;
         case UI_OVERLAY_NONE:
@@ -960,6 +1027,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->book_open)
         book_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->book_list,
                      &app->book, gs->input.logical_x, gs->input.logical_y);
+
+    /* And the passages beside it (UI_PLAN N4). */
+    if (gs->charts_open)
+        chart_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->chart_list,
+                      &app->charts, gs->input.logical_x, gs->input.logical_y);
 
     /* The one confirmation, on top when open (UI_PLAN Phase 6). It
      * shows the literal Command it will submit; four popups used to be

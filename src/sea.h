@@ -192,6 +192,18 @@ int sea_pair_index(const Sea *sea, int island_a, int island_b);
  * water is in use. */
 int sea_rotate_pair(Sea *sea, int pair);
 
+/* The next tick at or after `now` on which `pair` rotates, in a world of
+ * `island_count` islands. Answers `now` itself on a tick that rotates.
+ *
+ * The schedule is arithmetic over the pair index and the tick — it reads
+ * no state and allocates nothing — but it exists as a function because
+ * two callers need the same answer and must not compute it twice. The
+ * sim asks "is it now?" every tick; the charts screen asks "how long
+ * has this passage left?" every frame (UI_PLAN N4). A UI that reproduced
+ * the stagger would be one edit away from telling a player their chart
+ * had a thousand ticks left on the tick it became waste paper. */
+uint64_t sea_pair_next_rotation(int island_count, int pair, uint64_t now);
+
 /* Generate the whole sea from `seed` and `island_count`. Deterministic:
  * the same arguments always produce the same positions, names, paths
  * and durations, on every platform. */

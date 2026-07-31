@@ -51,6 +51,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->confirm.kind          = CONFIRM_NONE;
     gs->escrow_open           = 0;
     gs->book_open             = 0;
+    gs->charts_open           = 0;
     gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
@@ -214,6 +215,7 @@ GameOverlay game_topmost_overlay(const GameState *gs)
     if (gs->trade_open)            return UI_OVERLAY_TRADE;
     if (gs->escrow_open)           return UI_OVERLAY_ESCROW;
     if (gs->book_open)             return UI_OVERLAY_BOOK;
+    if (gs->charts_open)           return UI_OVERLAY_CHARTS;
     if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
     if (gs->world_open)            return UI_OVERLAY_WORLD;
     return UI_OVERLAY_NONE;
@@ -598,8 +600,12 @@ typedef struct {
  * — intents are cosmetic to the sim — but the bytes no longer line up,
  * and a misread intent stream would hit-test recorded clicks against
  * the wrong screen, which is exactly the failure the format exists to
- * make impossible. */
-#define SAVE_VERSION 26u
+ * make impossible.
+ *
+ * v27 (UI_PLAN N4): IntentUiState gains the passages overlay's page,
+ * for the same reason and at the same cost as v26 — which page a click
+ * landed on decides which rows were under the cursor. */
+#define SAVE_VERSION 27u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -3022,7 +3028,10 @@ static void scholar_lost(Island *isl)
  *
  * Pairs rotate on their OWN offsets rather than together, so the sea
  * shifts continuously instead of invalidating every chart in the world
- * on the same tick.
+ * on the same tick. The stagger itself lives in sea.c, because the
+ * charts screen has to count down to the same instant this rotates on
+ * (UI_PLAN N4) and two copies of a schedule is how a clock comes to
+ * disagree with the event it is timing.
  */
 static void sea_rotation_update(GameState *gs)
 {
@@ -3030,18 +3039,8 @@ static void sea_rotation_update(GameState *gs)
     int p;
 
     for (p = 0; p < pairs && p < SEA_MAX_PAIRS; p++) {
-        /* Stagger by pair index, spread across the lifetime. */
-        uint64_t offset = (uint64_t)p * SEA_ROUTE_LIFETIME_TICKS /
-                          (pairs > 0 ? (uint64_t)pairs : 1u);
-
-        /* The first rotation is a full lifetime in, not at the
-         * offset: otherwise every pair whose stagger works out to zero
-         * rotates on tick 0, voiding charts in a world that has not
-         * had time to issue any. */
-        uint64_t first = offset + SEA_ROUTE_LIFETIME_TICKS;
-
-        if (gs->sim_tick_no < first) continue;
-        if ((gs->sim_tick_no - first) % SEA_ROUTE_LIFETIME_TICKS != 0)
+        if (sea_pair_next_rotation(gs->sea.island_count, p,
+                                   gs->sim_tick_no) != gs->sim_tick_no)
             continue;
 
         {

@@ -82,7 +82,14 @@ enum {
      * a position — but the id alone may not be trusted to name one
      * order, which is why the cancel hit reads the value. */
     UI_GROUP_ORDER,         /* value = order id, low 16 (the row)    */
-    UI_GROUP_CANCEL         /* value = order id, low 16 (the button) */
+    UI_GROUP_CANCEL,        /* value = order id, low 16 (the button) */
+    /* A sea route id, which is what a chart names (UI_PLAN N4). It
+     * needs no second home in the widget's value the way an order id
+     * does — SEA_MAX_ROUTES is 512 — so the value carries the price the
+     * row was showing instead. */
+    UI_GROUP_ROUTE,         /* value = route id (the row)            */
+    UI_GROUP_CHART_BUY,     /* value = route id; widget value=price  */
+    UI_GROUP_CHART_SELL     /* value = route id; widget value=price  */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are
