@@ -28,7 +28,10 @@ cmake --build build -j$(nproc)          # zero warnings is the bar
   ./build/saltmarch_replay --replay u.smlog --verify-ui   # UI click replay
 ./build/saltmarch_replay --record f.smlog --seed 12345 && \
   ./build/saltmarch_replay --replay f.smlog     # determinism gate
+./ci/sanitize.sh                        # the same, under ASan/UBSan/MSan
 ```
+
+`ci/sanitize.sh` is the runtime half of the warning flags — it configures its own build directories (`build-asan`, `build-msan`) so it never disturbs yours, and runs the whole ladder under instrumentation. Two passes, because no one sanitizer covers both halves: **address,undefined** over everything including the SDL client and a real TCP server, and **memory** over the SDL-free libraries only, since MemorySanitizer needs every linked object instrumented. The second is the one that matters most here: the world is hashed, and a hash over uninitialised memory is stable within one run and different across machines — the failure mode no single-platform test can see. It found real undefined behaviour on its first run (`game_load` and the join path both formed a `Command *` over a byte offset past a snapshot), and re-introducing the UI_PLAN M3 bug on purpose makes it fail. Slow (2-3x), so it is its own CI job rather than part of the local loop.
 
 `.github/workflows/ci.yml` runs all of this on Linux, macOS and Windows with warnings as errors. Anything genuinely visual still needs a human at the keyboard.
 

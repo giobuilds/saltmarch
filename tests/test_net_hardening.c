@@ -167,6 +167,13 @@ int main(void)
               "into the guest's own log");
     }
 
+    /* The guest half of a severed pair is still a live session holding
+     * a buffer: net_close(hn) severs it, it does not free it. Leaving it
+     * open leaks, which is invisible until something is watching — and
+     * now something is (ci/sanitize.sh). */
+    net_close(gn);
+    gn = NULL;
+
     game_free(hg);
     game_free(gg);
 

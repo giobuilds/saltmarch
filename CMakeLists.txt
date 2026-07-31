@@ -35,6 +35,71 @@ if(SALTMARCH_WERROR)
     endif()
 endif()
 
+# ---------------------------------------------------------------------
+# Sanitizers: the runtime half of "zero warnings is the bar".
+#
+# -Wconversion and friends are a compile-time argument about types. These
+# are a runtime argument about memory and arithmetic, and they catch a
+# class this project is specifically exposed to:
+#
+#   * snapshot.c decodes bytes off disk and off a socket, net.c parses
+#     frames from an untrusted peer, and account.c now parses a file an
+#     admin edits by hand. "It did not crash" and "it read nothing out of
+#     bounds" are different claims, and only one of them is checkable.
+#   * the world is hashed. A hash over uninitialised or overrun memory
+#     can be perfectly stable within one run and differ across machines —
+#     which is the failure CI is least able to see, because each platform
+#     only ever compares against itself. UI_PLAN M3 records exactly this
+#     bug: GameState is malloc'd, faction_init set its fields one by one,
+#     and a newly added array entered sim_hash uninitialised.
+#
+# `undefined` is where the integer arithmetic gets checked, which matters
+# here because determinism means every platform must agree about it.
+#
+# ADDRESS DOES NOT CATCH THE UNINITIALISED-READ CASE — that is
+# MemorySanitizer, which needs every linked object instrumented and
+# therefore cannot see through SDL. ci/msan.sh runs it over the SDL-free
+# libraries, which is exactly where the hashed state lives.
+#
+# Off by default: a sanitised build is 2-3x slower and is a tool, not a
+# configuration anybody should ship or play.
+set(SALTMARCH_SANITIZE "" CACHE STRING
+    "Sanitizers to build with, e.g. address,undefined (empty = none)")
+
+if(SALTMARCH_SANITIZE)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        # -fno-sanitize-recover: a sanitizer that reports and carries on
+        # turns a failure into a log line nobody reads. UBSan defaults to
+        # recovering, which is how a green CI run can contain a hundred
+        # of them.
+        #
+        # -fno-omit-frame-pointer: without it the stack trace stops at
+        # the first optimised frame, which on a Release build is usually
+        # the one you needed.
+        add_compile_options(-fsanitize=${SALTMARCH_SANITIZE}
+                            -fno-sanitize-recover=all
+                            -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${SALTMARCH_SANITIZE})
+        message(STATUS "Sanitizers: ${SALTMARCH_SANITIZE}")
+    elseif(MSVC)
+        # MSVC has AddressSanitizer and no UBSan, so this takes what it
+        # can and says what it dropped rather than failing the configure:
+        # the point of the flag is that CI can turn it on everywhere.
+        add_compile_options(/fsanitize=address)
+        message(STATUS "Sanitizers: address (MSVC has no UBSan)")
+    endif()
+
+    # tests/run.sh compiles its own programs against these objects, so it
+    # has to link with the same instrumentation or every one of them
+    # fails at link with undefined __asan_* symbols. Written out rather
+    # than passed in, so a sanitised build is self-describing: the script
+    # reads what the build actually did instead of being told again.
+    file(WRITE "${CMAKE_BINARY_DIR}/sanitizer.flags"
+         "-fsanitize=${SALTMARCH_SANITIZE} -fno-sanitize-recover=all -g\n")
+else()
+    file(WRITE "${CMAKE_BINARY_DIR}/sanitizer.flags" "")
+endif()
+
 find_package(SDL3       REQUIRED CONFIG)
 find_package(SDL3_ttf   REQUIRED CONFIG)
 

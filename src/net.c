@@ -1143,8 +1143,7 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
          * the pending tail, which is a handful of commands by
          * construction (NET_CMD_DELAY_TICKS of them). */
         if (!game_install_from_snapshot(gs, payload + fixed, snap_len, tick,
-                                        (const Command *)(payload + fixed +
-                                                          snap_len), n)) {
+                                        payload + fixed + snap_len, n)) {
             sim_log("net: failed to install world");
             peer_drop(ns, p, "could not install the host's world");
             break;
