@@ -166,6 +166,33 @@ void inventory_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             continue;
         }
 
+        /* A harbour capacity: committed over what there is, as one
+         * line (UI_PLAN N8). The pair is packed into the widget's
+         * value by the builder — out * 1000 + capacity — because a
+         * capacity line is a header and headers carry one int. */
+        if (ui_id_group(w->id) == UI_GROUP_CAPACITY) {
+            int       out_n = w->value / 1000;
+            int       cap_n = w->value % 1000;
+            SDL_Color col   = (cap_n > 0 && out_n >= cap_n) ? WARN : TEXT;
+
+            font_draw_text(renderer, FONT_SMALL, w->label,
+                           (int)(w->rect.x + 4.0f), (int)(w->rect.y), DIM);
+
+            /* Not told is a mark, not a zero — a rival's harbour has
+             * merchants whether or not we know how many (N2). */
+            if (!view->detail_known)
+                SDL_snprintf(buf, sizeof(buf), "%s", UI_UNKNOWN_MARK);
+            else if (ui_id_value(w->id) == 3)
+                SDL_snprintf(buf, sizeof(buf), "%d", cap_n);
+            else
+                SDL_snprintf(buf, sizeof(buf), "%d of %d out", out_n, cap_n);
+
+            font_draw_text(renderer, FONT_SMALL, buf,
+                           (int)(w->rect.x + 4.0f), (int)(w->rect.y + 14.0f),
+                           view->detail_known ? col : DIM);
+            continue;
+        }
+
         if (w->flags & UI_W_HEADER) {
             cell(renderer, w->rect, w->label, DIM);
             continue;

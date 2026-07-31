@@ -68,6 +68,21 @@ void inventory_view_build(InventoryView *out, const UiSnapshot *snap,
             if (snap->ships[s].active)
                 row->ship_cargo += snap->ships[s].cargo[r];
     }
+
+    /* The other half of what an island holds (UI_PLAN N8): capital, not
+     * stock. Every one of these was already resolved into the snapshot
+     * at N1, so nothing here reproduces the rule that decides how many
+     * merchants a Merchant House keeps. */
+    out->merchants_out     = isl->merchants_out;
+    out->merchant_capacity = isl->merchant_capacity;
+    out->hulls_out         = isl->hulls_out;
+    out->hull_capacity     = isl->hull_capacity;
+    out->scholars_out      = isl->scholars_out;
+    out->scholar_capacity  = isl->scholar_capacity;
+    out->research_boats    = isl->research_boats;
+    out->insured           = isl->insure_shipments;
+    out->yours             = (uint8_t)(isl->owner != PLAYER_NONE &&
+                                       isl->owner == snap->local_player_id);
 }
 
 /* ---- geometry --------------------------------------------- */
@@ -91,7 +106,7 @@ static float wanted_height(const InventoryView *v)
 {
     return INVENTORY_MARGIN * 2.0f + INVENTORY_TITLE_H + INVENTORY_HEAD_H +
            (float)v->row_count * (INVENTORY_ROW_H + INVENTORY_ROW_GAP) +
-           INVENTORY_FOOTER_H;
+           INVENTORY_HARBOUR_H + INVENTORY_FOOTER_H;
 }
 
 static UiRect panel_rect(const InventoryView *v, float sw, float sh)
@@ -104,7 +119,8 @@ static UiRect panel_rect(const InventoryView *v, float sw, float sh)
 static int rows_per_page(UiRect panel)
 {
     float body = panel.h - (INVENTORY_MARGIN * 2.0f + INVENTORY_TITLE_H +
-                            INVENTORY_HEAD_H + INVENTORY_FOOTER_H);
+                            INVENTORY_HEAD_H + INVENTORY_HARBOUR_H +
+                            INVENTORY_FOOTER_H);
     int   n = ui_rows_that_fit(body, INVENTORY_ROW_H, INVENTORY_ROW_GAP);
     return n < 1 ? 1 : n;
 }
@@ -144,6 +160,53 @@ void inventory_build(UiList *out, const InventoryView *view,
                      row->name, row->amount, UI_W_HEADER);
     }
 
+    /* ---- the harbour (UI_PLAN N8) ----------------------------
+     * Four capacities and a lever. Committed against capacity, always
+     * as a pair: "2 merchants" cannot say whether that is comfortable
+     * or the whole of what you have, and which it is decides whether to
+     * post another order. */
+    {
+        UiRect block = ui_row(&l, INVENTORY_HARBOUR_H);
+        UiRect line  = block;
+        UiRect cell;
+        int    n;
+        static const char *CAP_LABEL[4] = {
+            "Merchants", "Hulls", "Scholars", "Research boats"
+        };
+        int out_of[4], cap_of[4];
+
+        out_of[0] = view->merchants_out; cap_of[0] = view->merchant_capacity;
+        out_of[1] = view->hulls_out;     cap_of[1] = view->hull_capacity;
+        out_of[2] = view->scholars_out;  cap_of[2] = view->scholar_capacity;
+        /* A research boat is a hull sitting in the harbour, not a
+         * commitment against a capacity — there is nothing to be "out
+         * of" until one sails, and sim_survey counts them the same
+         * way. So it is shown as a count, with its committed half
+         * folded into the scholars line above it. */
+        out_of[3] = 0;                   cap_of[3] = view->research_boats;
+
+        line.h = 24.0f;
+        for (n = 0; n < 4; n++) {
+            cell   = ui_split_h(line, 4, n, 8.0f);
+            ui_list_push(out, ui_id(UI_GROUP_CAPACITY, (uint16_t)n), cell,
+                         CAP_LABEL[n], out_of[n] * 1000 + cap_of[n],
+                         UI_W_HEADER);
+        }
+
+        /* The lever. Owner only, and it says what it will DO rather
+         * than what it is, because a toggle labelled with its current
+         * state is the oldest ambiguity in this kind of panel. */
+        cell   = line;
+        cell.y = line.y + 34.0f;
+        cell.h = 28.0f;
+        cell.w = 300.0f;
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_INSURE), cell,
+                     view->insured ? "Stop insuring shipments"
+                                   : "Insure every shipment",
+                     view->insured ? 0 : 1, 0);
+        if (!view->yours) ui_list_disable_last(out, REJ_NOT_OWNER);
+    }
+
     {
         UiRect footer  = ui_row(&l, INVENTORY_FOOTER_H);
         UiRect prev    = { footer.x, footer.y + 4.0f, 70.0f, 30.0f };
@@ -176,11 +239,13 @@ InventoryHit inventory_hit(const UiList *list, const UiState *st,
     InventoryHit    hit;
     const UiWidget *w;
 
+    memset(&hit, 0, sizeof(hit));
     hit.kind = INVENTORY_HIT_OUTSIDE;
     hit.page = st ? st->inventory_page : 0;
 
     w = ui_list_hit(list, x, y);
     if (!w) return hit;
+    hit.rect = w->rect;
 
     if (ui_id_group(w->id) == UI_GROUP_ACTION) {
         switch ((UiAction)ui_id_value(w->id)) {
@@ -189,6 +254,13 @@ InventoryHit inventory_hit(const UiList *list, const UiState *st,
         case UI_ACTION_NEXT:
             hit.kind = INVENTORY_HIT_PAGE;
             hit.page = w->value;
+            break;
+        case UI_ACTION_INSURE:
+            /* The value is what the lever will SET it to, decoded here
+             * rather than re-read from the view — so the click and the
+             * label the player read cannot disagree (UI_PLAN N8). */
+            hit.kind = INVENTORY_HIT_INSURANCE;
+            hit.on   = w->value;
             break;
         default: hit.kind = INVENTORY_HIT_NONE; break;
         }

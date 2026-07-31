@@ -1,7 +1,7 @@
 # UI/UX Reorganisation Plan — v2, aligned with MMO_PLAN.md
 
-> Status: **complete.** All numbered phases and all M-phases have
-> landed. What remains is in the "explicitly out of scope" list below,
+> Status: **complete.** All numbered phases, all M-phases and all
+> N-phases (N1–N8) have landed. What remains is in the "explicitly out of scope" list below,
 > plus the deferrals noted per phase. Phases 0 (`ui_kit` + `UiSnapshot`), 0.5
 > (RejectReason), 1 (exchange screen), 2 (data model), 3 (HUD tabs) and
 > 4 (vitals, stores, overlay arbiter), 5 (island context) and 6 (confirm
@@ -859,21 +859,113 @@ dispatching an expedition — N7's, though a destination whose expedition
 is already out says so here, never naming the passage it is looking for,
 because not knowing is what you are paying for.
 
-**N5 — the sea.** `world_ui` grows routes as paths, waypoints by name,
-shipments moving along them, and the lairs the player knows of. The map
-becomes the intelligence surface the design has assumed since
-MARITIME_PLAN was written.
+**N5 — the sea. Done.** `world_ui` grows routes as paths (harbour, the
+waypoints they thread, harbour), waypoints by name, shipments where
+`sea_route_point` actually puts them, and the lairs on the way.
 
-**N6 — the yard and the fleet.** Choosing a hull at the shipyard (the
-guns-versus-hold trade is invisible today), forming a convoy, and hull
-damage and refit.
+The geometry moved out of the drawing. This document puts `world_ui`
+out of scope for the widget kit and that stands — a map does not want a
+layout cursor — but "out of scope for rows and columns" turned out not
+to mean "untestable": a route drawn off the edge of the screen, a marker
+that runs backwards, or a passage plotted that the player has never seen
+are all catchable headlessly, and none of them could be caught while the
+geometry lived inside a function that also called SDL. `sea_view.c` (in
+the UI library) answers where everything goes; `world_ui.c` paints it.
+The projection went with it unchanged, because everything spatial is
+derived from it.
 
-**N7 — expeditions.** Dispatching a survey, what it costs, what is at
-risk, and what came back.
+*Water you have never seen is not plotted*, and that is scoping rather
+than hiding for a reason worth writing down: a list can print "unknown"
+in a cell, but a line cannot be drawn unknown without inventing where it
+goes, and inventing it is worse than omitting it. The passages screen
+still shows the row, still counts down its expiry, and still sells you
+the map — and buying the map is what puts the water on this one. A
+passage you know but hold no chart for draws dimmer than one you can
+sail, because knowing and holding are different things.
 
-**N8 — insurance and capacity.** The standing policy toggle, merchants
-and hulls committed versus available, research boats. Small additions to
-the island panel; last because each is one number and a switch.
+Shipments are everyone's, in the muted style the feed's ghosts already
+taught: a booking is the public half of the order book, which is what
+makes the book the honest channel. A raided one stays on the map, since
+"nothing arrived, and here is where it stopped" is the information.
+
+**N6 — the yard and the fleet. Done.** On `Y`: the three hulls with
+guns, what they survive, what they carry and what they cost, side by
+side; and the fleet, each ship with its class, condition, position and
+who it is guarding.
+
+The phase existed because a decision the sim makes was unreachable.
+`game_build_ship()` is `game_build_ship_class(SHIP_MERCHANTMAN)` and the
+confirm popup called it with no way to say otherwise — so **every ship
+in every game since MARITIME_PLAN Phase 5 has been a merchantman**, not
+by choice but for want of a screen. Escorts were the same: the command
+has existed since Phase 5a with nothing to issue it.
+
+Condition is the other half of it. A hull is the only thing about a ship
+that moves and it only moves down; until now that number lived in the
+sim alone, which meant sending a half-wrecked warship at a fleet without
+knowing it was half-wrecked. The guns column is
+`ship_fighting_strength()` — what the hull is worth *now* — not the class
+table's figure, because the first is what the bet is made against.
+
+There is **no refit**: the sim has no command that repairs a hull, and
+inventing one here would mean inventing it in the sim, which is a design
+decision and not a UI phase's to make.
+
+*The escort cycler could not release, at first.* Modulo arithmetic round
+the fleet lands back on the ship you are already guarding when there are
+two of them, so a convoy could never be dissolved. It walks ascending
+and off the end into "nobody" now, which terminates by construction; the
+test cycles the whole fleet and asserts it comes back round, so a cycle
+that could not release would hang rather than pass.
+
+**N7 — expeditions. Done.** On the passages screen, because that is
+where a destination already has a row and where the answer will appear:
+one button per island, and a line saying once what an expedition commits
+(a scholar, a research boat, a blank chart) and how often it finds
+nothing — the odds read from the sim's own constant, since a screen
+quoting its own number would be a second opinion about a gamble. You
+still cannot name the passage; the command carries an island.
+
+**The vocabulary grew by three, and that is the substance of the
+phase.** `sim_survey` refused with `REJ_UNAVAILABLE` whether you had no
+scholar, no boat, or had already charted every passage on that crossing
+— three different facts wearing one sentence, and the last of them is
+not a problem to be fixed but a thing to be told. It answers
+`REJ_NO_CREW`, `REJ_NO_BOAT` and `REJ_NOTHING_TO_FIND` now.
+
+*Which made the ORDER of the checks load-bearing.* The screen tested
+"nothing left to find" first, because that is the most useful thing to
+know — while the sim tests the crew first, so a harbour with no scholar
+AND nothing to find showed one sentence and would have been refused with
+another. Sorting refusals by helpfulness produces a screen that is right
+about the world and wrong about the refusal, which is exactly the drift
+decision 3 exists to prevent. The checks run in the sim's order now, and
+the test compares the button's reason against `sim_apply_reason()`'s
+across several broken worlds rather than asserting either alone.
+
+Deferred: a failed expedition says so only in the log. The vitals strip
+is a pure function of a snapshot and cannot see a transition, which
+wants a small piece of sim state rather than a cleverer rule.
+
+**N8 — insurance and capacity. Done.** In the stores overlay, because
+goods are only half of what an island holds: merchants, hulls, scholars
+and research boats are the other half — capital rather than stock — and
+until now the only way to discover that every merchant was committed was
+to watch an order sit unfilled.
+
+Committed *and* capacity, always as a pair: "2 merchants" cannot say
+whether that is comfortable or the whole of what you have, and which it
+is decides whether to post another order. A research boat is shown as a
+count rather than a pair, because there is nothing to be out of until
+one sails and `sim_survey` counts them the same way.
+
+The standing policy lever sits with them: it is the same kind of fact —
+a property of the harbour rather than of any one voyage — and the
+premium it pays is per route, so throwing it is a decision about
+everything this port sends. It is labelled with what it will DO rather
+than what it is, and its widget value is what it sets, because a toggle
+labelled with its current state is the oldest ambiguity in a panel like
+this.
 
 ### Risks
 
@@ -1015,4 +1107,10 @@ that link failure *is* the purity test.
 | `src/chart_view.c` / `.h` | N4 | new — passages, the expiry clock, the route picker |
 | `src/chart_ui.c` / `.h` | N4 | new — the passages' drawer |
 | `src/sea.c` / `.h` | N4 | `sea_pair_next_rotation()` — one schedule, two callers |
+| `src/sea_view.c` / `.h` | N5 | new — paths, waypoints, shipments, lairs; the projection |
+| `src/world_ui.c` | N5 | becomes the sea's drawer |
+| `src/yard_view.c` / `.h` | N6 | new — the hulls on offer, the fleet afloat |
+| `src/yard_ui.c` / `.h` | N6 | new — the yard's drawer |
+| `src/chart_view.c` | N7 | the expedition button and its refusals |
+| `src/inventory_view.c` | N8 | the harbour block and the policy lever |
 | `src/fonts.c` | M4 | `TTF_Text` migration (scheduled) |
