@@ -777,6 +777,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                               (float)gs->input.logical_y);
             if (ihit.kind == INVENTORY_HIT_PAGE)
                 app->ui.inventory_page = ihit.page;
+            else if (ihit.kind == INVENTORY_HIT_INSURANCE) {
+                /* The standing policy: every shipment this harbour
+                 * dispatches, insured at its ROUTE's premium (N8). */
+                game_set_insurance(gs, gs->current_island, ihit.on);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ihit.rect));
+            }
             else if (ihit.kind == INVENTORY_HIT_CLOSE ||
                      ihit.kind == INVENTORY_HIT_OUTSIDE)
                 gs->inventory_open = 0;

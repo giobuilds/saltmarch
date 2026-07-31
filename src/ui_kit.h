@@ -97,7 +97,8 @@ enum {
     UI_GROUP_HULL,          /* value = ShipClass (the row)           */
     UI_GROUP_BUILD_HULL,    /* value = ShipClass (the button)        */
     UI_GROUP_ESCORT,        /* value = ship index; widget value=target */
-    UI_GROUP_SURVEY         /* value = the island to look for a way to */
+    UI_GROUP_SURVEY,        /* value = the island to look for a way to */
+    UI_GROUP_CAPACITY       /* value = which harbour capacity (N8)   */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are
@@ -122,7 +123,11 @@ typedef enum {
     UI_ACTION_QTY,        /* value = step                            */
     UI_ACTION_LIMIT,      /* value = step                            */
     UI_ACTION_MARKET,     /* drop the explicit limit, follow the quote*/
-    UI_ACTION_POST        /* submit the draft                        */
+    UI_ACTION_POST,       /* submit the draft                        */
+
+    /* The harbour's standing marine policy (UI_PLAN N8). The widget's
+     * value is what the lever will set it to, not what it is. */
+    UI_ACTION_INSURE
 } UiAction;
 
 /* ---- the layout cursor ------------------------------------

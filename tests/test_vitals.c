@@ -291,6 +291,85 @@ static void test_inventory(void)
     }
 }
 
+/* ---- 6b. the harbour, and the lever (UI_PLAN N8) ---------- */
+static void test_harbour_block(void)
+{
+    UiSnapshot      s;
+    InventoryView   v;
+    UiState         st;
+    UiList          list;
+    const UiWidget *w;
+    InventoryHit    hit;
+    int             i, caps = 0;
+
+    printf("\n=== what a harbour can put to sea ===\n");
+
+    healthy(&s);
+    /* Ours, so the lever is live: `healthy` leaves the island unowned,
+     * which is a different assertion from the ones here. */
+    s.local_player_id              = 1;
+    s.islands[0].owner             = 1;
+    s.islands[0].merchants_out     = 2;
+    s.islands[0].merchant_capacity = 3;
+    s.islands[0].hulls_out         = 1;
+    s.islands[0].hull_capacity     = 1;      /* every hull committed  */
+    s.islands[0].scholars_out      = 0;
+    s.islands[0].scholar_capacity  = 2;
+    s.islands[0].research_boats    = 4;
+    s.islands[0].insure_shipments  = 0;
+
+    inventory_view_build(&v, &s, 0);
+    memset(&st, 0, sizeof(st));
+    inventory_build(&list, &v, &st, 1920.0f, 1080.0f);
+
+    CHECK(v.merchants_out == 2 && v.merchant_capacity == 3 &&
+          v.hulls_out == 1 && v.hull_capacity == 1 &&
+          v.research_boats == 4,
+          "capital is carried through as committed AND capacity");
+
+    for (i = 0; i < list.count; i++)
+        if (ui_id_group(list.items[i].id) == UI_GROUP_CAPACITY) caps++;
+    CHECK(caps == 4,
+          "merchants, hulls, scholars and boats each get a line");
+
+    /* The lever says what it will DO, and its value is what it sets —
+     * a toggle labelled with its current state is the oldest ambiguity
+     * in a panel like this. */
+    w = ui_list_find(&list, ui_id(UI_GROUP_ACTION, UI_ACTION_INSURE));
+    CHECK(w && w->value == 1, "the lever offers to start insuring");
+    if (w) {
+        hit = inventory_hit(&list, &st, w->rect.x + w->rect.w * 0.5f,
+                            w->rect.y + w->rect.h * 0.5f);
+        CHECK(hit.kind == INVENTORY_HIT_INSURANCE && hit.on == 1,
+              "and the click carries what to set it to");
+    }
+
+    s.islands[0].insure_shipments = 1;
+    inventory_view_build(&v, &s, 0);
+    inventory_build(&list, &v, &st, 1920.0f, 1080.0f);
+    w = ui_list_find(&list, ui_id(UI_GROUP_ACTION, UI_ACTION_INSURE));
+    CHECK(w && w->value == 0, "once on, it offers to stop");
+
+    /* Somebody else's harbour: readable, not throwable. */
+    s.islands[0].owner = 999u;
+    inventory_view_build(&v, &s, 0);
+    inventory_build(&list, &v, &st, 1920.0f, 1080.0f);
+    w = ui_list_find(&list, ui_id(UI_GROUP_ACTION, UI_ACTION_INSURE));
+    CHECK(w && (w->flags & UI_W_DISABLED) &&
+          w->reason == (uint8_t)REJ_NOT_OWNER,
+          "a foreign harbour's policy is not ours to change");
+
+    {
+        int inside = 1;
+        for (i = 0; i < list.count; i++) {
+            UiRect r = list.items[i].rect;
+            if (r.x < 0.0f || r.y < 0.0f ||
+                r.x + r.w > 1920.0f || r.y + r.h > 1080.0f) inside = 0;
+        }
+        CHECK(inside, "and the taller panel still fits on screen");
+    }
+}
+
 /* ---- 7. the island header (UI_PLAN Phase 5) -------------- */
 static void test_island_bar(void)
 {
@@ -389,6 +468,7 @@ int main(void)
     test_stalled_sim();
     test_overlay_arbiter();
     test_inventory();
+    test_harbour_block();
     test_island_bar();
 
     if (failures == 0) { printf("\nPASSED\n"); return 0; }
