@@ -8,7 +8,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-builddir="$root/build"
+# Overridable so a sanitized build can live beside the ordinary one:
+# instrumented objects and clean objects cannot share a directory, and
+# re-configuring back and forth is how you end up testing neither.
+builddir="${SALTMARCH_BUILD_DIR:-$root/build}"
 linkfile="$builddir/CMakeFiles/saltmarch.dir/link.txt"
 simlib="$builddir/libsaltmarch_sim.a"
 netlib="$builddir/libsaltmarch_net.a"
@@ -30,6 +33,20 @@ fi
 objs=$(tr ' ' '\n' < "$linkfile" | grep '\.c\.o$' | grep -v '/main\.c\.o$' \
        | sed "s|^|$builddir/|")
 sdlflags=$(pkg-config --cflags --libs sdl3 sdl3-ttf 2>/dev/null || echo "-lSDL3 -lSDL3_ttf")
+
+# If the build was configured with sanitizers, these programs have to be
+# compiled and linked with the same instrumentation — the objects they
+# link were, and mixing the two fails at link with undefined __asan_*
+# symbols. CMake writes what it actually used, so this reads the build
+# rather than being told a second time and drifting from it.
+# $CC, not cc, so this can be pointed at the same compiler the build
+# used. It matters for a sanitized build: the objects carry that
+# toolchain's sanitizer runtime, and linking them with another one fails.
+sanflags=""
+if [ -f "$builddir/sanitizer.flags" ]; then
+    sanflags=$(cat "$builddir/sanitizer.flags")
+    [ -n "$sanflags" ] && echo "(sanitized: $sanflags)"
+fi
 
 status=0
 for src in "$root"/tests/test_*.c; do
@@ -78,11 +95,22 @@ for src in "$root"/tests/test_*.c; do
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;
     esac
 
+    # MemorySanitizer needs every linked object instrumented, and SDL is
+    # not — so under it only the tests that link none of it mean
+    # anything. Skipping the rest is not a loss worth mourning: the
+    # uninitialised-read bug this catches lives in hashed world state,
+    # which is exactly the half that has no SDL in it (ci/msan.sh).
+    if [ -n "${SALTMARCH_SDL_FREE_ONLY:-}" ] && [ -n "$link_sdl" ]; then
+        echo "  skip: needs SDL"
+        echo
+        continue
+    fi
+
     # shellcheck disable=SC2086
-    cc -std=c99 -Wall -Wextra -I"$root/src" "$src" $link_objs "$simlib" \
-       $link_sdl -lm -o "$root/build/$name"
+    "${CC:-cc}" -std=c99 -Wall -Wextra -I"$root/src" $sanflags "$src" $link_objs \
+       "$simlib" $link_sdl -lm -o "$builddir/$name"
     # Headless: no window/audio device needed for these.
-    if ! SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$root/build/$name"; then
+    if ! SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$builddir/$name"; then
         status=1
     fi
     echo

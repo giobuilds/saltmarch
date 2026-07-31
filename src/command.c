@@ -211,7 +211,7 @@ int command_log_append(GameState *gs, const Command *c)
     return cmd_log_push(gs, c);
 }
 
-int command_log_set(GameState *gs, const Command *cmds, int n)
+int command_log_set_bytes(GameState *gs, const void *bytes, int n)
 {
     if (n < 0) return 0;
 
@@ -225,10 +225,15 @@ int command_log_set(GameState *gs, const Command *cmds, int n)
         gs->cmd_cap = ncap;
     }
 
-    if (n > 0) memcpy(gs->cmd_log, cmds, (size_t)n * sizeof(Command));
+    if (n > 0) memcpy(gs->cmd_log, bytes, (size_t)n * sizeof(Command));
     gs->cmd_count   = n;
     gs->cmd_applied = 0;
     return 1;
+}
+
+int command_log_set(GameState *gs, const Command *cmds, int n)
+{
+    return command_log_set_bytes(gs, cmds, n);
 }
 
 void command_log_free(GameState *gs)

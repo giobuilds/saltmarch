@@ -463,6 +463,20 @@ int game_verify_determinism(GameState *gs);
  * is left unchanged on failure). */
 int  command_log_set(GameState *gs, const Command *cmds, int n);
 
+/* The same, from bytes that may not be aligned for a Command.
+ *
+ * A save file is a header, then a snapshot of arbitrary length, then the
+ * command tail; a MSG_WORLD frame has the same shape. So the commands
+ * begin at an offset nobody chose, and casting that to `Command *` is
+ * undefined behaviour whether or not it is then dereferenced — C permits
+ * the conversion only when the address is correctly aligned.
+ *
+ * It happens to work on x86, which is why it survived until a sanitizer
+ * looked at it. `memcpy` from a `const void *` has no alignment
+ * requirement at all, which is why this exists as its own entry point
+ * rather than as a cast at each call site. */
+int  command_log_set_bytes(GameState *gs, const void *bytes, int n);
+
 /* Append one ALREADY-STAMPED command to the log without applying it —
  * the guest's half of lockstep: authoritative commands arrive from the
  * host stamped for a future tick, and sim_run_one_tick applies them
@@ -474,7 +488,7 @@ int  command_log_append(GameState *gs, const Command *c);
  * parsing its file; public so the net layer can install a world
  * received over the wire (join and resync). Marks replay_valid. */
 int  game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
-                        const Command *cmds, int n);
+                        const void *cmds, int n);
 
 /* Free the command log. Called by game_free(); safe on an empty log. */
 void command_log_free(GameState *gs);
@@ -551,9 +565,13 @@ uint64_t game_scrub_min(const GameState *gs);
  * running forward to `tick`. The snapshot-based counterpart of
  * game_install_world, and how a client joins a server whose history has
  * been truncated. Records the snapshot as this world's history floor. */
+/* `cmds` is bytes rather than a Command array on purpose: its callers
+ * point it into the middle of a save file or a network frame, just past
+ * a snapshot of arbitrary length, where nothing guarantees the alignment
+ * a Command wants. See command_log_set_bytes(). */
 int game_install_from_snapshot(GameState *gs, const unsigned char *snap,
                                size_t snap_len, uint64_t tick,
-                               const Command *cmds, int n);
+                               const void *cmds, int n);
 
 /* Adopt (a copy of) `buf` as the world's history floor, or drop it. */
 int  game_set_history_floor(GameState *gs, const unsigned char *buf,

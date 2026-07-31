@@ -161,6 +161,54 @@ jobs:
           ./build/saltmarch_replay --record-ui ui-fixture.smlog --seed 777
           ./build/saltmarch_replay --replay ui-fixture.smlog --verify-ui
 
+  sanitizers:
+    name: Sanitizers (clang, ASan/UBSan/MSan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: fedora:latest
+
+    # The runtime half of the warning flags. -Wconversion and friends
+    # argue about types at compile time; this argues about memory and
+    # arithmetic while the program runs, and it covers a class nothing
+    # else here can see:
+    #
+    #   * snapshot.c decodes bytes off disk and off a socket, net.c
+    #     parses frames from an untrusted peer, account.c parses a file
+    #     an admin edits by hand. "It did not crash" and "it read
+    #     nothing out of bounds" are different claims.
+    #   * the world is HASHED, so a hash over uninitialised or overrun
+    #     memory can be stable within one run and differ across
+    #     machines — which is the failure the other three jobs are least
+    #     able to see, because each only ever compares against itself.
+    #
+    # Its own job rather than a step on the Linux one: a sanitized build
+    # is a separate configure, 2-3x slower to run, and a failure here
+    # should read as "the code has a runtime defect" rather than as the
+    # Linux build being broken.
+    steps:
+      - name: Install toolchain and dependencies
+        # clang rather than gcc: Fedora ships the sanitizer runtimes with
+        # compiler-rt, while gcc's live in separate libasan/libubsan
+        # packages. Fewer moving parts for the same instrumentation.
+        run: dnf install -y clang cmake make git compiler-rt
+
+      - uses: actions/checkout@v5
+
+      - name: Install SDL3 and SDL3_ttf
+        run: dnf install -y SDL3-devel SDL3_ttf-devel
+
+      - name: Address and undefined behaviour
+        # Everything: the headless suite, both replays, the real client
+        # and a real TCP server with its adversarial probes. A sanitizer
+        # only reports what actually executed, so coverage IS the tool.
+        run: ./ci/sanitize.sh address
+
+      - name: Uninitialised memory (SDL-free half)
+        # MemorySanitizer needs every linked object instrumented and SDL
+        # is not, so this runs only where SDL does not reach — which
+        # happens to be exactly where hashed world state lives.
+        run: ./ci/sanitize.sh memory
+
   windows:
     name: Windows (MSVC)
     runs-on: windows-latest

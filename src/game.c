@@ -727,7 +727,7 @@ int game_load(GameState *gs, const char *path)
     size_t         size, need, snap_bytes;
     unsigned char *buf;
     SaveHeader     hdr;
-    const Command *cmds;
+    const unsigned char *cmds;
 
     if (!f) {
         sim_log("game_load: could not open %s", path);
@@ -787,7 +787,10 @@ int game_load(GameState *gs, const char *path)
         return 0;
     }
 
-    cmds = (const Command *)(buf + sizeof(hdr) + snap_bytes);
+    /* Bytes, not a Command pointer: `snap_bytes` is whatever the
+     * snapshot encoded to, so this address has no alignment anybody
+     * chose, and the conversion alone is undefined (command.h). */
+    cmds = buf + sizeof(hdr) + snap_bytes;
 
     if (snap_bytes) {
         /* A checkpoint: the world is restored, not re-derived. The
@@ -801,7 +804,7 @@ int game_load(GameState *gs, const char *path)
             free(buf);
             return 0;
         }
-        if (!command_log_set(gs, cmds, hdr.cmd_count)) {
+        if (!command_log_set_bytes(gs, cmds, hdr.cmd_count)) {
             sim_log("game_load: out of memory installing %d pending commands",
                     hdr.cmd_count);
             free(buf);
@@ -909,10 +912,10 @@ int game_load_commands(const char *path, Command **out_cmds, int *out_count)
  * snapshot playing the part tick 0 used to. */
 int game_install_from_snapshot(GameState *gs, const unsigned char *snap,
                                size_t snap_len, uint64_t tick,
-                               const Command *cmds, int n)
+                               const void *cmds, int n)
 {
     if (!snapshot_decode(gs, snap, snap_len)) return 0;
-    if (!command_log_set(gs, cmds, n))        return 0;
+    if (!command_log_set_bytes(gs, cmds, n))  return 0;
 
     if (!game_set_history_floor(gs, snap, snap_len, gs->sim_tick_no))
         return 0;
@@ -922,11 +925,11 @@ int game_install_from_snapshot(GameState *gs, const unsigned char *snap,
 }
 
 int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
-                       const Command *cmds, int n)
+                       const void *cmds, int n)
 {
     game_reset_world(gs, seed);
 
-    if (!command_log_set(gs, cmds, n))
+    if (!command_log_set_bytes(gs, cmds, n))
         return 0;
 
     while (gs->sim_tick_no < tick)
