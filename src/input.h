@@ -44,6 +44,9 @@ typedef struct {
      * through it, and the two screens answer halves of one question. */
     int chart_toggle;
 
+    /* Edge-triggered on Y: opens/closes the shipyard (UI_PLAN N6). */
+    int yard_toggle;
+
     /* Edge-triggered on F8: the time-travel scrubber (MMO_PLAN later
      * phases). */
     int scrub_toggle;

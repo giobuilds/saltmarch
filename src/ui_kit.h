@@ -89,7 +89,14 @@ enum {
      * row was showing instead. */
     UI_GROUP_ROUTE,         /* value = route id (the row)            */
     UI_GROUP_CHART_BUY,     /* value = route id; widget value=price  */
-    UI_GROUP_CHART_SELL     /* value = route id; widget value=price  */
+    UI_GROUP_CHART_SELL,    /* value = route id; widget value=price  */
+    /* The yard and the fleet (UI_PLAN N6). A hull row is named by its
+     * ShipClass and a fleet row by its ship index; the escort button's
+     * widget value is the ship it would guard NEXT, decoded at hit
+     * time so the label and the click cannot disagree. */
+    UI_GROUP_HULL,          /* value = ShipClass (the row)           */
+    UI_GROUP_BUILD_HULL,    /* value = ShipClass (the button)        */
+    UI_GROUP_ESCORT         /* value = ship index; widget value=target */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are

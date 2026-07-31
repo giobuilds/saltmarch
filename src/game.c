@@ -52,6 +52,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->escrow_open           = 0;
     gs->book_open             = 0;
     gs->charts_open           = 0;
+    gs->yard_open             = 0;
     gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
@@ -216,6 +217,7 @@ GameOverlay game_topmost_overlay(const GameState *gs)
     if (gs->escrow_open)           return UI_OVERLAY_ESCROW;
     if (gs->book_open)             return UI_OVERLAY_BOOK;
     if (gs->charts_open)           return UI_OVERLAY_CHARTS;
+    if (gs->yard_open)             return UI_OVERLAY_YARD;
     if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
     if (gs->world_open)            return UI_OVERLAY_WORLD;
     return UI_OVERLAY_NONE;
@@ -604,8 +606,10 @@ typedef struct {
  *
  * v27 (UI_PLAN N4): IntentUiState gains the passages overlay's page,
  * for the same reason and at the same cost as v26 — which page a click
- * landed on decides which rows were under the cursor. */
-#define SAVE_VERSION 27u
+ * landed on decides which rows were under the cursor.
+ *
+ * v28 (UI_PLAN N6): and the shipyard's, on the same argument. */
+#define SAVE_VERSION 28u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1840,7 +1844,7 @@ void game_confirm_upgrade(GameState *gs, int building_idx)
     confirm_set(gs, CONFIRM_UPGRADE, first, n > 1 ? second : none, n > 1);
 }
 
-void game_confirm_ship(GameState *gs)
+void game_confirm_ship_class(GameState *gs, int klass)
 {
     Command c, none;
 
@@ -1848,7 +1852,13 @@ void game_confirm_ship(GameState *gs)
     memset(&none, 0, sizeof(none));
     c.kind = CMD_BUILD_SHIP;
     c.a    = gs->current_island;
+    c.b    = klass;   /* which hull — the yard offers three (N6) */
     confirm_set(gs, CONFIRM_SHIP, c, none, 0);
+}
+
+void game_confirm_ship(GameState *gs)
+{
+    game_confirm_ship_class(gs, SHIP_MERCHANTMAN);
 }
 
 void game_confirm_choose(GameState *gs, int which)

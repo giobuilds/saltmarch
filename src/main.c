@@ -26,6 +26,7 @@
 #include "exchange_view.h"/* UI_PLAN Phase 1: the exchange surface      */
 #include "book_ui.h"      /* UI_PLAN N3: the order book (pulls its view)*/
 #include "chart_ui.h"     /* UI_PLAN N4: the passages (pulls its view)  */
+#include "yard_ui.h"      /* UI_PLAN N6: the yard and the fleet         */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
 /* Feed and NetSession live here, beside the window — NOT in GameState.
@@ -63,6 +64,8 @@ typedef struct {
     /* Where everything spatial goes on the world map (UI_PLAN N5).
      * Rebuilt each frame the map is open, like the other views. */
     SeaView       sea_view;
+    YardView      yard;
+    UiList        yard_list;
     HudView       hud;
     UiList        hud_list;
     InventoryView inventory;
@@ -343,6 +346,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                     (float)SCREEN_W, (float)SCREEN_H);
     }
 
+    if (gs->yard_open) {
+        yard_view_build(&app->yard, &app->snap, gs->current_island);
+        yard_build(&app->yard_list, &app->yard, &app->ui,
+                   (float)SCREEN_W, (float)SCREEN_H);
+    }
+
     /* The sea, whenever the map is open (UI_PLAN N5). Rebuilt rather
      * than folded: unlike a row under a cursor, a path has nothing to
      * lose by being recomputed — it is where the water is. */
@@ -414,6 +423,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
     }
 
+    /* Y: the shipyard (UI_PLAN N6). */
+    if (gs->input.yard_toggle) {
+        gs->yard_open = !gs->yard_open;
+        if (gs->yard_open) app->ui.yard_page = 0;
+    }
+
     /* UI_PLAN M1: remember the state this frame was drawn in, so a
      * click recorded below carries the screen the player was actually
      * looking at. Captured BEFORE the click is handled — afterwards the
@@ -432,6 +447,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         app->intent.ui.book_qty       = app->ui.book_qty;
         app->intent.ui.book_limit     = app->ui.book_limit;
         app->intent.ui.chart_page     = (uint16_t)app->ui.chart_page;
+        app->intent.ui.yard_page      = (uint16_t)app->ui.yard_page;
         app->intent.ui.hovered_row    = (int16_t)gs->hovered_row;
         app->intent.ui.hovered_col    = (int16_t)gs->hovered_col;
         app->intent.ui.current_island = (int16_t)gs->current_island;
@@ -719,6 +735,34 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
+        /* The yard (UI_PLAN N6). Laying down a hull opens the one
+         * confirmation carrying the command it will submit, so the
+         * popup shows which hull and what it costs (Phase 6). */
+        } else if (gs->yard_open) {
+            YardHit yh = yard_hit(&app->yard_list, &app->yard, &app->ui,
+                                  (float)gs->input.logical_x,
+                                  (float)gs->input.logical_y);
+            switch (yh.kind) {
+            case YARD_HIT_BUILD:
+                game_confirm_ship_class(gs, yh.klass);
+                break;
+            case YARD_HIT_ESCORT:
+                game_set_escort(gs, yh.ship, yh.target);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(yh.rect));
+                break;
+            case YARD_HIT_PAGE:
+                app->ui.yard_page = yh.page;
+                break;
+            case YARD_HIT_NONE:
+                break;      /* the panel: absorb it */
+            case YARD_HIT_CLOSE:
+            case YARD_HIT_OUTSIDE:
+            default:
+                gs->yard_open = 0;
+                break;
+            }
+
         } else if (gs->inventory_open) {
             InventoryHit ihit = inventory_hit(&app->inventory_list, &app->ui,
                                               (float)gs->input.logical_x,
@@ -941,6 +985,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         case UI_OVERLAY_ESCROW:    gs->escrow_open    = 0; break;
         case UI_OVERLAY_BOOK:      gs->book_open      = 0; break;
         case UI_OVERLAY_CHARTS:    gs->charts_open    = 0; break;
+        case UI_OVERLAY_YARD:      gs->yard_open      = 0; break;
         case UI_OVERLAY_INVENTORY: gs->inventory_open = 0; break;
         case UI_OVERLAY_WORLD:     gs->world_open     = 0; break;
         case UI_OVERLAY_NONE:
@@ -1042,6 +1087,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->charts_open)
         chart_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->chart_list,
                       &app->charts, gs->input.logical_x, gs->input.logical_y);
+
+    /* And the yard (UI_PLAN N6). */
+    if (gs->yard_open)
+        yard_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->yard_list,
+                     &app->yard, gs->input.logical_x, gs->input.logical_y);
 
     /* The one confirmation, on top when open (UI_PLAN Phase 6). It
      * shows the literal Command it will submit; four popups used to be

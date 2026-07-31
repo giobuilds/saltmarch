@@ -120,6 +120,18 @@ typedef struct {
     int32_t  from_island, to_island;
     float    progress;           /* 0..1, derived; cosmetic only       */
     int32_t  cargo[RES_COUNT];
+
+    /* What kind of hull, and how much of it is left (UI_PLAN N6). The
+     * guns-versus-hold trade is made at the yard and then invisible
+     * for the rest of the ship's life, which is most of the reason
+     * nobody ever built anything but a merchantman. `hull_max` rides
+     * along so a condition can be shown as a fraction without the UI
+     * holding a copy of the class table's numbers. */
+    int32_t  klass;              /* ShipClass                          */
+    int32_t  guns, hull, hull_max;
+    int32_t  hold;               /* per-resource capacity of this hull */
+    int32_t  escorting;          /* ship index it guards, or -1        */
+    uint8_t  mine;               /* the local player commands it       */
 } UiShip;
 
 /* How the simulation itself is doing. Not world state — these are
@@ -276,6 +288,7 @@ typedef struct {
     int32_t   book_limit;        /* 0 => follow the market's quote     */
 
     int32_t   chart_page;        /* the passages overlay (UI_PLAN N4)  */
+    int32_t   yard_page;         /* the shipyard overlay (UI_PLAN N6)  */
 } UiState;
 
 /* Note: which overlay is OPEN is not here. Phase 0 sketched a

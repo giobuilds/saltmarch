@@ -224,6 +224,11 @@ typedef struct GameState {
      * view lives on the client beside them and only the flag is here. */
     int  charts_open;
 
+    /* The shipyard (UI_PLAN N6): the hulls on offer and the fleet
+     * already afloat. Rebuilt from the snapshot each frame, so only
+     * the flag lives here. */
+    int  yard_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed
@@ -503,7 +508,8 @@ typedef enum {
     UI_OVERLAY_INVENTORY,
     UI_OVERLAY_WORLD,
     UI_OVERLAY_BOOK,        /* the order book (UI_PLAN N3)             */
-    UI_OVERLAY_CHARTS       /* the passages (UI_PLAN N4)               */
+    UI_OVERLAY_CHARTS,      /* the passages (UI_PLAN N4)               */
+    UI_OVERLAY_YARD         /* the shipyard (UI_PLAN N6)               */
 } GameOverlay;
 
 GameOverlay game_topmost_overlay(const GameState *gs);
@@ -667,6 +673,11 @@ void game_confirm_build(GameState *gs, int row, int col,
 void game_confirm_demolish(GameState *gs, int building_idx);
 void game_confirm_upgrade(GameState *gs, int building_idx);
 void game_confirm_ship(GameState *gs);
+
+/* The same, naming which hull the yard should lay down (UI_PLAN N6).
+ * game_confirm_ship() is this with SHIP_MERCHANTMAN, which is what
+ * every ship built before the yard had a screen was. */
+void game_confirm_ship_class(GameState *gs, int klass);
 
 /* Pick between the two payment options (0 = the primary, 1 = the
  * alternative). Ignored when the action offers only one. */

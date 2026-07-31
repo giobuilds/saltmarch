@@ -65,6 +65,9 @@ typedef struct {
      * screen the player never saw. */
     uint16_t chart_page;
 
+    /* And the shipyard's (UI_PLAN N6), for the same reason. */
+    uint16_t yard_page;
+
     /* The tile under the cursor, as the frame computed it. Recorded
      * rather than re-derived because it comes from the camera, and the
      * camera is client state that never enters the log — a replay has
