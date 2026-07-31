@@ -723,6 +723,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 fx_reject_expect(&app->fx, gs->cmd_seq_last,
                                  fx_anchor_rect(ch.rect));
                 break;
+            case CHART_HIT_SURVEY:
+                /* You cannot name the passage — that is what you are
+                 * paying to find out — so the command names an island
+                 * (UI_PLAN N7, MARITIME_PLAN Phase 3d). */
+                game_survey(gs, gs->current_island, ch.island);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ch.rect));
+                break;
             case CHART_HIT_PAGE:
                 app->ui.chart_page = ch.page;
                 break;

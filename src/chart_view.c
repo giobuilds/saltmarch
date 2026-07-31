@@ -115,13 +115,21 @@ static void chart_quotes(const UiSnapshot *snap, int32_t *ask, int32_t *bid)
  * rival's research is blanked before the snapshot is taken, so this
  * cannot show what it is not told even when it is running against a
  * single-player world that happens to know everything. */
-static int survey_out(const UiSnapshot *snap, int from, int to)
+static int survey_out(const UiSnapshot *snap, int from, int to,
+                      uint64_t *out_back)
 {
-    int i;
-    for (i = 0; i < snap->survey_count; i++)
-        if (snap->survey[i].from_island == from &&
-            snap->survey[i].to_island   == to) return 1;
-    return 0;
+    int i, found = 0;
+
+    for (i = 0; i < snap->survey_count; i++) {
+        if (snap->survey[i].from_island != from) continue;
+        if (snap->survey[i].to_island   != to)   continue;
+        /* The soonest one home, if somehow there are two: a countdown
+         * should say when the next answer arrives. */
+        if (!found || snap->survey[i].finish_tick < *out_back)
+            *out_back = snap->survey[i].finish_tick;
+        found = 1;
+    }
+    return found;
 }
 
 void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
@@ -156,6 +164,14 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
     v->your_gold    = v->yours ? isl->stock[RES_GOLD]   : 0;
     v->blank_charts = v->yours ? isl->stock[RES_CHARTS] : 0;
 
+    /* What is free to send. Both are capacities the snapshot already
+     * resolved (UI_PLAN N1), so no screen reproduces the rule that
+     * decides how many scholars a Scholars' House keeps. */
+    v->scholars_free = v->yours
+                     ? isl->scholar_capacity - isl->scholars_out : 0;
+    v->boats_free    = v->yours ? isl->research_boats : 0;
+    if (v->scholars_free < 0) v->scholars_free = 0;
+
     memset(live, 0, sizeof(live));
     chart_quotes(snap, ask, bid);
 
@@ -175,7 +191,12 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
             copy_str(v->rows[at].name, sizeof(v->rows[at].name),
                      snap->islands[d].name);
         }
-        v->rows[at].surveying = (uint8_t)survey_out(snap, island, d);
+        {
+            uint64_t back = 0;
+            v->rows[at].surveying   = (uint8_t)survey_out(snap, island, d,
+                                                          &back);
+            v->rows[at].survey_back = back;
+        }
 
         for (variant = 0; variant < SEA_ROUTES_PER_PAIR; variant++) {
             const Route *rt   = sea_route_variant(sea, island, d, variant);
@@ -227,6 +248,42 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
                     sea_pair_next_rotation(sea->island_count, pair,
                                            snap->tick) +
                     (uint64_t)(variant - 1) * SEA_ROUTE_LIFETIME_TICKS;
+        }
+
+        /* Whether an expedition to this island could sail, said in the
+         * sim's own vocabulary (UI_PLAN N7).
+         *
+         * "Nothing left to find" is read off the rows this screen is
+         * already showing rather than reproducing survey_target_route:
+         * the sim looks for a live private passage the player does not
+         * know, and an unknown private row IS that passage. The sim
+         * stays the authority — a click that gets here anyway is
+         * refused and the flash says the same words. */
+        {
+            ChartRow *head = &v->rows[find_header_row(v, d)];
+            int       unknown = 0, k;
+
+            for (k = 0; k < v->row_count; k++)
+                if (!v->rows[k].header && v->rows[k].island == d &&
+                    v->rows[k].is_private && !v->rows[k].gone &&
+                    !v->rows[k].known) unknown = 1;
+
+            /* IN THE SIM'S ORDER, not in the order a player might find
+             * most useful. sim_survey checks the crew, then the boat,
+             * then the paper, then whether there is anything left to
+             * find — so a harbour with no scholar and nothing to find
+             * must say "no scholar", because that is the sentence the
+             * click would come back with. Sorting these by helpfulness
+             * would produce a screen that is right about the world and
+             * wrong about the refusal, which is the drift decision 3
+             * exists to prevent. There is a test that compares the two
+             * across several broken worlds. */
+            if (!v->yours)                  head->survey_reason = REJ_NOT_OWNER;
+            else if (v->scholars_free <= 0) head->survey_reason = REJ_NO_CREW;
+            else if (v->boats_free <= 0)    head->survey_reason = REJ_NO_BOAT;
+            else if (v->blank_charts <= 0)  head->survey_reason = REJ_NO_STOCK;
+            else if (!unknown)              head->survey_reason = REJ_NOTHING_TO_FIND;
+            else                            head->survey_reason = REJ_OK;
         }
     }
 
@@ -367,12 +424,23 @@ void chart_build(UiList *out, const ChartView *view, const UiState *st,
         l.cursor += CHART_ROW_GAP;
 
         if (row->header) {
-            /* A destination, carrying the island it names. Never
-             * hit-tested — chevrons for changing island belong to the
-             * island bar, and two ways to do the same thing is how they
-             * come to disagree. */
+            /* A destination, carrying the island it names. The row
+             * itself is never hit-tested — chevrons for changing island
+             * belong to the island bar, and two ways to do one thing is
+             * how they come to disagree — but the expedition button on
+             * it is (UI_PLAN N7). */
+            UiRect btn;
+
             ui_list_push(out, ui_id(UI_GROUP_ISLAND, (uint16_t)row->island),
                          rr, row->name, row->surveying, UI_W_HEADER);
+
+            btn = ui_col_from_right(rr, CHART_BTN_W + 60.0f, CHART_BTN_GAP, 0);
+            btn.y += (CHART_ROW_H - 24.0f) * 0.5f;
+            btn.h  = 24.0f;
+            ui_list_push(out, ui_id(UI_GROUP_SURVEY, (uint16_t)row->island),
+                         btn, "Send expedition", row->island, 0);
+            if (row->survey_reason != (uint8_t)REJ_OK)
+                ui_list_disable_last(out, (RejectReason)row->survey_reason);
             continue;
         }
 
@@ -424,6 +492,7 @@ ChartHit chart_hit(const UiList *list, const ChartView *view,
 
     memset(&hit, 0, sizeof(hit));
     hit.kind     = CHART_HIT_OUTSIDE;
+    hit.island   = -1;
     hit.route_id = -1;
     hit.page     = st ? st->chart_page : 0;
 
@@ -442,6 +511,11 @@ ChartHit chart_hit(const UiList *list, const ChartView *view,
         hit.kind     = CHART_HIT_SELL;
         hit.route_id = (int32_t)ui_id_value(w->id);
         hit.limit    = w->value;
+        break;
+
+    case UI_GROUP_SURVEY:
+        hit.kind   = CHART_HIT_SURVEY;
+        hit.island = (int32_t)ui_id_value(w->id);
         break;
 
     case UI_GROUP_ACTION:

@@ -38,6 +38,7 @@
 #include "knowledge.h"
 #include "orderbook.h"
 #include "resource.h"
+#include "building.h"
 #include "sea.h"
 #include <stdio.h>
 #include <string.h>
@@ -479,6 +480,141 @@ static void test_lane_has_no_market(void)
     game_free(gs);
 }
 
+/* ---- 9. expeditions (UI_PLAN N7) --------------------------- */
+static void test_expeditions(void)
+{
+    GameState      *gs = game_init();
+    UiState         st;
+    UiList          list;
+    const UiWidget *w = NULL;
+    ChartHit        hit;
+    int             i, dest = -1;
+
+    printf("\n=== sending somebody to look ===\n");
+    if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
+    game_new_seeded(gs, 4242u);
+    memset(&st, 0, sizeof(st));
+
+    chart_view_reset(&VIEW);
+    refresh(gs, &VIEW, 0);
+    chart_build(&list, &VIEW, &st, SCREEN_WF, SCREEN_HF);
+
+    for (i = 0; i < VIEW.row_count && dest < 0; i++)
+        if (VIEW.rows[i].header) dest = VIEW.rows[i].island;
+    CHECK(dest >= 0, "there is somewhere to look for a way to");
+
+    w = ui_list_find(&list, ui_id(UI_GROUP_SURVEY, (uint16_t)dest));
+    CHECK(w != NULL, "and a destination carries its own expedition button");
+    if (!w || dest < 0) { game_free(gs); return; }
+
+    /* A fresh colony has no scholar, no boat and no paper. Whichever it
+     * is short of, the button must say WHICH — before N7 all three were
+     * the same sentence. */
+    CHECK((w->flags & UI_W_DISABLED) &&
+          (w->reason == (uint8_t)REJ_NO_CREW ||
+           w->reason == (uint8_t)REJ_NO_BOAT ||
+           w->reason == (uint8_t)REJ_NO_STOCK),
+          "with nothing to send, it names what is missing");
+
+    /* Give it everything an expedition needs, the way the sim counts
+     * it, and the button opens. */
+    gs->islands[0].research_boats = 2;
+    stockpile_add(&gs->islands[0].stockpile, RES_CHARTS, 3);
+    {
+        /* A lived-in Scholars' House, which is what scholar capacity
+         * actually counts — the same setup the sim's own survey test
+         * uses, so the two agree about what "a scholar" is. */
+        Island *isl = &gs->islands[0];
+        int     b   = isl->building_count++;
+        isl->buildings[b].active   = 1;
+        isl->buildings[b].type     = BUILDING_HOUSE_SCHOLAR;
+        isl->pop_data[b].active    = 1;
+        isl->pop_data[b].residents = 6;
+    }
+    refresh(gs, &VIEW, 0);
+    chart_build(&list, &VIEW, &st, SCREEN_WF, SCREEN_HF);
+    w = ui_list_find(&list, ui_id(UI_GROUP_SURVEY, (uint16_t)dest));
+
+    if (w && !(w->flags & UI_W_DISABLED)) {
+        CHECK(1, "with a scholar, a boat and paper, it can sail");
+
+        hit = chart_hit(&list, &VIEW, &st, cx(w->rect), cy(w->rect));
+        CHECK(hit.kind == CHART_HIT_SURVEY && hit.island == dest,
+              "the click names the ISLAND, never the passage");
+
+        CHECK(game_survey(gs, 0, dest) == 1, "the sim takes the order");
+        sim_run_one_tick(gs);
+
+        refresh(gs, &VIEW, 0);
+        for (i = 0; i < VIEW.row_count; i++)
+            if (VIEW.rows[i].header && VIEW.rows[i].island == dest) {
+                CHECK(VIEW.rows[i].surveying,
+                      "and the destination says an expedition is out");
+                CHECK(VIEW.rows[i].survey_back > SNAP.tick,
+                      "with when it is due back");
+                break;
+            }
+    } else {
+        CHECK(0, "with a scholar, a boat and paper, it can sail");
+    }
+
+    /* A crossing whose passages are all known has nothing left to find,
+     * and that is a fact about the world rather than a temporary
+     * problem — which is why it got a word of its own. */
+    for (i = 0; i < VIEW.row_count; i++)
+        if (!VIEW.rows[i].header && VIEW.rows[i].island == dest &&
+            VIEW.rows[i].is_private)
+            knowledge_add_charts(&gs->knowledge, gs->local_player_id,
+                                 VIEW.rows[i].route_id, 1);
+    /* With the scholar home again — the refusals are checked in the
+     * sim's order, so a crossing with nothing left to find only says so
+     * once there is somebody who could have gone looking. */
+    gs->islands[0].scholars_out      = 0;
+    gs->islands[0].research_boats_out = 0;
+    refresh(gs, &VIEW, 0);
+    chart_build(&list, &VIEW, &st, SCREEN_WF, SCREEN_HF);
+    w = ui_list_find(&list, ui_id(UI_GROUP_SURVEY, (uint16_t)dest));
+    CHECK(w && (w->flags & UI_W_DISABLED) &&
+          w->reason == (uint8_t)REJ_NOTHING_TO_FIND,
+          "knowing them all reads as 'you have charted this crossing'");
+
+    /* THE ASSERTION THIS SECTION EXISTS FOR: the button's reason and
+     * the sim's refusal are the same value, in every state — not two
+     * opinions that happen to agree today. Decision 3 says the message
+     * shown IS the reason the sim refused, and the only way to hold
+     * that without a shared validator is to check it. */
+    {
+        int trial;
+
+        for (trial = 0; trial < 3; trial++) {
+            Command c;
+            uint8_t said;
+
+            /* Three worlds: everything known; no paper; no boat. */
+            if (trial == 1)
+                gs->islands[0].stockpile.amount[RES_CHARTS] = 0;
+            if (trial == 2)
+                gs->islands[0].research_boats = 0;
+
+            refresh(gs, &VIEW, 0);
+            chart_build(&list, &VIEW, &st, SCREEN_WF, SCREEN_HF);
+            w = ui_list_find(&list, ui_id(UI_GROUP_SURVEY, (uint16_t)dest));
+            said = w ? w->reason : (uint8_t)REJ_OK;
+
+            memset(&c, 0, sizeof(c));
+            c.kind      = CMD_SURVEY;
+            c.a         = 0;
+            c.b         = dest;
+            c.player_id = gs->local_player_id;
+
+            CHECK(said == (uint8_t)sim_apply_reason(gs, &c),
+                  "the button's reason is the sim's own, whatever is wrong");
+        }
+    }
+
+    game_free(gs);
+}
+
 int main(void)
 {
     printf("=== chart_view (UI_PLAN N4) ===\n");
@@ -491,6 +627,7 @@ int main(void)
     test_fits_on_screen();
     test_foreign_harbour();
     test_lane_has_no_market();
+    test_expeditions();
 
     printf("\n%s\n", failures ? "FAILED" : "PASSED");
     return failures ? 1 : 0;

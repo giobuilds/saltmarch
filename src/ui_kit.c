@@ -342,7 +342,10 @@ const char *ui_reject_text(RejectReason reason)
         [REJ_OFFER_CHANGED]        = "The quay changed — look again",
         [REJ_NO_TARGET]            = "That voyage is gone",
         [REJ_UNAVAILABLE]          = "Not possible right now",
-        [REJ_ORDER_GONE]           = "That order is gone"
+        [REJ_ORDER_GONE]           = "That order is gone",
+        [REJ_NO_CREW]              = "No scholar free to sail",
+        [REJ_NO_BOAT]              = "No research boat free",
+        [REJ_NOTHING_TO_FIND]      = "You have charted this crossing"
     };
 
     if (reason < 0 || reason >= REJ_COUNT || !TEXT[reason])
