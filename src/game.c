@@ -50,6 +50,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->confirm.open          = 0;
     gs->confirm.kind          = CONFIRM_NONE;
     gs->escrow_open           = 0;
+    gs->book_open             = 0;
     gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
@@ -212,6 +213,7 @@ GameOverlay game_topmost_overlay(const GameState *gs)
     if (gs->confirm.open)          return UI_OVERLAY_CONFIRM;
     if (gs->trade_open)            return UI_OVERLAY_TRADE;
     if (gs->escrow_open)           return UI_OVERLAY_ESCROW;
+    if (gs->book_open)             return UI_OVERLAY_BOOK;
     if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
     if (gs->world_open)            return UI_OVERLAY_WORLD;
     return UI_OVERLAY_NONE;
@@ -588,8 +590,16 @@ typedef struct {
  * happens because a fleet was in the water a cargo passed through,
  * rather than because a hash of the shipment said so at dispatch — so
  * a v24 log loses different cargoes, at different times, to something
- * that is now somewhere. */
-#define SAVE_VERSION 25u
+ * that is now somewhere.
+ *
+ * v26 (UI_PLAN N3): IntentUiState carries the order book's page and the
+ * draft order on it, so the intent section's records are a different
+ * size. Like v7, this changes nothing about the world a log replays to
+ * — intents are cosmetic to the sim — but the bytes no longer line up,
+ * and a misread intent stream would hit-test recorded clicks against
+ * the wrong screen, which is exactly the failure the format exists to
+ * make impossible. */
+#define SAVE_VERSION 26u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -2856,7 +2866,11 @@ static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
 {
     Order *o = orderbook_find(&gs->book, order_id);
 
-    if (!o) return REJ_UNAVAILABLE;
+    /* Not "not possible right now": the book screen keeps a filled
+     * order on screen as a struck-through row (UI_PLAN N3), so a click
+     * landing on one is an ordinary race rather than a mystery, and it
+     * deserves a sentence that says what happened. */
+    if (!o) return REJ_ORDER_GONE;
     if (o->owner != player) return REJ_NOT_OWNER;
     order_refund(gs, o);
     return REJ_OK;

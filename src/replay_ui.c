@@ -8,6 +8,7 @@
  */
 
 #include "replay.h"
+#include "book_view.h"
 #include "camera.h"
 #include "confirm_view.h"
 #include "exchange_view.h"
@@ -237,6 +238,135 @@ static void click_exchange(GameState *gs, UiState *st, uint32_t id)
     intent_record(gs, &in);
 }
 
+/* Find a widget by id AND payload. The composer's four steppers share
+ * one id and differ by their step, exactly as the exchange's quantity
+ * buttons do, so "the +10 button" is a pair rather than an id. */
+static const UiWidget *find_valued(const UiList *l, uint32_t id, int32_t value)
+{
+    int i;
+    for (i = 0; i < l->count; i++)
+        if (l->items[i].id == id && l->items[i].value == value)
+            return &l->items[i];
+    return NULL;
+}
+
+/* Click a widget on the order book, recording the intent and submitting
+ * whatever the hit maps to — including the clicks that submit nothing,
+ * because composing the draft IS the recorded state that later clicks
+ * are hit-tested against. `book` is threaded through rather than built
+ * here: its retained rows are the point (UI_PLAN N3). */
+static void click_book(GameState *gs, UiState *st, BookView *book,
+                       uint32_t id, int32_t value, int by_value)
+{
+    UiSnapshot      snap;
+    UiList          list;
+    Intent          in;
+    const UiWidget *w;
+    BookHit         hit;
+    uint32_t        before = gs->cmd_seq_last;
+
+    ui_snapshot_build(&snap, gs);
+    book_view_update(book, &snap, gs->current_island, st);
+    book_build(&list, book, st, (float)SCREEN_W, (float)SCREEN_H);
+
+    w = by_value ? find_valued(&list, id, value) : ui_list_find(&list, id);
+    if (!w || (w->flags & (UI_W_DISABLED | UI_W_HEADER))) return;
+
+    memset(&in, 0, sizeof(in));
+    in.tick              = snap.tick;
+    in.x                 = (int32_t)(w->rect.x + w->rect.w * 0.5f);
+    in.y                 = (int32_t)(w->rect.y + w->rect.h * 0.5f);
+    in.kind              = (uint8_t)INTENT_LEFT_CLICK;
+    in.ui.overlay        = (uint8_t)UI_OVERLAY_BOOK;
+    in.ui.book_page      = (uint16_t)st->book_page;
+    in.ui.book_side      = (uint8_t)st->book_side;
+    in.ui.book_res       = (uint8_t)st->book_res;
+    in.ui.book_qty       = st->book_qty;
+    in.ui.book_limit     = st->book_limit;
+    in.ui.hovered_row    = -1;
+    in.ui.hovered_col    = -1;
+    in.ui.current_island = (int16_t)gs->current_island;
+
+    hit = book_hit(&list, book, st, (float)in.x, (float)in.y);
+
+    switch (hit.kind) {
+    case BOOK_HIT_POST:
+        game_place_order(gs, gs->current_island, TRADE_RESOURCE,
+                         (uint16_t)hit.res,
+                         hit.side == ORDER_SELL ? -hit.qty : hit.qty,
+                         hit.limit);
+        break;
+    case BOOK_HIT_CANCEL:
+        game_cancel_order(gs, hit.order_id);
+        break;
+    case BOOK_HIT_SIDE:
+    case BOOK_HIT_GOOD:
+    case BOOK_HIT_QTY:
+    case BOOK_HIT_LIMIT:
+        st->book_side  = hit.side;
+        st->book_res   = hit.res;
+        st->book_qty   = hit.qty;
+        st->book_limit = hit.follow ? 0 : hit.limit;
+        break;
+    default:
+        return;
+    }
+
+    in.seq = (gs->cmd_seq_last != before) ? gs->cmd_seq_last : 0u;
+    intent_record(gs, &in);
+}
+
+/* The id of the first row's Cancel button, or 0 if the book is empty. */
+static uint32_t first_cancel_id(const UiList *l, int32_t *out_value)
+{
+    int i;
+    for (i = 0; i < l->count; i++)
+        if (ui_id_group(l->items[i].id) == UI_GROUP_CANCEL) {
+            *out_value = l->items[i].value;
+            return l->items[i].id;
+        }
+    return 0u;
+}
+
+static void record_book_session(GameState *gs, UiState *st)
+{
+    BookView   book;
+    UiSnapshot snap;
+    UiList     list;
+    uint32_t   cancel_id;
+    int32_t    cancel_value = 0;
+    int        t;
+
+    memset(&book, 0, sizeof(book));
+    book_view_reset(&book);
+    book_draft_default(st);
+
+    /* Compose: a different good, a smaller quantity than the default,
+     * and a limit stepped away from the quote — so the recorded frames
+     * cover a draft that is NOT any of its defaults. */
+    click_book(gs, st, &book, ui_id(UI_GROUP_RESOURCE, RES_FISH), 0, 0);
+    click_book(gs, st, &book, ui_id(UI_GROUP_ACTION, UI_ACTION_QTY), -1, 1);
+    /* Well under the faction's ask, so the order RESTS rather than
+     * crossing it immediately — otherwise there is nothing left to
+     * cancel two clicks later, which is how the first version of this
+     * recording quietly tested nothing. */
+    click_book(gs, st, &book, ui_id(UI_GROUP_ACTION, UI_ACTION_LIMIT), -10, 1);
+    click_book(gs, st, &book, ui_id(UI_GROUP_ACTION, UI_ACTION_LIMIT), -10, 1);
+    click_book(gs, st, &book, ui_id(UI_GROUP_ACTION, UI_ACTION_POST), 0, 0);
+
+    for (t = 0; t < 10; t++) sim_run_one_tick(gs);
+
+    /* And withdraw it, which is the click that has to name an order by
+     * its full 32-bit id. */
+    ui_snapshot_build(&snap, gs);
+    book_view_update(&book, &snap, gs->current_island, st);
+    book_build(&list, &book, st, (float)SCREEN_W, (float)SCREEN_H);
+    cancel_id = first_cancel_id(&list, &cancel_value);
+    if (cancel_id) click_book(gs, st, &book, cancel_id, cancel_value, 1);
+
+    for (t = 0; t < 10; t++) sim_run_one_tick(gs);
+}
+
 void replay_record_ui_session(GameState *gs, uint32_t seed)
 {
     UiState st;
@@ -262,6 +392,10 @@ void replay_record_ui_session(GameState *gs, uint32_t seed)
     st.exchange_page = 0;
     click_exchange(gs, &st, ui_id(UI_GROUP_BUY, RES_GRAIN));
     for (t = 0; t < 40; t++) sim_run_one_tick(gs);
+
+    /* Then the order book: compose a draft, post it, cancel it
+     * (UI_PLAN N3). */
+    record_book_session(gs, &st);
 }
 
 /* ---- the UI harness (UI_PLAN M1) ---------------------------
@@ -270,27 +404,43 @@ void replay_record_ui_session(GameState *gs, uint32_t seed)
  * Nothing here draws, and nothing here links SDL.
  */
 
-/* Rebuild every overlay the recorded frame could have been showing.
- * `lists` are filled in a fixed order so the golden dump is stable. */
-static void build_all(const UiSnapshot *snap, const UiState *st,
-                      ExchangeView *ex, UiList *ex_list,
-                      HudView *hud, UiList *hud_list,
-                      InventoryView *inv, UiList *inv_list,
-                      UiList *island_list, ConfirmView *cf, UiList *cf_list)
+/* Every overlay a recorded frame could have been showing, in one place.
+ * A struct rather than eleven out-parameters because UI_PLAN N3 added a
+ * twelfth and a thirteenth — and because the book's view is RETAINED
+ * between frames (it remembers the rows it drew so a filled order can
+ * be struck through rather than vanish), which an out-parameter built
+ * fresh at each call could not express. */
+typedef struct {
+    ExchangeView  ex;    UiList ex_list;
+    HudView       hud;   UiList hud_list;
+    InventoryView inv;   UiList inv_list;
+    ConfirmView   cf;    UiList cf_list;
+    UiList        island_list;
+    BookView      book;  UiList book_list;
+} UiFrame;
+
+/* Rebuild every overlay for this frame. Lists are filled in a fixed
+ * order so the golden dump is stable. */
+static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st)
 {
-    exchange_view_market(ex, snap, snap->current_island);
-    exchange_build(ex_list, ex, st, (float)SCREEN_W, (float)SCREEN_H);
+    exchange_view_market(&f->ex, snap, snap->current_island);
+    exchange_build(&f->ex_list, &f->ex, st, (float)SCREEN_W, (float)SCREEN_H);
 
-    hud_view_build(hud, snap, snap->current_island);
-    hud_build(hud_list, hud, st, (float)SCREEN_W, (float)SCREEN_H);
+    hud_view_build(&f->hud, snap, snap->current_island);
+    hud_build(&f->hud_list, &f->hud, st, (float)SCREEN_W, (float)SCREEN_H);
 
-    inventory_view_build(inv, snap, snap->current_island);
-    inventory_build(inv_list, inv, st, (float)SCREEN_W, (float)SCREEN_H);
+    inventory_view_build(&f->inv, snap, snap->current_island);
+    inventory_build(&f->inv_list, &f->inv, st, (float)SCREEN_W,
+                    (float)SCREEN_H);
 
-    island_bar_build(island_list, snap, (float)SCREEN_W);
+    island_bar_build(&f->island_list, snap, (float)SCREEN_W);
 
-    confirm_view_build(cf, snap);
-    confirm_build(cf_list, cf, (float)SCREEN_W, (float)SCREEN_H);
+    confirm_view_build(&f->cf, snap);
+    confirm_build(&f->cf_list, &f->cf, (float)SCREEN_W, (float)SCREEN_H);
+
+    /* update, not build: the fold is the point (UI_PLAN N3). */
+    book_view_update(&f->book, snap, snap->current_island, st);
+    book_build(&f->book_list, &f->book, st, (float)SCREEN_W, (float)SCREEN_H);
 }
 
 static int rects_on_screen(const UiList *l, const char *what, int verbose)
@@ -348,6 +498,31 @@ static int exchange_expected(const ExchangeHit *hit, const UiSnapshot *snap,
     return 0;
 }
 
+/* The same, for the order book. Mirrors main.c's book branch: the sign
+ * of the quantity is the side, and the limit is the price the composer
+ * was showing — which is the number the player read, whether they
+ * stepped to it or let it follow the quote. */
+static int book_expected(const BookHit *hit, const UiSnapshot *snap,
+                         Command *out)
+{
+    memset(out, 0, sizeof(*out));
+
+    if (hit->kind == BOOK_HIT_POST) {
+        out->kind = CMD_PLACE_ORDER;
+        out->a    = snap->current_island;
+        out->b    = TRADE_PACK(TRADE_RESOURCE, (uint16_t)hit->res);
+        out->c    = (hit->side == ORDER_SELL) ? -hit->qty : hit->qty;
+        out->d    = hit->limit;
+        return 1;
+    }
+    if (hit->kind == BOOK_HIT_CANCEL) {
+        out->kind = CMD_CANCEL_ORDER;
+        out->a    = (int32_t)hit->order_id;
+        return 1;
+    }
+    return 0;
+}
+
 static const Command *command_by_seq(const GameState *gs, uint32_t seq)
 {
     int i;
@@ -359,8 +534,8 @@ static const Command *command_by_seq(const GameState *gs, uint32_t seq)
 /* Walk the recorded session, stopping at each click. Shared by the
  * verifier and the golden dump so they can never disagree about which
  * snapshot a click belongs to. */
-typedef void (*IntentVisitor)(const UiSnapshot *snap, const UiState *st,
-                              const Intent *in, void *ctx);
+typedef void (*IntentVisitor)(const UiFrame *f, const UiSnapshot *snap,
+                              const UiState *st, const Intent *in, void *ctx);
 
 static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
 {
@@ -371,6 +546,12 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
     int        log_count;
     UiSnapshot snap;
     UiState    st;
+    /* One frame, reused: the overlays are rebuilt into it at every
+     * intent, and the book's rows survive from one to the next exactly
+     * as they do in a running client. On the heap because a UiFrame is
+     * some tens of kilobytes and this runs on every platform's default
+     * stack. */
+    UiFrame   *frame;
 
     if (gs->intent_count == 0) return;
 
@@ -380,8 +561,12 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
     intents = (Intent *)malloc(sizeof(Intent) * (size_t)count);
     log_count = gs->cmd_count;
     log     = (Command *)malloc(sizeof(Command) * (size_t)log_count);
+    frame   = (UiFrame *)calloc(1, sizeof(*frame));
     seed    = gs->world_seed;
-    if (!intents || !log) { free(intents); free(log); return; }
+    if (!intents || !log || !frame) {
+        free(intents); free(log); free(frame);
+        return;
+    }
     memcpy(intents, gs->intent_log, sizeof(Intent) * (size_t)count);
     memcpy(log, gs->cmd_log, sizeof(Command) * (size_t)log_count);
 
@@ -401,15 +586,22 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
         st.hud_category   = in->ui.hud_category;
         st.exchange_page  = in->ui.exchange_page;
         st.inventory_page = in->ui.inventory_page;
+        st.book_page      = in->ui.book_page;
+        st.book_side      = in->ui.book_side;
+        st.book_res       = in->ui.book_res;
+        st.book_qty       = in->ui.book_qty;
+        st.book_limit     = in->ui.book_limit;
 
         game_set_current_island(gs, in->ui.current_island);
         ui_snapshot_build(&snap, gs);
+        build_all(frame, &snap, &st);
 
-        visit(&snap, &st, in, ctx);
+        visit(frame, &snap, &st, in, ctx);
     }
 
     free(intents);
     free(log);
+    free(frame);
 }
 
 typedef struct {
@@ -419,34 +611,35 @@ typedef struct {
     const GameState *gs;
 } VerifyCtx;
 
-static void verify_one(const UiSnapshot *snap, const UiState *st,
-                       const Intent *in, void *ctx)
+static void verify_one(const UiFrame *f, const UiSnapshot *snap,
+                       const UiState *st, const Intent *in, void *ctx)
 {
-    VerifyCtx    *v = (VerifyCtx *)ctx;
-    ExchangeView  ex;   UiList ex_list;
-    HudView       hud;  UiList hud_list;
-    InventoryView inv;  UiList inv_list;
-    ConfirmView   cf;   UiList cf_list;
-    UiList        island_list;
+    VerifyCtx *v = (VerifyCtx *)ctx;
 
-    build_all(snap, st, &ex, &ex_list, &hud, &hud_list, &inv, &inv_list,
-              &island_list, &cf, &cf_list);
-
-    v->failures += rects_on_screen(&ex_list,     "exchange",  v->verbose);
-    v->failures += rects_on_screen(&hud_list,    "hud",       v->verbose);
-    v->failures += rects_on_screen(&inv_list,    "inventory", v->verbose);
-    v->failures += rects_on_screen(&island_list, "island",    v->verbose);
-    v->failures += rects_on_screen(&cf_list,     "confirm",   v->verbose);
+    v->failures += rects_on_screen(&f->ex_list,     "exchange",  v->verbose);
+    v->failures += rects_on_screen(&f->hud_list,    "hud",       v->verbose);
+    v->failures += rects_on_screen(&f->inv_list,    "inventory", v->verbose);
+    v->failures += rects_on_screen(&f->island_list, "island",    v->verbose);
+    v->failures += rects_on_screen(&f->cf_list,     "confirm",   v->verbose);
+    v->failures += rects_on_screen(&f->book_list,   "book",      v->verbose);
     v->checked++;
 
     /* Emission, where the mapping is pure. */
-    if (in->ui.overlay == (uint8_t)UI_OVERLAY_TRADE && in->seq != 0) {
-        ExchangeHit    hit = exchange_hit(&ex_list, &ex, st, (float)in->x,
-                                          (float)in->y);
+    if ((in->ui.overlay == (uint8_t)UI_OVERLAY_TRADE ||
+         in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK) && in->seq != 0) {
         Command        expect;
         const Command *actual = command_by_seq(v->gs, in->seq);
+        int            have;
 
-        int have = exchange_expected(&hit, snap, &expect);
+        if (in->ui.overlay == (uint8_t)UI_OVERLAY_BOOK) {
+            BookHit bh = book_hit(&f->book_list, &f->book, st, (float)in->x,
+                                  (float)in->y);
+            have = book_expected(&bh, snap, &expect);
+        } else {
+            ExchangeHit hit = exchange_hit(&f->ex_list, &f->ex, st,
+                                           (float)in->x, (float)in->y);
+            have = exchange_expected(&hit, snap, &expect);
+        }
 
         if (!actual) {
             if (v->verbose)
@@ -520,27 +713,22 @@ static void dump_list(FILE *out, const char *what, const UiList *l)
 
 typedef struct { FILE *out; int n; } DumpCtx;
 
-static void dump_one(const UiSnapshot *snap, const UiState *st,
-                     const Intent *in, void *ctx)
+static void dump_one(const UiFrame *f, const UiSnapshot *snap,
+                     const UiState *st, const Intent *in, void *ctx)
 {
-    DumpCtx      *d = (DumpCtx *)ctx;
-    ExchangeView  ex;   UiList ex_list;
-    HudView       hud;  UiList hud_list;
-    InventoryView inv;  UiList inv_list;
-    ConfirmView   cf;   UiList cf_list;
-    UiList        island_list;
+    DumpCtx *d = (DumpCtx *)ctx;
 
-    build_all(snap, st, &ex, &ex_list, &hud, &hud_list, &inv, &inv_list,
-              &island_list, &cf, &cf_list);
+    (void)snap; (void)st;
 
     fprintf(d->out, "== intent %d tick %llu at %d,%d overlay %u\n",
             d->n++, (unsigned long long)in->tick, in->x, in->y,
             (unsigned)in->ui.overlay);
-    dump_list(d->out, "hud",       &hud_list);
-    dump_list(d->out, "island",    &island_list);
-    dump_list(d->out, "exchange",  &ex_list);
-    dump_list(d->out, "inventory", &inv_list);
-    dump_list(d->out, "confirm",   &cf_list);
+    dump_list(d->out, "hud",       &f->hud_list);
+    dump_list(d->out, "island",    &f->island_list);
+    dump_list(d->out, "exchange",  &f->ex_list);
+    dump_list(d->out, "inventory", &f->inv_list);
+    dump_list(d->out, "confirm",   &f->cf_list);
+    dump_list(d->out, "book",      &f->book_list);
 }
 
 void replay_dump_ui(GameState *gs, FILE *out)

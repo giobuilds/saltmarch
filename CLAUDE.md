@@ -96,6 +96,7 @@ Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment 
 - `inventory_view.c/h` + `inventory_ui.c/h` — the stores overlay (`I`)
 - `hud_view.c/h` — the build bar: category tabs, affordability, hit decoding, and the HUD metrics (`HUD_HEIGHT` et al). `ui.c` is now its drawer plus the menu overlay
 - `exchange_view.c/h` — the exchange surface: marketplace (`EXCHANGE_QUOTES`) and harbour escrow (`EXCHANGE_OFFER`), one builder, one drawer (`trade_ui.c`): rows, pagination, refusals, hit decoding. `trade_ui.c` is now only its drawer
+- `book_view.c/h` + `book_ui.c/h` — the order book (`B`): your resting orders and the draft composer. Deliberately NOT a third `ExchangeKind` (UI_PLAN N3); its rows are *retained* across frames, so `book_view_update()` folds (previous view, snapshot) rather than rebuilding — an order that fills stays on screen struck through instead of sliding the rows below it under the cursor
 - Overlay convention going forward: a `*_build()` in the SDL-free UI library produces a `UiList`; a `*_draw()` in the client renders that same list; hit-testing queries it. Draw and hit-test can no longer disagree about where a button is
 
 ## History / conventions
