@@ -107,15 +107,21 @@ wait "$CLI_PID" 2>/dev/null
 # archipelago by repeating itself.
 if [ "$RAW_OK" -eq 1 ]; then
     if exec 8<>"/dev/tcp/127.0.0.1/$PORT" 2>/dev/null; then
-        # [type=1][len=8 LE][proto u32 LE][resume u32 LE = PLAYER_NONE].
-        # Written straight to the fd in three pieces rather than built
-        # in a variable: the frame is mostly NUL bytes, and a shell
-        # variable cannot hold those — collecting it first sends a
+        # [type=1][len=44 LE][proto u32][resume u32][account u32]
+        # [token 32]. Written straight to the fd in pieces rather than
+        # built in a variable: the frame is mostly NUL bytes, and a
+        # shell variable cannot hold those — collecting it first sends a
         # short, corrupt frame and tests the length guard by accident.
+        #
+        # The account id and token are zero, which is "I have no
+        # account": this server runs without --accounts, so that is the
+        # ordinary case and the probe still tests what it is here for.
         send_hello() {
-            printf '\x01\x08\x00\x00\x00'          >&8
+            printf '\x01\x2c\x00\x00\x00'          >&8
             printf "\\x$(printf '%02x' "$PROTO")"  >&8
             printf '\x00\x00\x00\x00\x00\x00\x00'  >&8
+            # account id + 32 zero bytes of token
+            for _ in $(seq 1 36); do printf '\x00' >&8; done
         }
         send_hello 2>/dev/null || true
         send_hello 2>/dev/null || true
@@ -170,6 +176,77 @@ if [ "$RAW_OK" -eq 1 ]; then
     else
         fail "one connection could introduce itself twice"
     fi
+fi
+
+# ---- authentication (AUTH_PLAN Phase 1) ----------------------
+# A second server, this one with an account file and registration
+# closed. The assertion is invariant 6: a peer that cannot say who it
+# is must be turned away at the handshake, BEFORE any world is sent —
+# a peer refused later would already hold every island's stockpile.
+#
+# XDG_DATA_HOME is redirected so the client writes its token into the
+# work directory rather than into whoever is running CI. A test that
+# leaves credentials in a developer's home directory is a test that
+# has done something worse than fail.
+PORT2=$((PORT + 1))
+WORLD2="$WORK/auth.smlog"
+ACCTS="$WORK/auth.accounts"
+SRVLOG2="$WORK/auth-server.log"
+CLILOG2="$WORK/auth-client.log"
+
+"$HOST_BIN" --port "$PORT2" --world "$WORLD2" --seed 4242 \
+            --accounts "$ACCTS" --registration closed \
+            --ticks 120 --checkpoint-seconds 0 >"$SRVLOG2" 2>&1 &
+HOST2_PID=$!
+sleep 2
+
+if kill -0 "$HOST2_PID" 2>/dev/null; then
+    XDG_DATA_HOME="$WORK/pref" SDL_VIDEODRIVER=dummy "$GAME_BIN" \
+        --join "127.0.0.1:$PORT2" --as 1 >"$CLILOG2" 2>&1 &
+    CLI2_PID=$!
+    sleep 4
+    kill -TERM "$CLI2_PID" 2>/dev/null
+    wait "$CLI2_PID" 2>/dev/null
+fi
+wait "$HOST2_PID" 2>/dev/null
+
+if grep -q "authenticating against" "$SRVLOG2"; then
+    pass "the server authenticates when it has an account file"
+else
+    fail "the server did not enable authentication"
+    sed 's/^/  | /' "$SRVLOG2"
+fi
+
+if grep -q "token" "$SRVLOG2"; then
+    pass "and minted an account for the world's existing owner, once"
+else
+    fail "no account was minted for the existing island owner"
+fi
+
+if [ -f "$ACCTS" ]; then
+    pass "the account sidecar was written"
+    if grep -q "^account " "$ACCTS"; then
+        pass "...with an account line in it"
+    else
+        fail "the sidecar has no accounts"
+    fi
+else
+    fail "no account sidecar written"
+fi
+
+# --as 1 with no credential: the honour system is what this closes.
+if grep -q "registration closed" "$SRVLOG2"; then
+    pass "a client with no credential is refused at the handshake"
+else
+    fail "an unauthenticated client was not refused"
+    sed 's/^/  | /' "$SRVLOG2"
+fi
+
+if grep -q "world installed at tick" "$CLILOG2"; then
+    fail "a refused client received a world anyway"
+    sed 's/^/  | /' "$CLILOG2"
+else
+    pass "...and never received a world"
 fi
 
 if [ -f "$WORLD" ]; then

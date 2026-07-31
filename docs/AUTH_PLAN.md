@@ -1,8 +1,9 @@
 # Saltmarch accounts — the identity model
 
-The design for authentication. Nothing here is built yet; SERVER.md's
-"No authentication" is still true, and this is the plan for making it
-false.
+The design for authentication. **Phases 1 and 2 are built**; SERVER.md's
+"No authentication" is no longer true of a server run with
+`--accounts`. Phases 3 and 4 (TLS, then human passwords) are still
+design.
 
 **Read [VISIBILITY.md](VISIBILITY.md) first if strangers are going to
 play.** This document settles who a player *is*; that one asks what a
@@ -130,19 +131,52 @@ behaviour. `saltmarch_host` enables it by having one.
 
 ## Phases
 
-**Phase 1 — tokens.** `MSG_HELLO` carries `{proto, account_id,
-token[32]}`; `WELCOME` returns a newly issued token on first join. The
-sidecar, constant-time comparison, and rate limiting on failed
-attempts (which the per-peer budget from the transport hardening
-already has a place for). No dependencies. This alone closes the hole
-SERVER.md names.
+**Phase 1 — tokens. DONE.** `MSG_HELLO` carries
+`{proto, resume, account_id, token[32]}`; `WELCOME` returns a newly
+issued token on first join. `src/account.c` is the sidecar,
+`src/sha256.c` the hash and the constant-time comparison, and
+`saltmarch_host --accounts [FILE]` is what turns it on. Protocol 21.
 
-**Phase 2 — the client remembers.** There is no client-side config
-today: the game reads argv and one environment variable, so a token
-has nowhere to live. This phase adds one (`SDL_GetPrefPath`), which is
-also where a server list and a display name belong. Without it every
-player pastes a 64-character hex string on the command line, which is
-not a design so much as a dare.
+*As built, with what deviated:*
+
+- **Identity comes from the credential.** `--as N` survives as a
+  request and is *ignored* on an authenticating server: the account
+  names the `player_id`, which is the whole fix in one line.
+- **SHA-256 is implemented here rather than depended upon.** The plan
+  said "no cryptographic dependency at all" and that is what this is —
+  ~150 lines of FIPS 180-4 checked against NIST's published vectors,
+  including the million-'a' one. A KDF is the thing hand-rolling gets
+  wrong; a fixed hash with test vectors is either bit-for-bit right or
+  visibly broken.
+- **Rate limiting is per ACCOUNT, not per connection.** The plan
+  pointed at the per-peer command budget, but a refused login costs an
+  attacker one reconnect, so the per-connection limit is "one attempt"
+  — no limit at all. Five failures locks the account for a minute. The
+  counter lives in memory and is deliberately not persisted: the
+  alternative is a disk write per failed guess, which is a
+  disk-filling attack wearing a helpful hat.
+- **One sentence for every refusal.** "No such account" and "wrong
+  token" are the same message on the wire, because distinguishing them
+  hands an attacker an oracle for which ids exist — and ids are
+  enumerable.
+- **The migration prints tokens once**, as the plan requires: on first
+  run with `--accounts` against an existing world, every island-owning
+  `player_id` gets an account and its token is printed for the admin to
+  distribute. Silent adoption would have reintroduced the hole on the
+  one day it is most likely to be exploited.
+- **Off by default.** No `--accounts`, no authentication, and co-op
+  between friends is exactly what it was.
+
+**Phase 2 — the client remembers. DONE.** `src/config.c` writes one
+file under `SDL_GetPrefPath`, holding one line per server, **keyed by
+`host:port`** — a token is a credential for a world, and handing a
+public server the token a friend's server issued would be the client
+leaking exactly what the protocol exists to protect. It is written the
+moment a token arrives, because a secret told once and not written
+down is a secret lost.
+
+A server list and a display name belong in the same file and are not
+there yet; nothing needed them.
 
 **Phase 3 — TLS.** The prerequisite for anything involving a human
 password, and the answer to "the token crosses the wire in the clear".
@@ -153,6 +187,19 @@ two.
 KDF, registration and recovery. Only worth building if strangers are
 going to play here; for a private world Phase 1 and 2 are the whole
 answer.
+
+### What Phase 1 does NOT do
+
+- **The token crosses the wire in the clear.** Anyone who can watch the
+  connection can replay it. That is Phase 3's problem and the reason
+  Phase 3 is TLS; on a friends server over a trusted network it is the
+  accepted trade, and on a public one it is not.
+- **A lost token is reset, not recovered.** Only its hash is kept, so
+  the admin mints a new account or edits the sidecar. Recovery needs a
+  human credential and a channel to send it over — Phase 4.
+- **Nothing binds a token to a machine or a session.** A copied config
+  file is a copied identity.
+- **Lockouts do not survive a restart**, by choice; see above.
 
 ## Invariants any implementation must hold
 
@@ -171,6 +218,12 @@ answer.
    command log is personal data in a replicated, replayed,
    checkpointed structure, and cannot be erased on request
    ([PRIVACY.md](PRIVACY.md)).
+
+*All seven hold in the build, and `tests/test_accounts.c` asserts 1,
+2, 3, 4 and 6 directly — including by searching a real snapshot's bytes
+and the command log for the token, which is how invariant 1 stops being
+a promise. Invariant 6 was checked the only way that means anything:
+by disabling the auth branch and confirming three assertions fail.*
 
 ## Migration
 

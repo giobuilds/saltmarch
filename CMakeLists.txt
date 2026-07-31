@@ -84,7 +84,10 @@ target_include_directories(saltmarch_sim PUBLIC ${CMAKE_SOURCE_DIR}/src)
 # dedicated server speaks the same protocol with no client attached.
 # SDL-free for that reason, so it sits in its own small library that both
 # the game and saltmarch_host link.
-add_library(saltmarch_net STATIC src/net.c)
+# account.c and sha256.c sit here rather than in the sim: authentication
+# is a property of a CONNECTION, and the simulation must not learn that
+# accounts exist (AUTH_PLAN invariant 2). The sim library links neither.
+add_library(saltmarch_net STATIC src/net.c src/account.c src/sha256.c)
 target_link_libraries(saltmarch_net PUBLIC saltmarch_sim)
 
 # The UI kit (UI_PLAN Phase 0). Layout, widget lists, hit-testing and
@@ -128,6 +131,7 @@ set(SALTMARCH_CLIENT_SOURCES
     src/yard_ui.c
     src/world_ui.c
     src/feed.c
+    src/config.c
     src/inventory_ui.c
     src/confirm_ui.c
 )

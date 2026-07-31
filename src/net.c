@@ -215,6 +215,7 @@ static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
 }
 
 #include "net.h"
+#include "account.h"
 #include "simlog.h"
 #include "snapshot.h"
 #include <stdio.h>
@@ -223,8 +224,10 @@ static int sock_connect_timeout(sock_t s, const struct sockaddr *addr,
 
 /* ---- protocol -------------------------------------------- */
 enum {
-    MSG_HELLO     = 1,  /* guest->host: {uint32 proto, uint32 resume_id} */
-    MSG_WELCOME   = 2,  /* host->guest: {uint32 player_id}              */
+    MSG_HELLO     = 1,  /* guest->host: {u32 proto, u32 resume, u32 acct,
+                         *               u8 token[32]}                    */
+    MSG_WELCOME   = 2,  /* host->guest: {u32 player, u32 authoritative,
+                         *               u32 acct, u8 token[32]}           */
     MSG_WORLD     = 3,  /* host->guest: {uint32 seed, uint64 tick,
                          *               int32 n, Command[n]}           */
     MSG_CMD       = 4,  /* guest->host: unstamped Command (identity and
@@ -445,6 +448,21 @@ struct NetSession {
     int      authoritative;
     int      server_authoritative;
     uint64_t last_push_tick;
+
+    /* Authentication (AUTH_PLAN Phase 1). NULL on a co-op host and on
+     * every guest, and that is the OFF state — a host with no store
+     * behaves exactly as it did before this existed.
+     *
+     * Borrowed, never owned: the host loads it, saves it and is the
+     * only thing that touches the disk. net.c decides who a connection
+     * is, not where accounts live. */
+    struct AccountStore *accounts;
+    int      accounts_dirty;      /* an account was minted this session */
+
+    /* What a guest presents at HELLO, and what the host handed back. */
+    NetCredential cred;
+    NetCredential issued;
+    int      have_issued;
 
     /* host: my hash at recent NET_HASH_INTERVAL boundaries, to compare
      * against guests' reports (guests run behind us).
@@ -925,15 +943,79 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
                 peer_drop(ns, p, "peer said hello twice");
                 return;
             }
-            if (len >= 4) memcpy(&ver, payload, 4);
-            if (len >= 8) memcpy(&resume, payload + 4, 4);
+            uint32_t acct = 0u, issued_acct = 0u;
+            uint8_t  token[ACCOUNT_TOKEN_BYTES];
+            uint8_t  issued_token[ACCOUNT_TOKEN_BYTES];
+
+            memset(token, 0, sizeof(token));
+            memset(issued_token, 0, sizeof(issued_token));
+
+            if (len >= 4)  memcpy(&ver, payload, 4);
+            if (len >= 8)  memcpy(&resume, payload + 4, 4);
+            if (len >= 12) memcpy(&acct, payload + 8, 4);
+            if (len >= 12 + ACCOUNT_TOKEN_BYTES)
+                memcpy(token, payload + 12, ACCOUNT_TOKEN_BYTES);
             if (ver != NET_PROTO_VERSION) {
                 sim_log("net: client speaks proto %u, we speak %u — bye",
                         ver, NET_PROTO_VERSION);
                 peer_drop(ns, p, "protocol mismatch");
                 return;
             }
-            id = host_assign_id(ns, gs, resume);
+
+            /* AUTH_PLAN Phase 1. Everything in this block happens BEFORE
+             * an identity is assigned and before any world is sent —
+             * invariant 6, and the reason it is worth stating: a peer
+             * refused after `host_send_world` would already hold every
+             * island's stockpile. */
+            if (ns->accounts) {
+                if (acct != 0u) {
+                    uint32_t      owner = 0u;
+                    AccountResult r = account_verify(ns->accounts, acct,
+                                                     token, net_now_ms(), &owner);
+                    if (r != ACCOUNT_OK) {
+                        /* One sentence for every failure. Distinguishing
+                         * "no such account" from "wrong token" on the
+                         * wire would hand an attacker an oracle for
+                         * which ids exist, and ids are enumerable. */
+                        sim_log("net: login refused for account %u (%d)",
+                                acct, (int)r);
+                        peer_drop(ns, p, "authentication failed");
+                        return;
+                    }
+                    /* THE WHOLE FIX: identity comes from the
+                     * credential, not from what the client asked to
+                     * be. `resume` is now advisory and ignored. */
+                    id = owner;
+                    if (id_connected(ns, id)) {
+                        peer_drop(ns, p, "account already connected");
+                        return;
+                    }
+                } else if (ns->accounts->registration_open) {
+                    /* Trust on first use: today's behaviour plus a
+                     * returned secret, which is what keeps a friends
+                     * server as easy to run as it is now. */
+                    id = host_assign_id(ns, gs, PLAYER_NONE);
+                    if (id == PLAYER_NONE) {
+                        peer_drop(ns, p, "no player id available");
+                        return;
+                    }
+                    if (account_create(ns->accounts, id, NULL,
+                                       issued_token) != ACCOUNT_OK) {
+                        peer_drop(ns, p, "cannot register another account");
+                        return;
+                    }
+                    issued_acct = ns->accounts->a[ns->accounts->count - 1].id;
+                    ns->accounts_dirty = 1;
+                    sim_log("net: registered account %u for player %u",
+                            issued_acct, id);
+                } else {
+                    peer_drop(ns, p, "registration closed");
+                    return;
+                }
+            } else {
+                id = host_assign_id(ns, gs, resume);
+            }
+
             if (id == PLAYER_NONE) {
                 peer_drop(ns, p, "no player id available");
                 return;
@@ -941,9 +1023,13 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             p->player_id  = id;
             p->said_hello = 1;
             {
-                uint32_t hello[2];
-                hello[0] = id;
-                hello[1] = (uint32_t)(ns->authoritative ? 1 : 0);
+                unsigned char hello[12 + ACCOUNT_TOKEN_BYTES];
+                uint32_t      auth = (uint32_t)(ns->authoritative ? 1 : 0);
+
+                memcpy(hello,     &id,          4);
+                memcpy(hello + 4, &auth,        4);
+                memcpy(hello + 8, &issued_acct, 4);
+                memcpy(hello + 12, issued_token, ACCOUNT_TOKEN_BYTES);
                 send_msg(ns, p, MSG_WELCOME, hello, sizeof(hello));
             }
             host_send_world(ns, p, gs);
@@ -1006,6 +1092,22 @@ static void handle_msg(NetSession *ns, NetPeer *p, GameState *gs,
             memcpy(&id, payload, 4);
             gs->local_player_id = id;
             ns->resume_id       = id;   /* what to ask for next time */
+
+            /* A token the server minted for us, told exactly once
+             * (AUTH_PLAN Phase 1). Kept on the session for the client
+             * to write into its config; net.c does not know where a
+             * client keeps its files. */
+            if (len >= 12 + ACCOUNT_TOKEN_BYTES) {
+                uint32_t acct = 0u;
+                memcpy(&acct, payload + 8, 4);
+                if (acct != 0u) {
+                    ns->issued.account_id = acct;
+                    memcpy(ns->issued.token, payload + 12,
+                           ACCOUNT_TOKEN_BYTES);
+                    ns->have_issued = 1;
+                    sim_log("net: server issued account %u", acct);
+                }
+            }
             /* A server that says it is the authority is one whose
              * state overwrites ours. Carried in WELCOME rather than
              * assumed, so a co-op host and a dedicated server can
@@ -1184,13 +1286,14 @@ void net_set_persistent(NetSession *ns, int persistent)
     if (ns) ns->persistent = persistent ? 1 : 0;
 }
 
-NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
+NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id,
+                     const NetCredential *cred)
 {
     NetSession      *ns;
     NetPeer         *p;
     struct addrinfo  hints, *res = NULL, *ai;
     char             portstr[8];
-    unsigned char    hello[8];
+    unsigned char    hello[12 + ACCOUNT_TOKEN_BYTES];
     uint32_t         ver = NET_PROTO_VERSION;
 
     if (!net_platform_init()) return NULL;
@@ -1198,6 +1301,7 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
     if (!ns) { net_platform_quit(); return NULL; }
     ns->plat_init = 1;
     ns->resume_id = resume_id;
+    if (cred) ns->cred = *cred;
 
     p = peer_alloc(ns);
     if (!p) goto fail;
@@ -1225,8 +1329,10 @@ NetSession *net_join(const char *host, uint16_t port, uint32_t resume_id)
     if (p->fd == BAD_SOCK) goto fail;
     sock_tune(p->fd);          /* already non-blocking from the connect */
 
-    memcpy(hello,     &ver,       4);
-    memcpy(hello + 4, &resume_id, 4);
+    memcpy(hello,      &ver,               4);
+    memcpy(hello + 4,  &resume_id,          4);
+    memcpy(hello + 8,  &ns->cred.account_id, 4);
+    memcpy(hello + 12,  ns->cred.token,      ACCOUNT_TOKEN_BYTES);
     send_msg(ns, p, MSG_HELLO, hello, sizeof(hello));
     sim_log("net: connected to %s:%u, awaiting world", host, port);
     return ns;
@@ -1277,15 +1383,17 @@ void net_close(NetSession *ns)
 
 /* ---- the in-memory transport ------------------------------- */
 
-static NetSession *mem_guest_for(NetSession *host, uint32_t resume_id)
+static NetSession *mem_guest_for_auth(NetSession *host, uint32_t resume_id,
+                                      const NetCredential *cred)
 {
     NetSession   *g  = session_new(0);
     NetPeer      *hp, *gp;
-    unsigned char hello[8];
+    unsigned char hello[12 + ACCOUNT_TOKEN_BYTES];
     uint32_t      ver = NET_PROTO_VERSION;
 
     if (!g) return NULL;
     g->resume_id = resume_id;
+    if (cred) g->cred = *cred;
 
     hp = peer_alloc(host);
     gp = peer_alloc(g);
@@ -1297,10 +1405,18 @@ static NetSession *mem_guest_for(NetSession *host, uint32_t resume_id)
 
     /* The same opening move a TCP client makes; the host's next pump
      * answers with WELCOME + WORLD + the grant, all through the queues. */
-    memcpy(hello,     &ver,       4);
-    memcpy(hello + 4, &resume_id, 4);
+    memset(hello, 0, sizeof(hello));
+    memcpy(hello,      &ver,               4);
+    memcpy(hello + 4,  &resume_id,         4);
+    memcpy(hello + 8,  &g->cred.account_id, 4);
+    memcpy(hello + 12,  g->cred.token,      ACCOUNT_TOKEN_BYTES);
     send_msg(g, gp, MSG_HELLO, hello, sizeof(hello));
     return g;
+}
+
+static NetSession *mem_guest_for(NetSession *host, uint32_t resume_id)
+{
+    return mem_guest_for_auth(host, resume_id, NULL);
 }
 
 NetSession *net_pair_mem(NetSession **out_guest)
@@ -1314,6 +1430,20 @@ NetSession *net_pair_mem(NetSession **out_guest)
 
     *out_guest = g;
     return h;
+}
+
+NetSession *net_host_mem(void)
+{
+    /* A host with no guest attached yet, so a test can install an
+     * account store before anybody knocks — which is the only order in
+     * which an authenticating handshake can be observed. */
+    return session_new(1);
+}
+
+NetSession *net_join_mem_as(NetSession *host, uint32_t resume_id,
+                            const NetCredential *cred)
+{
+    return mem_guest_for_auth(host, resume_id, cred);
 }
 
 NetSession *net_join_mem(NetSession *host, uint32_t resume_id)
@@ -1554,6 +1684,25 @@ const char *net_status(const NetSession *ns)
                  "GUEST: authorised to tick %llu",
                  (unsigned long long)ns->authorized_tick);
     return m->status;
+}
+
+void net_set_accounts(NetSession *ns, struct AccountStore *accounts)
+{
+    if (ns) ns->accounts = accounts;
+}
+
+int net_accounts_dirty(NetSession *ns)
+{
+    int was;
+    if (!ns) return 0;
+    was = ns->accounts_dirty;
+    ns->accounts_dirty = 0;
+    return was;
+}
+
+const NetCredential *net_issued_credential(const NetSession *ns)
+{
+    return (ns && ns->have_issued) ? &ns->issued : NULL;
 }
 
 void net_set_authoritative(NetSession *ns, int on)

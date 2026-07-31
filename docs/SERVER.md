@@ -70,13 +70,24 @@ The client cannot tell a dedicated server from a friend running
 
 ## What it does not do yet
 
-- **No authentication.** `--as N` is an honour system: anyone who knows
-  an id can claim it while its owner is away — and ids are small
-  integers from 1, so they are enumerated rather than guessed. Fine for
-  friends, not fine for a public server. This is the first thing to fix
-  before opening one up, and [AUTH_PLAN.md](AUTH_PLAN.md) is the design
-  for fixing it: three identity layers, why the credential must never
-  reach a snapshot, and why tokens come before passwords.
+- **Authentication is available but off unless asked for.** Run with
+  `--accounts [FILE]` and identity comes from a token rather than from
+  a client's word: `--as N` becomes a request the server ignores in
+  favour of what the presented account owns. Without the flag it is
+  still the honour system it always was, which is what keeps co-op
+  between friends free of a login. See
+  [AUTH_PLAN.md](AUTH_PLAN.md) — Phases 1 and 2 are built; the token
+  still crosses the wire in the clear, which is Phase 3 (TLS) and the
+  reason this is a friends-server answer rather than a public-server
+  one.
+
+  ```
+  saltmarch_host --world world.smlog --accounts --registration closed
+  ```
+
+  On first run against an existing world it mints an account for every
+  island-owning player and prints each token **once**. Distribute them
+  then; only hashes are kept.
 - **No privacy between players, and none available.** Lockstep sends
   every client the whole world — every stockpile, every building, every
   ship's cargo and destination — because it cannot run the simulation
