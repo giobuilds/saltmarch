@@ -10,7 +10,27 @@
  */
 
 #ifdef _WIN32
+/* Before any CRT header, which is the only place either of these has an
+ * effect.
+ *
+ * _CRT_RAND_S exposes rand_s (see account_random below).
+ *
+ * _CRT_SECURE_NO_WARNINGS turns off MSVC's C4996 deprecation of fopen
+ * and sscanf, which /WX makes fatal. The "secure" replacements it
+ * suggests — fopen_s, sscanf_s — are MSVC-only, and this file compiles
+ * as C99 on three compilers; taking the advice would mean maintaining
+ * the sidecar's parser in two dialects for a file that is read once at
+ * startup. The warning is also not about the risk it sounds like: what
+ * makes fopen "unsafe" in Microsoft's sense is the absence of a
+ * returned error code, and every call here is checked.
+ *
+ * Scoped to this file rather than added to CMakeLists, deliberately.
+ * The rest of the tree calls fopen without tripping this on MSVC —
+ * game.c has done so through every green Windows build — so whatever
+ * the difference is, suppressing it project-wide would switch off a
+ * warning nothing else is asking to have switched off. */
 #  define _CRT_RAND_S
+#  define _CRT_SECURE_NO_WARNINGS
 #endif
 
 #include "account.h"
