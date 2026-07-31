@@ -194,6 +194,15 @@ typedef enum {
      * it for a peer that has not been rebuilt. */
     REJ_ORDER_GONE,           /* the order filled or was withdrawn      */
 
+    /* An expedition's three costs, each refused in its own words
+     * (UI_PLAN N7). They were all REJ_UNAVAILABLE, which made "you
+     * have nobody to send", "you have no boat" and "you have already
+     * charted this crossing" the same sentence — and the last of those
+     * is not a problem to be fixed but a thing to be told. */
+    REJ_NO_CREW,              /* no scholar free to sail                */
+    REJ_NO_BOAT,              /* no research boat free                  */
+    REJ_NOTHING_TO_FIND,      /* every passage there is already known   */
+
     REJ_COUNT
 } RejectReason;
 

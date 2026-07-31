@@ -7,6 +7,7 @@
 #include "chart_ui.h"
 #include "fonts.h"
 #include "island_bar.h"
+#include "survey.h"
 #include "simclock.h"
 
 static SDL_FRect to_sdl(UiRect r)
@@ -186,6 +187,23 @@ void chart_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                        (int)(panel.y + 14.0f), DIM);
     }
 
+    /* What an expedition costs and what it risks, once, under the title
+     * rather than on every row (UI_PLAN N7). The odds come from the
+     * sim's own constant: a screen that quoted its own number would be
+     * a second opinion about a gamble. */
+    {
+        UiRect strip = { panel.x + 14.0f, panel.y + CHART_TITLE_H + 2.0f,
+                         panel.w - 28.0f, CHART_HEAD_H };
+
+        SDL_snprintf(buf, sizeof(buf),
+                     "An expedition: 1 scholar (%d free), 1 boat (%d), "
+                     "1 blank chart (%d).  %d%% find nothing.",
+                     view->scholars_free, view->boats_free,
+                     view->blank_charts, SURVEY_FAIL_PER_MILLE / 10);
+        font_draw_text(renderer, FONT_SMALL, buf,
+                       (int)strip.x, (int)strip.y, DIM);
+    }
+
     /* Column headings, positioned off the first passage row so they
      * cannot drift from the cells beneath them. */
     for (i = 0; i < list->count; i++) {
@@ -229,10 +247,32 @@ void chart_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             font_draw_text(renderer, FONT_SMALL, w->label,
                            (int)(w->rect.x + 8.0f), (int)(w->rect.y + 7.0f),
                            hue);
-            if (w->value)
-                font_draw_text(renderer, FONT_SMALL, "expedition under way",
+            /* An expedition already out says when it is due back. What
+             * it finds is the passage below turning from a mark into a
+             * name; what it does not find is the same row unchanged,
+             * which is the honest shape of a gamble (UI_PLAN N7). */
+            if (w->value) {
+                const ChartRow *head_row = NULL;
+                int             j;
+
+                for (j = 0; j < view->row_count; j++)
+                    if (view->rows[j].header &&
+                        view->rows[j].island == (int32_t)ui_id_value(w->id))
+                        head_row = &view->rows[j];
+
+                if (head_row && head_row->survey_back > view->tick) {
+                    char left[32];
+                    dur_text(left, sizeof(left),
+                             head_row->survey_back - view->tick);
+                    SDL_snprintf(buf, sizeof(buf),
+                                 "expedition out — back in %s", left);
+                } else {
+                    SDL_snprintf(buf, sizeof(buf), "expedition out");
+                }
+                font_draw_text(renderer, FONT_SMALL, buf,
                                (int)(w->rect.x + CHART_COL_NAME + 8.0f),
                                (int)(w->rect.y + 7.0f), HEAD);
+            }
             continue;
         }
 

@@ -2961,14 +2961,18 @@ static RejectReason sim_survey(GameState *gs, int from, int to,
     if (to < 0 || to >= MAX_ISLANDS) return REJ_UNAVAILABLE;
     if (!isl->settled) return REJ_UNAVAILABLE;
 
+    /* Each of the three costs refuses in its own words (UI_PLAN N7).
+     * They were one generic refusal, which said "not possible right
+     * now" to a player who had charted the crossing already — a fact
+     * about the world dressed up as a temporary problem. */
     if (isl->scholars_out >= island_scholar_capacity(isl))
-        return REJ_UNAVAILABLE;
+        return REJ_NO_CREW;
     if (isl->research_boats_out >= isl->research_boats)
-        return REJ_UNAVAILABLE;
+        return REJ_NO_BOAT;
     if (isl->stockpile.amount[RES_CHARTS] < 1) return REJ_NO_STOCK;
 
     route_id = survey_target_route(gs, from, to, player);
-    if (route_id < 0) return REJ_UNAVAILABLE;   /* nothing left to find */
+    if (route_id < 0) return REJ_NOTHING_TO_FIND;
 
     slot = -1;
     for (i = 0; i < b->count; i++)

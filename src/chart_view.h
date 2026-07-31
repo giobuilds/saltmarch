@@ -81,6 +81,8 @@ typedef struct {
     uint8_t  known;          /* this player has learned the passage     */
     uint8_t  gone;           /* it left play while we were looking      */
     uint8_t  surveying;      /* header rows: an expedition is out       */
+    uint64_t survey_back;    /* header rows: when it is due back        */
+    uint8_t  survey_reason;  /* header rows: RejectReason, or REJ_OK    */
 
     int32_t  charts;         /* maps of it in hand                      */
     uint32_t ticks;          /* the crossing                            */
@@ -101,6 +103,12 @@ typedef struct {
     int32_t  your_gold;
     int32_t  blank_charts;   /* RES_CHARTS in store: the Chart House's
                               * output, and what a survey spends        */
+
+    /* What an expedition would commit, and what is left to commit
+     * (UI_PLAN N7). A survey is a scholar, a research boat and a blank
+     * chart; all three are shown because the one you are short of is
+     * the one you need to know about. */
+    int32_t  scholars_free, boats_free;
     uint8_t  yours;          /* you may post from this harbour at all   */
 
     ChartRow rows[CHART_MAX_ROWS];
@@ -165,11 +173,13 @@ typedef enum {
     CHART_HIT_CLOSE,
     CHART_HIT_PAGE,         /* `page` is the new page                   */
     CHART_HIT_BUY,          /* post a buy for one chart of `route_id`   */
-    CHART_HIT_SELL
+    CHART_HIT_SELL,
+    CHART_HIT_SURVEY        /* send an expedition to `island`           */
 } ChartHitKind;
 
 typedef struct {
     ChartHitKind kind;
+    int32_t      island;    /* CHART_HIT_SURVEY: where to look          */
     int32_t      route_id;
     int32_t      limit;     /* the price the row was displaying         */
     int32_t      page;

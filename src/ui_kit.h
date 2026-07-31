@@ -96,7 +96,8 @@ enum {
      * time so the label and the click cannot disagree. */
     UI_GROUP_HULL,          /* value = ShipClass (the row)           */
     UI_GROUP_BUILD_HULL,    /* value = ShipClass (the button)        */
-    UI_GROUP_ESCORT         /* value = ship index; widget value=target */
+    UI_GROUP_ESCORT,        /* value = ship index; widget value=target */
+    UI_GROUP_SURVEY         /* value = the island to look for a way to */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are
