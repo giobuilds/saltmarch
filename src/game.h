@@ -218,6 +218,12 @@ typedef struct GameState {
      * the client, because a half-written order is not world state. */
     int  book_open;
 
+    /* The passages overlay (UI_PLAN N4): the routes out of the CURRENT
+     * island, what this player knows of them, and what a map of one
+     * costs on the book. Its rows are retained like the book's, so the
+     * view lives on the client beside them and only the flag is here. */
+    int  charts_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
      * Every world mutation is recorded here as a Command, in the order
      * it was applied, and re-running the log from the world seed
@@ -496,7 +502,8 @@ typedef enum {
     UI_OVERLAY_ESCROW,
     UI_OVERLAY_INVENTORY,
     UI_OVERLAY_WORLD,
-    UI_OVERLAY_BOOK         /* the order book (UI_PLAN N3)             */
+    UI_OVERLAY_BOOK,        /* the order book (UI_PLAN N3)             */
+    UI_OVERLAY_CHARTS       /* the passages (UI_PLAN N4)               */
 } GameOverlay;
 
 GameOverlay game_topmost_overlay(const GameState *gs);
@@ -866,7 +873,10 @@ int game_survey(GameState *gs, int from_island, int to_island);
  *
  * `kind`/`what` name the thing being traded rather than a ResourceType,
  * because a route chart is not one of a fixed set of goods; see
- * orderbook.h. Today only TRADE_RESOURCE is accepted. */
+ * orderbook.h. Both kinds are accepted: a TRADE_ROUTE_CHART order names
+ * a private passage by its sea route id, and is posted from the
+ * passages screen rather than the book's composer, because a chart is
+ * chosen by pointing at water (UI_PLAN N4). */
 int game_place_order(GameState *gs, int island_idx, TradeKind kind,
                      uint16_t what, int qty, int limit);
 

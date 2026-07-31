@@ -39,6 +39,11 @@ typedef struct {
      * walk up to. */
     int book_toggle;
 
+    /* Edge-triggered on C: opens/closes the passages overlay (UI_PLAN
+     * N4). Beside the book on purpose — charts are bought and sold
+     * through it, and the two screens answer halves of one question. */
+    int chart_toggle;
+
     /* Edge-triggered on F8: the time-travel scrubber (MMO_PLAN later
      * phases). */
     int scrub_toggle;

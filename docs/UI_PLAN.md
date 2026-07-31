@@ -790,9 +790,74 @@ immediately, so the first version of that recording posted an order that
 had already filled by the time the next click tried to cancel it, and
 tested nothing. Both are in `tests/test_book.c` now.
 
-**N4 — charts and routes.** What you know, what you hold, what a passage
-saves, what a chart costs on the book. Includes the expiry clock, since
-a chart that quietly stops working is worse than no chart.
+**N4 — charts and routes. Done.** What you know, what you hold, what a
+passage saves, what a chart costs on the book, and how long that water
+stays in use — on `C`. `chart_view.c` + `chart_ui.c`, on the same
+builder/drawer convention as everything else.
+
+It closes the hole N3 left open. The order book could show and cancel a
+chart order but not post one, because choosing which passage to sell a
+map of needs somewhere a passage has a name. Here a **row is the
+picker**: Buy and Sell emit `(TRADE_ROUTE_CHART, route id)` orders
+through the funnel at the price the row was displaying, and the
+composer stays a resource-only affair. One map per click — a chart is
+not a commodity you buy ten of, each crossing spends exactly one, and
+anything cleverer wants a composer that already exists elsewhere.
+
+*This is the phase N1's exception was made for.* The sea is read
+directly rather than copied per frame: ~200 entries of fixed geometry
+regenerated from the seed, against one mutable byte per pair that comes
+through the snapshot. Safe precisely because a `Sea` is generated rather
+than owned — there is nothing in it a UI could mutate that would not be
+rebuilt identically.
+
+*The rows are retained, for a sharper reason than N3's.* When a passage
+retires, the pair's variant-1 slot starts naming **different water** —
+so a screen rebuilt from the sea alone would not merely slide a row, it
+would swap one map for another under a cursor already travelling toward
+Buy. The retired row stays where it stood, struck through and saying
+"out of use", and the passage that replaced it is appended inside the
+same destination group. This is also the one event the screen exists to
+warn about, so having it happen *on screen* rather than between frames
+is the feature.
+
+*The expiry clock and the event that fires it are now one function.*
+The rotation schedule lived inside `game.c`'s update loop, where a
+screen could only have copied it — and a copied schedule is one edit
+away from telling a player their charts have hours left on the morning
+they become waste paper. It is `sea_pair_next_rotation()` now, called
+by the sim to ask "is it now?" and by the row to ask "how long left?".
+The test runs the world to the tick the row counted down to and asserts
+the sim rotates on it; perturbing the countdown by fifty ticks fails it
+from both sides.
+
+*Which cells are marks is the whole design of the row.* A passage you
+have not learned hides its name, its crossing and what it saves —
+those are what a chart tells you — but its **price and its expiry are
+plain numbers**, because the market's resting offer and the rotation
+schedule are public facts about water you have never seen. Marking all
+six would have been tidier and would have lied in the other direction:
+it would say the market has nothing on the counter when your map is
+sitting there priced. Buying that map is, in fact, the main way a
+passage becomes known.
+
+Two things stated rather than assumed, both of which this document warns
+about elsewhere. **The screen does not hide**: this client's `Sea` holds
+every passage in the world by name, because it is generated rather than
+redacted, so drawing an unlearned one as a mark is a scoping decision
+exactly like the book showing your own orders — what actually conceals
+is the sim, which will not route a booking down a passage its seller
+does not know. And **it does not refuse what the sim would accept**: the
+market will sell a map of water nobody sails, and a retired row says so
+in words rather than by greying its buttons, because a screen that
+refuses a click the sim would take is the drift decision 3 exists to
+prevent.
+
+Deferred: the insurance premium per route (it is N8's number, and one
+column is not worth splitting it from the toggle beside it), and
+dispatching an expedition — N7's, though a destination whose expedition
+is already out says so here, never naming the passage it is looking for,
+because not knowing is what you are paying for.
 
 **N5 — the sea.** `world_ui` grows routes as paths, waypoints by name,
 shipments moving along them, and the lairs the player knows of. The map
@@ -947,4 +1012,7 @@ that link failure *is* the purity test.
 | `src/exchange_view.c` / `.h` | M3/M5 | faction + offer builders |
 | `src/book_view.c` / `.h` | N3 | new — resting orders, retained rows, the draft composer |
 | `src/book_ui.c` / `.h` | N3 | new — the book's drawer |
+| `src/chart_view.c` / `.h` | N4 | new — passages, the expiry clock, the route picker |
+| `src/chart_ui.c` / `.h` | N4 | new — the passages' drawer |
+| `src/sea.c` / `.h` | N4 | `sea_pair_next_rotation()` — one schedule, two callers |
 | `src/fonts.c` | M4 | `TTF_Text` migration (scheduled) |

@@ -274,6 +274,8 @@ typedef struct {
     int32_t   book_res;          /* ResourceType being composed        */
     int32_t   book_qty;
     int32_t   book_limit;        /* 0 => follow the market's quote     */
+
+    int32_t   chart_page;        /* the passages overlay (UI_PLAN N4)  */
 } UiState;
 
 /* Note: which overlay is OPEN is not here. Phase 0 sketched a

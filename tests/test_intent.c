@@ -107,6 +107,25 @@ static void test_harness(void)
         CHECK(all_have_ticks, "each recorded click carries a frame tick");
     }
 
+    /* The fixture must actually exercise the passages screen, and the
+     * click there must actually have produced a command. A recorded
+     * click that emitted nothing is skipped by the verifier — "no
+     * expectation" compares equal to everything — so a session that
+     * quietly stopped buying charts would go on passing while testing
+     * nothing. That is the trap N3's first recording fell into, and it
+     * is worth one assertion per screen the fixture claims to cover. */
+    {
+        int i, chart_clicks = 0, chart_orders = 0;
+        for (i = 0; i < gs->intent_count; i++) {
+            if (gs->intent_log[i].ui.overlay != (uint8_t)UI_OVERLAY_CHARTS)
+                continue;
+            chart_clicks++;
+            if (gs->intent_log[i].seq != 0) chart_orders++;
+        }
+        CHECK(chart_clicks > 0, "the session visited the passages screen");
+        CHECK(chart_orders > 0, "and bought a chart there, not just paged");
+    }
+
     CHECK(replay_verify_ui(gs, 0) == 0,
           "replaying those clicks through the real UI reproduces them");
 
