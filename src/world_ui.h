@@ -30,6 +30,7 @@
 #include "ship.h"
 #include "sea.h"
 #include "feed.h"   /* Phase 4: ghost voyages from the shared feed */
+#include "sea_view.h"  /* UI_PLAN N5: where everything spatial goes */
 
 #define WORLD_NODE_ZOOM   2.2f   /* island diamond size vs a map tile */
 
@@ -70,6 +71,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
                    const Faction *faction, int insurance_quote,
+                   const SeaView *view,
                    int mouse_x, int mouse_y);
 
 /* Hit-test a click. On WORLD_HIT_ISLAND, *out_island is the index. */

@@ -60,6 +60,9 @@ typedef struct {
      * into its place under the cursor (UI_PLAN N4). */
     ChartView     charts;
     UiList        chart_list;
+    /* Where everything spatial goes on the world map (UI_PLAN N5).
+     * Rebuilt each frame the map is open, like the other views. */
+    SeaView       sea_view;
     HudView       hud;
     UiList        hud_list;
     InventoryView inventory;
@@ -339,6 +342,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         chart_build(&app->chart_list, &app->charts, &app->ui,
                     (float)SCREEN_W, (float)SCREEN_H);
     }
+
+    /* The sea, whenever the map is open (UI_PLAN N5). Rebuilt rather
+     * than folded: unlike a row under a cursor, a path has nothing to
+     * lose by being recomputed — it is where the water is. */
+    if (gs->world_open)
+        sea_view_build(&app->sea_view, &app->snap, &gs->sea,
+                       gs->current_island, (float)SCREEN_W, (float)SCREEN_H);
 
     /* Shared feed (Phase 4): publish any departures the ticks above
      * just caused, and re-read the inbound feed on its poll interval.
@@ -1053,6 +1063,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                           ? game_insurance_quote(gs, gs->world_selected_ship,
                                 gs->ships[gs->world_selected_ship].to_island)
                           : 0,
+                      &app->sea_view,
                       gs->input.logical_x, gs->input.logical_y);
 
     /* F10 market debug overlay: the economy test harness. Shows the

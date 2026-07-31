@@ -1,6 +1,9 @@
 /*  world_ui.c  --  The archipelago overview overlay  */
 
 #include "world_ui.h"
+#include "sea_view.h"
+#include "simclock.h"
+#include "orderbook.h"
 #include "ui_kit.h"
 #include "render.h"
 #include "fonts.h"
@@ -18,20 +21,15 @@
  * together on the water look close together here, and a route drawn
  * between them is the route a ship actually sails.
  *
- * The projection insets by a margin so a node at the very edge of the
- * sea still has its whole diamond on screen. Floats are fine from here
- * down: this is drawing, and everything upstream of it was integer.
- */
-#define WORLD_MARGIN_FRAC 0.10f
-
-static void sea_to_screen(SeaPos p, int screen_w, int screen_h,
-                          float *out_x, float *out_y)
+ * The projection itself moved to sea_view.c at UI_PLAN N5, unchanged:
+ * it is arithmetic, everything spatial on this screen is derived from
+ * it, and it was the one part of this file a headless test could have
+ * checked and could not reach. What is left here is drawing. */
+static void node_screen(const Sea *sea, int screen_w, int screen_h, int i,
+                        float *out_x, float *out_y)
 {
-    float mx = (float)screen_w * WORLD_MARGIN_FRAC;
-    float my = (float)screen_h * WORLD_MARGIN_FRAC;
-
-    *out_x = mx + ((float)p.x / (float)SEA_WIDTH)  * ((float)screen_w - 2.0f * mx);
-    *out_y = my + ((float)p.y / (float)SEA_HEIGHT) * ((float)screen_h - 2.0f * my);
+    sea_to_screen(sea->island[i], (float)screen_w, (float)screen_h,
+                  out_x, out_y);
 }
 
 /* Tint per profile, so an island reads as "the wooded one" at a
@@ -71,7 +69,7 @@ static void node_origin(const Sea *sea, int screen_w, int screen_h, int i,
     float h = (float)TILE_H * WORLD_NODE_ZOOM;
     float cx, cy;
 
-    sea_to_screen(sea->island[i], screen_w, screen_h, &cx, &cy);
+    node_screen(sea, screen_w, screen_h, i, &cx, &cy);
     *out_x = cx - w / 2.0f;
     *out_y = cy - h / 2.0f;
 }
@@ -190,6 +188,119 @@ static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
     return r;
 }
 
+/* ---- the sea (UI_PLAN N5) ----------------------------------
+ * Paths as paths, waypoints by name, shipments where they actually are,
+ * and the lairs on the way. Everything here comes out of the SeaView —
+ * nothing on this screen decides where a thing goes any more.
+ */
+static void draw_path(SDL_Renderer *r, const SeaPath *p)
+{
+    int i;
+
+    /* The lane reads as infrastructure; a private passage as something
+     * you own the knowledge of. A passage you hold no chart for is
+     * drawn dimmer than one you can actually sail, because "known" and
+     * "usable" are two different things and the difference is the whole
+     * of the Chart House. */
+    if (!p->is_private)   SDL_SetRenderDrawColor(r,  70, 110, 150, 255);
+    else if (p->carrying) SDL_SetRenderDrawColor(r, 210, 175,  90, 255);
+    else if (p->held)     SDL_SetRenderDrawColor(r, 150, 130, 170, 255);
+    else                  SDL_SetRenderDrawColor(r,  86,  74, 104, 255);
+
+    for (i = 0; i + 1 < p->point_count; i++)
+        SDL_RenderLine(r, p->pt[i].x, p->pt[i].y,
+                       p->pt[i + 1].x, p->pt[i + 1].y);
+}
+
+static void draw_mark(SDL_Renderer *r, const SeaMark *m)
+{
+    SDL_FRect dot = { m->at.x - 3.0f, m->at.y - 3.0f, 6.0f, 6.0f };
+    SDL_Color name = { 130, 155, 180, 255 };
+    SDL_Color lair = { 225, 130, 110, 255 };
+
+    if (m->lair) {
+        /* A fleet is a ring around the water it sits in, not a dot on
+         * it: what matters is the reach, and which of your lanes runs
+         * through it. */
+        SDL_FRect ring = { m->at.x - 11.0f, m->at.y - 11.0f, 22.0f, 22.0f };
+        SDL_SetRenderDrawColor(r, 190, 90, 80, 255);
+        SDL_RenderRect(r, &ring);
+    }
+
+    SDL_SetRenderDrawColor(r, m->lair ? 200 : 110, m->lair ? 100 : 140,
+                           m->lair ? 90 : 170, 255);
+    SDL_RenderFillRect(r, &dot);
+
+    font_draw_text(r, FONT_SMALL, m->name,
+                   (int)(m->at.x + 8.0f), (int)(m->at.y - 7.0f),
+                   m->lair ? lair : name);
+}
+
+static void draw_sea(SDL_Renderer *r, const SeaView *v, int screen_w,
+                     int screen_h, int mouse_x, int mouse_y)
+{
+    int i;
+
+    (void)screen_w;
+
+    for (i = 0; i < v->path_count; i++) draw_path(r, &v->path[i]);
+    for (i = 0; i < v->mark_count; i++) draw_mark(r, &v->mark[i]);
+
+    for (i = 0; i < v->cargo_count; i++) {
+        const SeaCargo *c  = &v->cargo[i];
+        SDL_FRect       mr = { c->at.x - 5.0f, c->at.y - 5.0f, 10.0f, 10.0f };
+
+        /* Yours is solid; everybody else's is the muted style the feed's
+         * ghosts already taught. A raided shipment stays on the map,
+         * because "nothing arrived and here is where it stopped" is the
+         * information (MARITIME_PLAN Phase 5b). */
+        if (c->raided)    SDL_SetRenderDrawColor(r, 200,  90,  80, 255);
+        else if (c->mine) SDL_SetRenderDrawColor(r, 235, 215, 150, 255);
+        else              SDL_SetRenderDrawColor(r, 140, 160, 180, 150);
+
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_RenderFillRect(r, &mr);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+        if (mouse_x >= (int)mr.x - 4 && mouse_x <= (int)(mr.x + mr.w) + 4 &&
+            mouse_y >= (int)mr.y - 4 && mouse_y <= (int)(mr.y + mr.h) + 4) {
+            char      tip[96];
+            SDL_Color col = { 225, 235, 245, 255 };
+            SDL_FRect bg  = { (float)mouse_x + 14.0f, (float)mouse_y - 6.0f,
+                              260.0f, 22.0f };
+            uint64_t  left = c->arrive_tick > v->tick
+                           ? c->arrive_tick - v->tick : 0u;
+
+            if (c->raided)
+                SDL_snprintf(tip, sizeof(tip), "Taken by pirates");
+            else if (c->kind == (uint16_t)TRADE_ROUTE_CHART)
+                SDL_snprintf(tip, sizeof(tip), "%d chart(s), %us out",
+                             c->qty,
+                             (unsigned)(left / (uint64_t)SIM_TICKS_PER_SEC));
+            else
+                SDL_snprintf(tip, sizeof(tip), "%d %s, %us out", c->qty,
+                             c->what < (uint16_t)RES_COUNT
+                                 ? RESOURCE_NAMES[c->what] : "?",
+                             (unsigned)(left / (uint64_t)SIM_TICKS_PER_SEC));
+
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 10, 25, 40, 220);
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+            font_draw_text(r, FONT_SMALL, tip, (int)bg.x + 6, (int)bg.y + 4,
+                           col);
+        }
+    }
+
+    if (v->cargo_skipped > 0) {
+        SDL_Color more = { 150, 170, 190, 255 };
+        char      buf[48];
+        SDL_snprintf(buf, sizeof(buf), "+%d more cargoes at sea",
+                     v->cargo_skipped);
+        font_draw_text(r, FONT_SMALL, buf, 16, screen_h - 172, more);
+    }
+}
+
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Sea *sea, const Island islands[], int island_count, int current,
                    uint32_t local_player,
@@ -197,6 +308,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const GhostVoyage ghosts[], int ghost_count,
                    uint64_t unix_ms,
                    const Faction *faction, int insurance_quote,
+                   const SeaView *view,
                    int mouse_x, int mouse_y)
 {
     SDL_FRect backdrop = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };
@@ -215,6 +327,9 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                        "Click an island to view it.  Right-click to close.",
                        40, WORLD_TITLE_Y + 22, title_col);
     }
+
+    /* The sea itself, under everything else (UI_PLAN N5). */
+    if (view) draw_sea(renderer, view, screen_w, screen_h, mouse_x, mouse_y);
 
     for (i = 0; i < island_count; i++) {
         const Island *isl = &islands[i];
