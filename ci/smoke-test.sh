@@ -70,14 +70,28 @@ fi
 wait "$GAME_PID" 2>/dev/null
 RC=$?
 
-echo "--- captured output ---"
+echo "--- captured output (rc=$RC) ---"
 sed 's/^/  | /' "$LOG"
-echo "-----------------------"
+echo "--------------------------------"
 
 if [ "$SURVIVED" -eq 1 ]; then
     pass "survived ${SECONDS_TO_RUN}s without exiting"
 else
     fail "died after ${ALIVE_FOR}s (rc=$RC) — crashed or aborted on its own"
+fi
+
+# A binary that runs and says NOTHING is a different failure from one
+# that runs and says the wrong thing, and the checks below cannot tell
+# them apart: they would report six missing lines and no reason.
+#
+# It is also the case `kill -0` is worst at. A child that has exited but
+# not been reaped is a zombie, and a zombie answers `kill -0`
+# successfully — so "survived" above can be true of a process that died
+# in the first millisecond. An empty log is the tell.
+if [ ! -s "$LOG" ]; then
+    fail "produced NO output at all (rc=$RC) — it did not reach world"
+    fail "generation, so this is a startup failure rather than a"
+    fail "regression in anything the checks below name"
 fi
 
 # Guard against the silent-failure class described above.

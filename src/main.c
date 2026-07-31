@@ -125,6 +125,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     *appstate = NULL;   /* defined for the CLI and failure paths */
 
+    /* Said before anything can fail, because "it started and printed
+     * nothing" and "it never started" are different problems and the
+     * logs could not tell them apart. ci/smoke-test.sh treats an empty
+     * log as its own failure for the same reason. */
+    SDL_Log("Saltmarch starting");
+
     /* Headless record/replay short-circuits before any window exists. */
     if (run_cli_mode(argc, argv, &cli_result))
         return cli_result;
@@ -178,6 +184,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     fx_reject_init(&app->fx);
     SDL_memset(&app->intent, 0, sizeof(app->intent));
     config_load(&app->cfg);
+    SDL_Log("Config: %s (%d server%s remembered)",
+            app->cfg.path[0] ? app->cfg.path : "(none)",
+            app->cfg.count, app->cfg.count == 1 ? "" : "s");
     app->join_host[0] = '\0';
     app->join_port    = 0;
     app->joined       = 0;
