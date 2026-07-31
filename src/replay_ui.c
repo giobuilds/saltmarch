@@ -10,6 +10,7 @@
 #include "replay.h"
 #include "book_view.h"
 #include "chart_view.h"
+#include "yard_view.h"
 #include "camera.h"
 #include "confirm_view.h"
 #include "exchange_view.h"
@@ -529,6 +530,7 @@ typedef struct {
     UiList        island_list;
     BookView      book;  UiList book_list;
     ChartView     charts; UiList chart_list;
+    YardView      yard;   UiList yard_list;
 } UiFrame;
 
 /* Rebuild every overlay for this frame. Lists are filled in a fixed
@@ -563,6 +565,9 @@ static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st,
     chart_view_update(&f->charts, snap, sea, snap->current_island);
     chart_build(&f->chart_list, &f->charts, st, (float)SCREEN_W,
                 (float)SCREEN_H);
+
+    yard_view_build(&f->yard, snap, snap->current_island);
+    yard_build(&f->yard_list, &f->yard, st, (float)SCREEN_W, (float)SCREEN_H);
 }
 
 static int rects_on_screen(const UiList *l, const char *what, int verbose)
@@ -732,6 +737,7 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
         st.book_qty       = in->ui.book_qty;
         st.book_limit     = in->ui.book_limit;
         st.chart_page     = in->ui.chart_page;
+        st.yard_page      = in->ui.yard_page;
 
         game_set_current_island(gs, in->ui.current_island);
         ui_snapshot_build(&snap, gs);
@@ -764,6 +770,7 @@ static void verify_one(const UiFrame *f, const UiSnapshot *snap,
     v->failures += rects_on_screen(&f->cf_list,     "confirm",   v->verbose);
     v->failures += rects_on_screen(&f->book_list,   "book",      v->verbose);
     v->failures += rects_on_screen(&f->chart_list,  "charts",    v->verbose);
+    v->failures += rects_on_screen(&f->yard_list,   "yard",      v->verbose);
     v->checked++;
 
     /* Emission, where the mapping is pure. */
@@ -877,6 +884,7 @@ static void dump_one(const UiFrame *f, const UiSnapshot *snap,
     dump_list(d->out, "confirm",   &f->cf_list);
     dump_list(d->out, "book",      &f->book_list);
     dump_list(d->out, "charts",    &f->chart_list);
+    dump_list(d->out, "yard",      &f->yard_list);
 }
 
 void replay_dump_ui(GameState *gs, FILE *out)

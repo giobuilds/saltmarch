@@ -101,6 +101,7 @@ add_library(saltmarch_ui STATIC
     src/book_view.c
     src/chart_view.c
     src/sea_view.c
+    src/yard_view.c
     src/hud_view.c
     src/vitals.c
     src/inventory_view.c
@@ -124,6 +125,7 @@ set(SALTMARCH_CLIENT_SOURCES
     src/trade_ui.c
     src/book_ui.c
     src/chart_ui.c
+    src/yard_ui.c
     src/world_ui.c
     src/feed.c
     src/inventory_ui.c

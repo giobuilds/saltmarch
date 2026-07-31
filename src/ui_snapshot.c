@@ -226,6 +226,19 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
         u->to_island   = s->to_island;
         u->progress    = s->progress;
         for (r = 0; r < RES_COUNT; r++) u->cargo[r] = s->cargo[r];
+
+        /* The hull, resolved through ship.c's own accessors rather than
+         * by indexing the class table here — a screen that reproduced
+         * the "damaged guns are worth less" rule would be a second
+         * implementation of the thing a player is about to bet on. */
+        u->klass     = s->klass;
+        u->guns      = ship_fighting_strength(s);
+        u->hull      = s->hull;
+        u->hull_max  = (s->klass >= 0 && s->klass < SHIP_CLASS_COUNT)
+                     ? SHIP_CLASSES[s->klass].hull : s->hull;
+        u->hold      = ship_hold_capacity(s);
+        u->escorting = s->escorting;
+        u->mine      = (uint8_t)(s->owner == gs->local_player_id);
     }
 
     /* Quotes are resolved here, once, rather than in each overlay: the
