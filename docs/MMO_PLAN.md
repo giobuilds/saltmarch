@@ -308,7 +308,7 @@ lines. Carbon still not required.
 
 ---
 
-## Phase 6 — The headless twin and the server decision
+## Phase 6 — The headless twin and the server decision — **DONE**
 
 **Goal:** the sim as an SDL-free static library, and an informed choice on
 Carbon.
@@ -341,7 +341,59 @@ Carbon.
   truth. (Divergent offline/online production rates would corrupt the
   "logging off is safe and fair" promise.)
 
+### As built
+
+Every bullet above landed, and one of them landed as a decision not to
+do the thing it proposed.
+
+- **The split.** `SALTMARCH_SIM_SOURCES` is a static library linking no
+  SDL, enforced twice over — the archive would fail to link an SDL call,
+  and `ci/sim-sdl-free.sh` greps the sources so it fails earlier and with
+  a better message. It has since grown a third and fourth member,
+  `libsaltmarch_net` and `libsaltmarch_ui`, on the same rule.
+- **`saltmarch_replay`** is the CI determinism gate on three platforms,
+  and since UI_PLAN M1 it also re-drives a recorded session's clicks
+  through the real overlay builders. Still no SDL.
+- **The host** owns the canonical log, ticks on a monotonic clock with a
+  deliberately unclamped accumulator (which is the offline catch-up rule,
+  built rather than described), accepts and broadcasts commands, and
+  checkpoints every `--checkpoint-seconds`. See
+  [SERVER.md](SERVER.md) for what it guarantees, the transport hardening
+  audit, and the snapshot format that made join cost flat in world age
+  rather than growing with it forever.
+- **Carbon was evaluated and declined**, and the reasoning is recorded in
+  SERVER.md's closing section rather than repeated here. The short of it:
+  the host has no concurrency to simplify. It is a single deterministic
+  tick loop over four islands with a non-blocking socket drain either
+  side, idling near 0% CPU; a greenlet per island would be four greenlets
+  that must run in a fixed order to preserve determinism, which buys
+  nothing and costs the property the whole design stands on. The
+  prototype was not written — a deviation from the plan's own method, and
+  the honest note is that the argument above was strong enough that
+  spending two days to confirm it would have been ceremony.
+
 ---
+
+## Where this leaves the plan
+
+**Every phase in this document is now built.** Phases 1–6 and every item
+under "Later phases" below; the MMO arc as originally written is
+finished, and what the game does not do yet is written down elsewhere:
+
+- **Authentication.** `--as N` is an honour system, and ids are small
+  integers from 1 — enumerated rather than guessed. This is the first
+  thing to fix before a public server, and [AUTH_PLAN.md](AUTH_PLAN.md)
+  is the design.
+- **Server authority** — [SERVER_AUTHORITY.md](SERVER_AUTHORITY.md)
+  Phases 1–3 have landed (state pushes, local prediction, per-client
+  redaction), Phase 4 was answered by MARITIME_PLAN, and **Phase 5
+  (server-side history — the scrubber and F9 served from the server)**
+  is the only one left, and is optional by its own admission.
+- **Account tooling**, without which whoever runs a public server cannot
+  answer a data request — [PRIVACY.md](PRIVACY.md).
+- **Sharding.** One process, one archipelago, one thread. Named in
+  SERVER.md as a limit rather than a plan; the greenlet-per-island idea
+  above is what it would be built on if it were ever wanted.
 
 ## Later phases — **all landed**
 
