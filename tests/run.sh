@@ -56,6 +56,7 @@ for src in "$root"/tests/test_*.c; do
         test_exchange) link_objs="$uilib";  link_sdl="" ;;
         test_book)     link_objs="$uilib";  link_sdl="" ;;
         test_chart_view) link_objs="$uilib"; link_sdl="" ;;
+        test_sea_view) link_objs="$uilib";  link_sdl="" ;;
         test_hud)      link_objs="$uilib";  link_sdl="" ;;
         test_vitals)   link_objs="$uilib";  link_sdl="" ;;
         test_confirm)  link_objs="$uilib";  link_sdl="" ;;
