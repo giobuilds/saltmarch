@@ -186,7 +186,8 @@ shelf. Save v31: no field changed shape, the CEILING did, and a world
 saved at ten residents a house would quietly shed people to fit a game
 whose ceiling is six.
 
-**And the determinism fixture's hash did not move, which is a finding.**
+**And the determinism fixture's hash did not move, which was a finding
+— since fixed, see below.**
 It was supposed to. The reason it did not is that
 `replay_record_demo_session` places one house, buys eight Wood, builds a
 ship and sails it — and never connects that house to a warehouse or puts
@@ -197,12 +198,21 @@ all**: not consumption, not growth, not the gold, not the ladder. Three
 phases of change to that code are invisible to the check that exists to
 notice change.
 
-That is its own piece of work — a fixture that feeds a house needs a
-road laid between two positions the recorder picks at runtime, and doing
-it badly would mean a fixture that silently goes back to testing nothing.
-It is listed here rather than bolted onto this phase because a fixture
-change moves the hash for its own reason, and the whole discipline of
-this plan is one reason per move.
+*Fixed, in its own commit, and the root cause was worse than expected.*
+**A fresh island has no buildings at all** — no warehouse — and
+connectivity is seeded FROM warehouses, so the house the fixture placed
+could not have been connected under any road: there was nothing for a
+road to reach. The fixture now builds a warehouse, lays one tile of road
+against it, puts the house against the road, buys what marshfolk eat,
+and runs long enough for the needs tick to fire several times.
+
+It also **returns whether it actually fed anybody**, and
+`tests/test_headless.c` asserts on that return. This file had already
+been wrong about its own coverage once before (it paid for its house in
+goods a fresh island does not hold, so the placement was refused every
+run); a fixture that can quietly cover nothing needs a check that says
+so, because a hash agreeing with itself about a world where nothing
+happens is not a determinism gate.
 
 **4 — say it on screen.** The alert strip separates *starving* (a basic
 is missing) from *discontent* (a luxury is), and the confirm popup shows

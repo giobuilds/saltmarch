@@ -77,11 +77,28 @@ int main(void)
     if (!a || !b) { printf("  FAIL: game_init\n"); return 1; }
 
     /* 1 + 2: two independent worlds, same seed, same scripted session. */
-    replay_record_demo_session(a, 4242u);
-    replay_record_demo_session(b, 4242u);
+    {
+        int ea = replay_record_demo_session(a, 4242u);
+        int eb = replay_record_demo_session(b, 4242u);
 
-    CHECK(a->sim_tick_no == 500 && b->sim_tick_no == 500,
-          "the fixture session ran 500 ticks with no client attached");
+        /* THE FIXTURE MUST EXERCISE THE ECONOMY, and this assertion is
+         * the only thing that keeps it honest.
+         *
+         * It has silently covered nothing twice: once paying for its
+         * house in goods the island did not have, and once placing a
+         * house on an island with NO WAREHOUSE — connectivity is seeded
+         * from warehouses, so pop_update took its "no road" branch for
+         * the fixture's whole life and three phases of needs work moved
+         * the recorded hash not at all. A hash agreeing with itself
+         * about a world where nothing happens is not a determinism
+         * gate; it is a very slow way of comparing two zeroes. */
+        CHECK(ea && eb,
+              "the fixture fed somebody — house connected, food eaten, "
+              "happiness off the floor");
+    }
+
+    CHECK(a->sim_tick_no == 2000 && b->sim_tick_no == 2000,
+          "the fixture session ran its ticks with no client attached");
     CHECK(a->cmd_count > 0, "the session went through the command funnel");
 
     ha = sim_hash(a);

@@ -23,7 +23,16 @@
  * purpose — a house (population and agents run), a purchase, a ship and
  * a voyage (progress accumulates) — then 500 ticks. Leaves gs holding
  * the finished world; --record saves it as a .smlog fixture. */
-void replay_record_demo_session(GameState *gs, uint32_t seed);
+/* Record the determinism fixture into `gs`. Returns 1 if the session
+ * it recorded actually EXERCISED the needs economy — house connected,
+ * happiness off the floor, food eaten — and 0 if it went through the
+ * motions against a world where nothing could happen.
+ *
+ * The return value exists because this fixture has silently covered
+ * nothing twice (see replay.c). tests/test_determinism.c asserts on
+ * it, so a third time is a failing test rather than a hash quietly
+ * agreeing with itself. */
+int replay_record_demo_session(GameState *gs, uint32_t seed);
 
 /* ---- the UI harness (UI_PLAN M1) ---------------------------
  * Replays a recorded session and, at every recorded click, rebuilds the
