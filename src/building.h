@@ -394,6 +394,33 @@ int building_can_place(const Map *map,
                        BuildingType type,
                        int row, int col);
 
+/* How many workers `def` can hold at once, or 0 for a building that
+ * employs nobody (LIFE_PLAN Phase 1).
+ *
+ * Until this existed a building's labour was a light switch:
+ * agents_assign_jobs() let exactly one agent claim each workplace, so
+ * Building.worker_count was 0 or 1 and production was a step function
+ * of labour — nothing at zero, full rate at one, and identical at six.
+ * The gap between 0 and 1 was infinite and everything above it flat.
+ *
+ * DERIVED FROM THE CATEGORY, NOT STORED PER DEF. The categories already
+ * say how big a thing is — BCAT_WORKSHOP is documented as "one artisan's
+ * worth of processing" and BCAT_FACTORY as heavy industry — so a table
+ * here states the rule once instead of scattering ninety numbers no one
+ * can compare across the def rows. Footprint deliberately does NOT enter
+ * it: only 1x1 and 2x2 exist, and a fishing crew is bigger than the hut
+ * it lands its catch at.
+ *
+ * A producing def whose category names no crew falls back to 1, which is
+ * exactly today's behaviour rather than a building that suddenly employs
+ * nobody. tests/test_defs.c asserts none actually take that path.
+ *
+ * Takes a def rather than a type for the same reason
+ * building_place_check_def() does: a test can drive the rule with a def
+ * it wrote itself, instead of only through whatever buildings happen to
+ * exist. */
+int building_worker_cap(const BuildingDef *def);
+
 /* The first input slot `def` cannot pay for out of `s`, or -1 when it
  * can run. All-or-nothing: a building ticks only when every
  * non-RES_COUNT slot has enough, so nothing half-consumes one input

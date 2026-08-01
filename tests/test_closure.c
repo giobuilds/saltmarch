@@ -19,7 +19,7 @@
  * island fail to grow and having no idea why.
  *
  * So this test computes it. It walks each tier's needs down to raw
- * goods, sums the fractional buildings required, and fails if a tier a
+ * goods, sums the fractional workers required, and fails if a tier a
  * player can BUILD DIRECTLY cannot be staffed.
  *
  * WHY IT CHARGES WHAT pop_update CHARGES
@@ -76,12 +76,24 @@ static int failures = 0;
 
 /* ---- the chain walk ---------------------------------------
  *
- * Rates are in units per second throughout. A building making
- * produce_amt every tick_seconds supplies produce_amt/tick_seconds, so
- * sustaining `rate` takes rate*tick_seconds/produce_amt of it — a
- * FRACTIONAL building count, which is the right unit: half a Sheep
- * Pasture means one pasture idle half the time, and one worker either
- * way is the pessimistic reading this test does not take.
+ * Rates are in units per second throughout. A WORKER making produce_amt
+ * every tick_seconds supplies produce_amt/tick_seconds, so sustaining
+ * `rate` takes rate*tick_seconds/produce_amt of them — a fractional
+ * headcount, which is the right unit: half a shepherd means one working
+ * half the time.
+ *
+ * SINCE LIFE_PLAN PHASE 1 THE DEF'S RATE IS THE PER-WORKER RATE, so the
+ * formula below is unchanged and what it counts has changed name: it
+ * was fractional BUILDINGS when a workplace held exactly one person,
+ * and it is fractional WORKERS now that a Fisher's Hut holds five.
+ *
+ * That is why Phase 1 could not move these numbers and did not: five
+ * workers landing five fish leaves output per worker exactly where it
+ * was. What building_worker_cap() decides is how many BUILDINGS those
+ * workers stand in — land and capital, not labour — which is why it
+ * appears nowhere in this file. Phase 2's super-linear capacity bonus
+ * is the one that WILL move them, deliberately, and will have to say so
+ * here.
  *
  * Doubles are fine here and nowhere near the sim. This is a property of
  * the def table computed at test time; nothing it produces is hashed,
@@ -118,7 +130,7 @@ static int producer_count(ResourceType g)
 static double chain_workers(ResourceType g, double rate)
 {
     const BuildingDef *d;
-    double buildings, total;
+    double workers, total;
     int    b, i;
 
     if (visiting[g]) return CYCLIC;       /* a good in its own chain */
@@ -127,15 +139,15 @@ static double chain_workers(ResourceType g, double rate)
 
     visiting[g] = 1;
     d         = &BUILDING_DEFS[b];
-    buildings = rate * (double)d->tick_seconds / (double)d->produce_amt;
-    total     = buildings;
+    workers   = rate * (double)d->tick_seconds / (double)d->produce_amt;
+    total     = workers;
 
     for (i = 0; i < MAX_BUILDING_INPUTS; i++) {
         double sub;
         if (d->consumes[i] == RES_COUNT) continue;
-        /* Each of those buildings takes consume_amt every tick_seconds. */
+        /* Each of those workers draws consume_amt every tick_seconds. */
         sub = chain_workers(d->consumes[i],
-                            buildings * (double)d->consume_amt[i]
+                            workers * (double)d->consume_amt[i]
                                 / (double)d->tick_seconds);
         if (sub < 0.0) { visiting[g] = 0; return sub; }
         total += sub;

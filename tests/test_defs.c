@@ -190,6 +190,54 @@ int main(void)
     CHECK(BUILDING_DEFS[BUILDING_HOUSE_WORKER].cost[RES_GOLD] > 0,
           "and a Wright's House costs something, now that it is built");
 
+    /* ---- crew sizes (LIFE_PLAN Phase 1) --------------------
+     * building_worker_cap() derives the crew from the category and falls
+     * back to 1 for a category that names none. The fallback is there so
+     * a new category cannot produce a building that employs nobody and
+     * silently stops producing — but nothing should actually be taking
+     * it, and a def that does is a category somebody forgot to size. */
+    {
+        int i, fallback = 0, employs_nobody = 0;
+
+        for (i = 0; i < BUILDING_TYPE_COUNT; i++) {
+            const BuildingDef *d   = &BUILDING_DEFS[i];
+            int                cap = building_worker_cap(d);
+
+            if (d->tick_seconds <= 0.0f) {
+                if (cap != 0) {
+                    printf("  FAIL: %s produces nothing but holds %d\n",
+                           d->name, cap);
+                    failures++;
+                }
+                continue;
+            }
+            if (cap < 1) { employs_nobody++;
+                printf("  FAIL: %s produces but holds nobody\n", d->name); }
+            if (cap == 1) { fallback++;
+                printf("  note: %s (%s) is on the fallback crew of 1\n",
+                       d->name, building_category_name(d->category)); }
+        }
+        CHECK(employs_nobody == 0, "every producing building holds a crew");
+        CHECK(fallback == 0,
+              "and every producing category has a crew size of its own");
+    }
+
+    /* The rule is over the def, not the table, so a category invented
+     * tomorrow is sized before anything is built in it. */
+    {
+        BuildingDef mine;
+        memset(&mine, 0, sizeof(mine));
+        mine.name         = "Test Shed";
+        mine.category     = BCAT_FACTORY;
+        mine.tick_seconds = 5.0f;
+        CHECK(building_worker_cap(&mine) > 1,
+              "a def written by a test is sized by the same rule");
+        mine.tick_seconds = 0.0f;
+        CHECK(building_worker_cap(&mine) == 0,
+              "and one that produces nothing employs nobody");
+        CHECK(building_worker_cap(NULL) == 0, "a null def holds nobody");
+    }
+
     printf(failures ? "\nFAILED (%d)\n" : "\nPASSED\n", failures);
     return failures ? 1 : 0;
 }

@@ -108,13 +108,18 @@ void agents_sync(Agent agents[], int *agent_count,
 void agents_assign_jobs(Agent agents[], int agent_count,
                         const Building buildings[], int building_count)
 {
-    static int claimed[MAX_BUILDINGS];
+    /* A HEADCOUNT since LIFE_PLAN Phase 1, not a flag. It was a flag,
+     * which is what made Building.worker_count 0 or 1 and production a
+     * step function of labour: one agent claimed a workplace and every
+     * other resident on the island stayed at home however much the
+     * island needed the goods. */
+    static int staff[MAX_BUILDINGS];
     int i, j;
 
-    memset(claimed, 0, sizeof(claimed));
+    memset(staff, 0, sizeof(staff));
     for (i = 0; i < agent_count; i++)
         if (agents[i].active && agents[i].work_idx >= 0)
-            claimed[agents[i].work_idx] = 1;
+            staff[agents[i].work_idx]++;
 
     for (i = 0; i < agent_count; i++) {
         Agent *a = &agents[i];
@@ -132,9 +137,10 @@ void agents_assign_jobs(Agent agents[], int agent_count,
             const BuildingDef *def;
             int                d;
 
-            if (!b->active || !b->connected || claimed[j]) continue;
+            if (!b->active || !b->connected) continue;
             def = &BUILDING_DEFS[b->type];
             if (def->tick_seconds <= 0.0f) continue;   /* not a producer */
+            if (staff[j] >= building_worker_cap(def)) continue;  /* full */
 
             d = connectivity_dist_to(buildings, j);
             if (d >= 0 && (best_dist < 0 || d < best_dist)) {
@@ -144,8 +150,8 @@ void agents_assign_jobs(Agent agents[], int agent_count,
         }
 
         if (best_job >= 0) {
-            a->work_idx      = best_job;
-            claimed[best_job] = 1;   /* so a later agent this pass can't also grab it */
+            a->work_idx = best_job;
+            staff[best_job]++;   /* so a later agent this pass sees it filling */
         }
     }
 }

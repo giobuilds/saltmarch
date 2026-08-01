@@ -1438,6 +1438,42 @@ const char *building_category_name(BuildingCategory c)
     return NAMES[c];
 }
 
+/* ---- how many people a workplace holds (LIFE_PLAN Phase 1) ----
+ * See building.h for why this is derived from the category rather than
+ * written into ninety def rows.
+ *
+ * The numbers are a feel decision and NOTHING depends on them
+ * economically: production scales linearly with headcount, so output per
+ * worker is unchanged and tests/test_closure.c's workers-per-resident
+ * ratio does not move whatever is written here. What they decide is how
+ * many BUILDINGS an island needs for a given population — land and
+ * capital, not labour. They are cheap to retune for that reason.
+ *
+ * A gang digs; a bench does not. The order below is the crew you would
+ * expect to find on the site, and it follows the category comments in
+ * building.h rather than being invented alongside them. */
+int building_worker_cap(const BuildingDef *def)
+{
+    static const int CREW[BCAT_COUNT] = {
+        [BCAT_FARMING]    = 5,   /* boat crews, farmhands, herds        */
+        [BCAT_EXTRACTION] = 5,   /* a gang at a face or a stand of trees */
+        [BCAT_WORKSHOP]   = 3,   /* "one artisan's worth of processing" */
+        [BCAT_FACTORY]    = 6,   /* heavy industry, and the largest     */
+        [BCAT_REFINERY]   = 4,   /* bulk stock, tended rather than made */
+        [BCAT_LUXURY]     = 3    /* a finished thing, by few hands      */
+    };
+
+    /* Not a producer: the Warehouse, the Road, the Harbor. They employ
+     * nobody today and this phase does not change that. */
+    if (!def || def->tick_seconds <= 0.0f) return 0;
+
+    if (def->category < 0 || def->category >= BCAT_COUNT
+        || CREW[def->category] <= 0)
+        return 1;    /* fail SAFE: today's behaviour, not a dead building */
+
+    return CREW[def->category];
+}
+
 /* =========================================================
  * Helper: is tile (r,c) occupied by any placed building?
  * We check every active building's footprint.

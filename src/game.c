@@ -624,8 +624,15 @@ typedef struct {
  * did. A world saved at ten residents a house would load into a game
  * whose ceiling is six and quietly shed people until it fit, which is
  * a different world from the one that was saved. Refusing it is
- * cheaper to explain than repairing it. */
-#define SAVE_VERSION 31u
+ * cheaper to explain than repairing it.
+ *
+ * v32 (LIFE_PLAN Phase 1): no field changed shape here either — a
+ * workplace holds a crew now, and production advances by the headcount
+ * rather than by one. A save is a seed plus an ordered command log, so
+ * a world recorded when one agent could claim a whole Fisher's Hut
+ * replays into a different world under a rule where five can. The
+ * bytes would load; the island they described would not come back. */
+#define SAVE_VERSION 32u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

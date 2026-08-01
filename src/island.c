@@ -56,7 +56,7 @@ static void island_tick_buildings(Island *isl)
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
-        int                can_run;
+        int                can_run, produced;
         uint32_t           period;
 
         if (!b->active || def->tick_seconds <= 0.0f) continue;
@@ -70,30 +70,55 @@ static void island_tick_buildings(Island *isl)
         period = (uint32_t)(def->tick_seconds * SIM_TICKS_PER_SEC + 0.5f);
         if (period == 0) period = 1;
 
-        b->timer++;
-        if (b->timer < period) continue;
-        b->timer = 0;
+        /* EVERY WORKER ADVANCES THE CLOCK (LIFE_PLAN Phase 1). Five
+         * people in a Fisher's Hut land five fish where one lands one:
+         * the def's rate is the PER-WORKER rate, not the building's.
+         *
+         * Integer, and the arithmetic is the point — a rate expressed
+         * as "workers per period" needs no division and no float, so
+         * nothing here can round differently on another machine.
+         *
+         * `-= period` rather than `= 0`, so a crew that earns more than
+         * one unit in a tick keeps the remainder instead of having it
+         * thrown away. At one worker the timer lands exactly on `period`
+         * and the two are identical, which is what makes this phase's
+         * only behavioural change the headcount itself. */
+        b->timer += (uint32_t)b->worker_count;
 
-        can_run = building_missing_input(def, &isl->stockpile);
-        if (can_run >= 0) {
-            sim_log("[%s] %s idle: needs %d %s", isl->name, def->name,
-                def->consume_amt[can_run],
-                RESOURCE_NAMES[def->consumes[can_run]]);
-            continue;
+        produced = 0;
+        while (b->timer >= period) {
+            b->timer -= period;
+
+            can_run = building_missing_input(def, &isl->stockpile);
+            if (can_run >= 0) {
+                sim_log("[%s] %s idle: needs %d %s", isl->name, def->name,
+                    def->consume_amt[can_run],
+                    RESOURCE_NAMES[def->consumes[can_run]]);
+                /* A shortage costs the whole accumulation, exactly as it
+                 * did when the timer reset before the input check. */
+                b->timer = 0;
+                break;
+            }
+
+            for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
+                if (def->consumes[j] == RES_COUNT) continue;
+                stockpile_add(&isl->stockpile, def->consumes[j],
+                              -def->consume_amt[j]);
+            }
+
+            if (def->produces != RES_COUNT) {
+                stockpile_add(&isl->stockpile, def->produces, def->produce_amt);
+                produced += def->produce_amt;
+            }
         }
 
-        for (j = 0; j < MAX_BUILDING_INPUTS; j++) {
-            if (def->consumes[j] == RES_COUNT) continue;
-            stockpile_add(&isl->stockpile, def->consumes[j], -def->consume_amt[j]);
-        }
-
-        if (def->produces != RES_COUNT) {
-            stockpile_add(&isl->stockpile, def->produces, def->produce_amt);
+        /* One line per building per tick, not one per unit: a six-hand
+         * Foundry would otherwise say the same thing six times. */
+        if (produced > 0)
             sim_log("[%s] %s produced %d %s  (total: %d)",
-                isl->name, def->name, def->produce_amt,
+                isl->name, def->name, produced,
                 RESOURCE_NAMES[def->produces],
                 isl->stockpile.amount[def->produces]);
-        }
     }
 }
 
