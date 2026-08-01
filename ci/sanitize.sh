@@ -49,6 +49,44 @@ FAILURES=0
 fail() { printf '\n  FAIL: %s\n' "$1"; FAILURES=$((FAILURES + 1)); }
 pass() { printf '\n  ok:   %s\n' "$1"; }
 
+LOGDIR="$(mktemp -d)"
+trap 'rm -rf "$LOGDIR"' EXIT
+
+# Run one step, and SHOW WHAT IT SAID IF IT FAILED.
+#
+# The first version of this script sent every step to /dev/null and, on
+# failure, printed "rerun without >/dev/null" — advice nobody running in
+# CI can take. The whole value of a sanitizer is the report it prints,
+# and a harness that swallows it has thrown away the only thing it was
+# there to collect. It cost a round trip to learn that, which is the
+# same lesson ci/smoke-test.sh already carries.
+#
+# The dump leads with the sanitizer's own lines, because a failing suite
+# can print thousands of lines of ordinary test output around the twenty
+# that matter.
+step() {
+    local what="$1"; shift
+    local log="$LOGDIR/$(echo "$what" | tr -c 'a-zA-Z0-9' '_').log"
+
+    if "$@" >"$log" 2>&1; then
+        pass "$what"
+        return 0
+    fi
+
+    fail "$what"
+    if grep -qE "runtime error:|AddressSanitizer|MemorySanitizer|LeakSanitizer" \
+            "$log"; then
+        echo "  --- what the sanitizer said ---"
+        grep -E -B2 -A18 \
+             "runtime error:|ERROR: (Address|Memory|Leak)Sanitizer" "$log" \
+             | head -60 | sed 's/^/  | /'
+    fi
+    echo "  --- last 25 lines ---"
+    tail -25 "$log" | sed 's/^/  | /'
+    echo "  -----------------------"
+    return 1
+}
+
 CC_BIN="${CC:-clang}"
 if ! command -v "$CC_BIN" >/dev/null 2>&1; then
     echo "sanitize: $CC_BIN not found" >&2
@@ -69,35 +107,24 @@ run_address() {
     # The whole headless suite, then the two replays, then the client
     # and the server for real. A sanitizer only ever reports what the
     # program actually executed, so coverage here IS the tool.
-    if CC="$CC_BIN" SALTMARCH_BUILD_DIR="$dir" ./tests/run.sh >/dev/null 2>&1
-    then pass "the headless suite is clean under address,undefined"
-    else fail "the headless suite reported something — rerun without >/dev/null"
-    fi
+    step "the headless suite is clean under address,undefined" \
+         env CC="$CC_BIN" SALTMARCH_BUILD_DIR="$dir" ./tests/run.sh
 
-    if "$dir/saltmarch_replay" --record "$dir/san.smlog" --seed 12345 \
-           >/dev/null 2>&1 &&
-       "$dir/saltmarch_replay" --replay "$dir/san.smlog" >/dev/null 2>&1
-    then pass "the determinism fixture records and replays clean"
-    else fail "the determinism fixture tripped a sanitizer"
-    fi
+    step "the determinism fixture records clean" \
+         "$dir/saltmarch_replay" --record "$dir/san.smlog" --seed 12345
+    step "...and replays clean" \
+         "$dir/saltmarch_replay" --replay "$dir/san.smlog"
 
-    if "$dir/saltmarch_replay" --record-ui "$dir/sanui.smlog" --seed 777 \
-           >/dev/null 2>&1 &&
-       "$dir/saltmarch_replay" --replay "$dir/sanui.smlog" --verify-ui \
-           >/dev/null 2>&1
-    then pass "the recorded UI session re-drives clean"
-    else fail "the UI replay tripped a sanitizer"
-    fi
+    step "the recorded UI session records clean" \
+         "$dir/saltmarch_replay" --record-ui "$dir/sanui.smlog" --seed 777
+    step "...and re-drives clean" \
+         "$dir/saltmarch_replay" --replay "$dir/sanui.smlog" --verify-ui
 
-    if ./ci/smoke-test.sh "$dir/saltmarch" 5 >/dev/null 2>&1
-    then pass "the client starts, runs and exits clean"
-    else fail "the client tripped a sanitizer (or failed its smoke test)"
-    fi
+    step "the client starts, runs and exits clean" \
+         ./ci/smoke-test.sh "$dir/saltmarch" 5
 
-    if ./ci/host-smoke.sh "$dir" >/dev/null 2>&1
-    then pass "the server survives its own adversarial probes clean"
-    else fail "the host smoke test tripped a sanitizer (or failed)"
-    fi
+    step "the server survives its own adversarial probes clean" \
+         ./ci/host-smoke.sh "$dir"
 }
 
 run_memory() {
@@ -115,20 +142,16 @@ run_memory() {
           --target saltmarch_sim saltmarch_net saltmarch_ui saltmarch_replay \
           >/dev/null || { fail "build"; return; }
 
-    if CC="$CC_BIN" SALTMARCH_BUILD_DIR="$dir" SALTMARCH_SDL_FREE_ONLY=1 \
-       ./tests/run.sh >/dev/null 2>&1
-    then pass "the SDL-free tests read no uninitialised memory"
-    else fail "MemorySanitizer found an uninitialised read"
-    fi
+    step "the SDL-free tests read no uninitialised memory" \
+         env CC="$CC_BIN" SALTMARCH_BUILD_DIR="$dir" \
+             SALTMARCH_SDL_FREE_ONLY=1 ./tests/run.sh
 
     # The one that matters most: a hash computed over uninitialised
     # bytes is the desync nobody can see from inside one machine.
-    if "$dir/saltmarch_replay" --record "$dir/msan.smlog" --seed 12345 \
-           >/dev/null 2>&1 &&
-       "$dir/saltmarch_replay" --replay "$dir/msan.smlog" >/dev/null 2>&1
-    then pass "sim_hash reads nothing it was never given"
-    else fail "MemorySanitizer found an uninitialised read in the sim"
-    fi
+    step "sim_hash reads nothing it was never given" \
+         "$dir/saltmarch_replay" --record "$dir/msan.smlog" --seed 12345
+    step "...and nothing on the way back in either" \
+         "$dir/saltmarch_replay" --replay "$dir/msan.smlog"
 }
 
 case "$MODE" in

@@ -196,7 +196,12 @@ static void test_file_round_trip(void)
     AccountStore s, t;
     uint8_t      token[ACCOUNT_TOKEN_BYTES];
     uint32_t     player = 0u;
-    const char  *path = "build/test_accounts.tmp";
+    /* In the current directory, not build/. This said "build/..." and
+     * passed everywhere a build/ happened to exist — which is every
+     * ordinary run, and not the sanitizer job, whose build directory is
+     * build-asan. A test that assumes a directory it does not own is a
+     * test that passes for a reason unrelated to what it checks. */
+    const char  *path = "test_accounts.tmp";
     Account     *a;
 
     printf("\n=== the sidecar on disk ===\n");
