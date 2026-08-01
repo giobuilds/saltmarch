@@ -285,27 +285,63 @@ void pop_init(PopData *p)
  * distance from NEUTRAL to MAX.
  *
  * Consumes what it counts, so the caller cannot forget to. */
+/* How much of one good a house wants per needs tick (NEEDS_PLAN Ph.3).
+ *
+ * YOU EAT AS A PERSON; YOU OWN MANUFACTURED THINGS AS A HOUSEHOLD. Raw
+ * goods — what the land and the sea give up directly — scale with the
+ * number of mouths. Refined goods are one per house however many live
+ * there, because a household owns one lamp and everybody reads by it.
+ *
+ * That split is not a convenience, it is what makes the economy close.
+ * Charging every good per resident needs about 2.1 workers per person
+ * fed, and every worker is somebody's resident, so it diverges: an
+ * island can never staff its own supply. Charging raw goods only brings
+ * the base tier to 0.68, which closes with room for warehouses,
+ * harbours and ships. The arithmetic is in docs/NEEDS_PLAN.md.
+ *
+ * The classification is RESOURCE_CATEGORIES, which already existed for
+ * the stores overlay — no good had to be reclassified for this. */
+static int good_wanted(ResourceType g, int residents)
+{
+    if (RESOURCE_CATEGORIES[g] == RCAT_RAW)
+        return residents > 0 ? residents : 1;
+    return 1;
+}
+
+/* What a house's supplies deserve, and what they cost.
+ *
+ * A good counts as MET only if the whole amount was there — feeding
+ * four of six people is not feeding the house — but whatever WAS there
+ * is eaten either way. A shortage should show up as an empty warehouse
+ * and unhappy people, not as goods left on a shelf because the delivery
+ * was short. */
 static int happiness_target(const TierDef *tier, const ResourceType *basic,
-                            Stockpile *s)
+                            int residents, Stockpile *s)
 {
     int have = 0, want = 0, lux_have = 0, lux_want = 0, k;
 
     for (k = 0; k < MAX_TIER_GOODS; k++) {
+        int need, got;
         if (basic[k] == RES_COUNT) continue;
         want++;
-        if (s->amount[basic[k]] > 0) { have++; stockpile_add(s, basic[k], -1); }
+        need = good_wanted(basic[k], residents);
+        got  = s->amount[basic[k]] < need ? s->amount[basic[k]] : need;
+        if (got > 0) stockpile_add(s, basic[k], -got);
+        if (got == need) have++;
     }
     if (want == 0) return HAPPINESS_NEUTRAL;      /* a tier that wants nothing */
     if (have < want)
         return (HAPPINESS_NEUTRAL * have) / want; /* fed badly, but fed */
 
     for (k = 0; k < MAX_TIER_GOODS; k++) {
+        int need, got;
         if (tier->luxury[k] == RES_COUNT) continue;
         lux_want++;
-        if (s->amount[tier->luxury[k]] > 0) {
-            lux_have++;
-            stockpile_add(s, tier->luxury[k], -1);
-        }
+        need = good_wanted(tier->luxury[k], residents);
+        got  = s->amount[tier->luxury[k]] < need ? s->amount[tier->luxury[k]]
+                                                 : need;
+        if (got > 0) stockpile_add(s, tier->luxury[k], -got);
+        if (got == need) lux_have++;
     }
     if (lux_want == 0) return HAPPINESS_MAX;      /* nothing more to want */
 
@@ -339,7 +375,7 @@ void pop_update(PopData pop[], const Building buildings[], int count,
         if (!buildings[i].connected || tier == NULL || p->residents <= 0)
             target = 0;
         else
-            target = happiness_target(tier, basic, s);
+            target = happiness_target(tier, basic, p->residents, s);
 
         /* ONE STEP PER TICK, and that is the whole of the hysteresis.
          * A neighbourhood that loses its larder has ten ticks of

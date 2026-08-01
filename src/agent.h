@@ -31,7 +31,7 @@
 
 /* Agent is ~1060 bytes (path[] below is 1KB of it), so this cap
  * dominates memory: at 2000 it was 2.1MB, i.e. ~96% of GameState.
- * 512 allows 51 fully-grown houses (HOUSE_CAPACITY 10) and keeps the
+ * 512 allows 85 fully-grown houses (HOUSE_CAPACITY 6) and keeps the
  * upcoming per-island allocation affordable — four islands land at
  * roughly today's total footprint. find_free_agent_slot() already
  * returns -1 and drops silently at the cap, so this is a soft ceiling. */
