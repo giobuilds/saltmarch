@@ -114,8 +114,50 @@ static void test_island_rules(void)
 
     healthy(&s);
     s.islands[0].buildings[0].happy = 0;
+    s.islands[0].detail_known       = 1;
     vitals_build(&v, &s, 0);
     CHECK(has_text(&v, "hungry"), "an unhappy house is reported");
+
+    /* And WHICH good it is short of, which is the whole difference
+     * between a symptom and an answer. A Marsh Cottage wants Fish,
+     * Oilskins and Marsh Gin all at once; with an empty store the strip
+     * must name one of them rather than saying "going hungry" to a
+     * player who can already see people leaving. */
+    CHECK(has_text(&v, "no Fish"),
+          "and the strip names the good it wants");
+
+    /* Given some Fish, it moves on to the next thing it lacks — the
+     * row follows the shortage rather than being written once. */
+    healthy(&s);
+    s.islands[0].detail_known       = 1;
+    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].stock[RES_FISH]    = 20;
+    vitals_build(&v, &s, 0);
+    CHECK(!has_text(&v, "no Fish"), "with Fish in store it stops asking");
+    CHECK(has_text(&v, "no Oilskins"), "and asks for the next one instead");
+
+    /* A house with no road is unhappy for a reason the road rule
+     * already gives; naming a good would send the player to build the
+     * wrong thing. */
+    healthy(&s);
+    s.islands[0].detail_known         = 1;
+    s.islands[0].buildings[0].happy   = 0;
+    s.islands[0].buildings[0].connected = 0;
+    vitals_build(&v, &s, 0);
+    CHECK(has_text(&v, "not connected"), "the road rule speaks");
+    CHECK(!has_text(&v, "no Fish"),
+          "and the hunger row does not blame the larder for a missing road");
+
+    /* Somebody else's island arrives with a zeroed stockpile, so every
+     * good would read as missing. Saying nothing beats inventing a
+     * shortage on an island we were not told the stores of (N2). */
+    healthy(&s);
+    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].detail_known       = 0;
+    vitals_build(&v, &s, 0);
+    CHECK(has_text(&v, "hungry"), "a foreign island's hunger still shows");
+    CHECK(!has_text(&v, "no "),
+          "but no good is named from stores we were never told");
 
     healthy(&s);
     s.islands[0].stock[0] = s.islands[0].capacity;
