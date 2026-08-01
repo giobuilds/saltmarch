@@ -7,6 +7,7 @@
 
 #include "vitals.h"
 #include "building.h"
+#include "population.h"   /* TierDef: what a house is short of */
 #include "resource.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -82,16 +83,64 @@ static void rule_no_workers(RuleOutput *o, const UiIsland *isl)
         emit(o, VITAL_WARN, n, "%d without workers", n);
 }
 
+/* NAME THE GOOD.
+ *
+ * This said "%d houses going hungry", which is the fact a player can
+ * already see happening and not the one they need. A Marsh Cottage
+ * wants Fish, Oilskins and Marsh Gin, all-or-nothing, every needs tick
+ * — and the intuitive opening (a house, a fisher, a lumberjack, a
+ * farm) supplies exactly one of the three, so the first thing that
+ * happens in a new game is residents leaving for a reason nothing on
+ * screen states. The tier's needs are right there in TierDef; there
+ * was no reason to keep them to ourselves.
+ *
+ * The good named is the one the most houses are short of, because the
+ * strip has one row for this and a player fixes one chain at a time.
+ * `tier_def_for` is the sim's own, not a copy: a screen that had its
+ * own idea of what a house eats would be a second answer to a question
+ * the simulation already answers. */
 static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
 {
-    int i, n = 0;
+    int want[RES_COUNT];
+    int i, k, n = 0, best = -1;
+
+    memset(want, 0, sizeof(want));
 
     for (i = 0; i < isl->building_count; i++) {
         const UiBuilding *b = &isl->buildings[i];
+        const TierDef    *tier;
+
         if (!b->active || b->residents == 0) continue;
-        if (!b->happy) n++;
+        if (b->happy) continue;
+        n++;
+
+        /* A house with no road is unhappy for a reason rule_disconnected
+         * already says out loud, and naming a good it cannot receive
+         * anyway would send the player to build the wrong thing. */
+        if (!b->connected) continue;
+
+        tier = tier_def_for((BuildingType)b->type);
+        if (!tier) continue;
+
+        for (k = 0; k < MAX_TIER_GOODS; k++) {
+            int g = (int)tier->needs[k];
+            if (g < 0 || g >= (int)RES_COUNT) continue;
+            if (isl->stock[g] <= 0) want[g]++;
+        }
     }
-    if (n > 0)
+
+    if (n == 0) return;
+
+    /* Only for an island we are actually told the stores of: a rival's
+     * arrive as zeroes, and every good would read as missing (N2). */
+    if (isl->detail_known) {
+        for (i = 0; i < (int)RES_COUNT; i++)
+            if (want[i] > 0 && (best < 0 || want[i] > want[best])) best = i;
+    }
+
+    if (best >= 0)
+        emit(o, VITAL_WARN, n, "%d hungry — no %s", n, RESOURCE_NAMES[best]);
+    else
         emit(o, VITAL_WARN, n, "%d houses going hungry", n);
 }
 

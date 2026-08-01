@@ -3,6 +3,8 @@
 
 #include "population.h"
 #include "simlog.h"
+#include "resource.h"
+#include <stdio.h>
 
 /* ---- Per-tier needs table --------------------------------
  * Keyed by the house's actual BuildingType, so upgrading a house
@@ -268,11 +270,32 @@ void pop_update(PopData pop[], const Building buildings[], int count,
             if (p->residents > 0)
                 p->residents--;
 
-            sim_log("House %d: unhappy (%s), %d residents",
-                i,
-                !buildings[i].connected ? "no road to Warehouse" :
-                    "missing a required good",
-                p->residents);
+            /* Name it here too. "missing a required good" told the
+             * player that something was wrong and not which thing,
+             * which is the difference between a log line and an
+             * answer. */
+            {
+                const char *why = "no road to Warehouse";
+                char        buf[48];
+
+                if (buildings[i].connected && tier) {
+                    int m;
+                    why = "needs are already met";   /* only if none is short */
+                    for (m = 0; m < MAX_TIER_GOODS; m++) {
+                        ResourceType g = tier->needs[m];
+                        if (g == RES_COUNT) continue;
+                        if (s->amount[g] > 0) continue;
+                        snprintf(buf, sizeof(buf), "no %s", RESOURCE_NAMES[g]);
+                        why = buf;
+                        break;
+                    }
+                } else if (buildings[i].connected) {
+                    why = "nowhere to live";
+                }
+
+                sim_log("House %d: unhappy (%s), %d residents",
+                        i, why, p->residents);
+            }
         }
     }
 }
