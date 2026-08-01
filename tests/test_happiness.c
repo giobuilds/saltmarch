@@ -255,6 +255,61 @@ static void test_luxuries_are_a_scale(void)
     CHECK(both_lux == HAPPINESS_MAX, "both is the top");
 }
 
+/* ---- 7. what a house eats (NEEDS_PLAN Phase 3) ------------- */
+static void test_consumption_scales(void)
+{
+    World w;
+
+    printf("\n=== you eat as a person, you own as a household ===\n");
+
+    /* Six mouths: six Fish and six Grain, and ONE of each luxury. */
+    world_init(&w, 6);
+    stock_basics(&w, 20);
+    stock_luxuries(&w, 20);
+    needs_tick(&w);
+    CHECK(20 - w.s.amount[RES_FISH] == 6,
+          "a house of six eats six Fish — raw scales with mouths");
+    CHECK(20 - w.s.amount[RES_GRAIN] == 6, "and six Grain");
+    CHECK(20 - w.s.amount[RES_OILSKINS] == 1,
+          "and ONE set of Oilskins, however many live there");
+    CHECK(20 - w.s.amount[RES_MARSH_GIN] == 1, "and one bottle of gin");
+
+    /* One mouth: one of each raw good. A small house is cheap, which is
+     * what makes a new colony survivable. */
+    world_init(&w, 1);
+    stock_basics(&w, 20);
+    stock_luxuries(&w, 20);
+    needs_tick(&w);
+    CHECK(20 - w.s.amount[RES_FISH] == 1, "a house of one eats one Fish");
+    CHECK(20 - w.s.amount[RES_OILSKINS] == 1,
+          "and still one set of Oilskins — the household, not the head");
+
+    /* Short delivery: the whole amount or the good is not met, but what
+     * arrived is eaten. A shortage shows up as an empty warehouse and
+     * unhappy people, not as goods left on a shelf. */
+    world_init(&w, 6);
+    w.s.amount[RES_FISH]  = 3;      /* half a house's worth */
+    w.s.amount[RES_GRAIN] = 20;
+    needs_tick(&w);
+    CHECK(w.s.amount[RES_FISH] == 0, "a short delivery is eaten to the last");
+    CHECK(w.p[0].happiness < HAPPINESS_NEUTRAL,
+          "and feeding four of six people is not feeding the house");
+
+    /* And the ceiling moved. */
+    {
+        int i;
+        world_init(&w, 1);
+        for (i = 0; i < 40; i++) {
+            stock_basics(&w, 50);
+            stock_luxuries(&w, 50);
+            needs_tick(&w);
+        }
+        CHECK(w.p[0].residents == HOUSE_CAPACITY,
+              "a thriving house fills to capacity and stops");
+        CHECK(HOUSE_CAPACITY == 6, "which is six now, not ten");
+    }
+}
+
 int main(void)
 {
     printf("== happiness (NEEDS_PLAN Phase 2) ==\n");
@@ -265,6 +320,7 @@ int main(void)
     test_rescue();
     test_disconnected();
     test_luxuries_are_a_scale();
+    test_consumption_scales();
 
     printf("\n%s\n", failures ? "FAILED" : "PASSED");
     return failures ? 1 : 0;

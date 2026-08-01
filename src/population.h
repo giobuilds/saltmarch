@@ -41,13 +41,28 @@
 #include "simclock.h"   /* Phase 1b: fixed-tick clock  */
 #include <stdint.h>
 
-#define HOUSE_CAPACITY      10     /* max residents per house       */
+/* Residents per house.
+ *
+ * Ten until NEEDS_PLAN Phase 3, when consumption started scaling with
+ * population and a full house became something an island has to earn
+ * rather than something it drifts into. Six is a decision about the
+ * feel of a marsh village rather than an economic one — and it is worth
+ * recording that it costs headroom rather than buying any: per-resident
+ * costs do not change with capacity, while per-house costs are
+ * amortised over fewer people, so the base tier's worker-per-resident
+ * ratio goes 0.59 at ten to 0.68 at six. See docs/NEEDS_PLAN.md. */
+#define HOUSE_CAPACITY       6
 #define NEEDS_INTERVAL      30.0f  /* seconds between needs checks  */
 /* The needs check fires every NEEDS_INTERVAL seconds, counted in whole
  * sim ticks so the F9 hash never reads an accumulating float. */
 #define NEEDS_INTERVAL_TICKS \
     ((uint32_t)(NEEDS_INTERVAL * SIM_TICKS_PER_SEC))
-#define GOLD_PER_RESIDENT    2     /* gold generated per resident   */
+/* Two until Phase 3. Raised with the capacity cut, and not to keep the
+ * old number: income is `this x residents`, so it never depended on
+ * capacity at all — what changed is that feeding a resident now costs
+ * an island several times what it did, and the people doing the work
+ * should be worth more for it. */
+#define GOLD_PER_RESIDENT    3
 
 /* ---- happiness (NEEDS_PLAN Phase 2) ------------------------
  * 0 is "not at all happy" and 10 is "completely happy". Every basic

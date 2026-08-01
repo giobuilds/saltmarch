@@ -1,6 +1,6 @@
 # Needs, basics and luxuries — the settled design
 
-> Status: **Phases 1-2 done; Phase 3 next.** This document is the decision record for
+> Status: **Phases 1-3 done; Phase 4 next.** This document is the decision record for
 > the needs rework, written after the design was settled in conversation
 > and checked against the code. It supersedes the needs half of
 > [new-happiness-design.md](new-happiness-design.md), which remains the
@@ -177,9 +177,32 @@ there is nobody left to be unhappy. That is deliberate; `tests/
 test_happiness.c` says so out loud rather than leaving it to be
 discovered.
 
-**3 — consumption scales.** Raw × residents, refined × 1.
-`HOUSE_CAPACITY` → 6. `GOLD_PER_RESIDENT` retuned: an island's income
-falls ~40% with capacity while ships still cost 350–1400.
+**3 — consumption scales. DONE.** Raw × residents, refined × 1.
+`HOUSE_CAPACITY` 10 → 6, `GOLD_PER_RESIDENT` 2 → 3. A good counts as met
+only if the whole amount was there — feeding four of six people is not
+feeding the house — but whatever WAS there is eaten either way, so a
+shortage shows up as an empty warehouse rather than as goods left on a
+shelf. Save v31: no field changed shape, the CEILING did, and a world
+saved at ten residents a house would quietly shed people to fit a game
+whose ceiling is six.
+
+**And the determinism fixture's hash did not move, which is a finding.**
+It was supposed to. The reason it did not is that
+`replay_record_demo_session` places one house, buys eight Wood, builds a
+ship and sails it — and never connects that house to a warehouse or puts
+a single Fish on the island. So `pop_update` has taken the "no road to
+Warehouse" branch for the whole life of the fixture, and **the needs
+economy has never been covered by the cross-platform determinism gate at
+all**: not consumption, not growth, not the gold, not the ladder. Three
+phases of change to that code are invisible to the check that exists to
+notice change.
+
+That is its own piece of work — a fixture that feeds a house needs a
+road laid between two positions the recorder picks at runtime, and doing
+it badly would mean a fixture that silently goes back to testing nothing.
+It is listed here rather than bolted onto this phase because a fixture
+change moves the hash for its own reason, and the whole discipline of
+this plan is one reason per move.
 
 **4 — say it on screen.** The alert strip separates *starving* (a basic
 is missing) from *discontent* (a luxury is), and the confirm popup shows

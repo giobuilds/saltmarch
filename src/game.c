@@ -618,8 +618,14 @@ typedef struct {
  * v30 (NEEDS_PLAN Phase 2): the happiness flag became a 0..10 ladder,
  * so the byte that held it is an int now. The ladder is also the
  * buffer that stops one missed tick costing a resident, which is why
- * it had to be a number rather than a bit. */
-#define SAVE_VERSION 30u
+ * it had to be a number rather than a bit.
+ *
+ * v31 (NEEDS_PLAN Phase 3): no field changed shape — HOUSE_CAPACITY
+ * did. A world saved at ten residents a house would load into a game
+ * whose ceiling is six and quietly shed people until it fit, which is
+ * a different world from the one that was saved. Refusing it is
+ * cheaper to explain than repairing it. */
+#define SAVE_VERSION 31u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
