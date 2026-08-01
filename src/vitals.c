@@ -112,7 +112,10 @@ static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
         const TierDef    *tier;
 
         if (!b->active || b->residents == 0) continue;
-        if (b->happy) continue;
+        /* Below neutral is a house that is not being fed. At or above
+         * it, the house is alive and merely wanting for luxuries —
+         * which is a different sentence, and Phase 4's to say. */
+        if (b->happiness >= HAPPINESS_NEUTRAL) continue;
         n++;
 
         /* A house with no road is unhappy for a reason rule_disconnected

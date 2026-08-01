@@ -51,7 +51,7 @@ typedef struct {
     uint8_t connected;       /* road-connected to a warehouse          */
     uint8_t worker_count;
     uint8_t residents;       /* houses only; 0 elsewhere               */
-    uint8_t happy;           /* houses only: needs met last tick       */
+    uint8_t happiness;       /* houses only: 0..HAPPINESS_MAX          */
     int16_t origin_tier;     /* the house type this was upgraded FROM,
                               * or BUILDING_NONE. A Scholar's House's
                               * basics depend on it (NEEDS_PLAN Ph.1)  */

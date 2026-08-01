@@ -45,7 +45,7 @@ static void healthy(UiSnapshot *s)
     isl->buildings[0].active      = 1;
     isl->buildings[0].connected   = 1;
     isl->buildings[0].residents   = 5;
-    isl->buildings[0].happy       = 1;
+    isl->buildings[0].happiness   = HAPPINESS_MAX;
     isl->buildings[0].worker_count= 1;
 }
 
@@ -113,7 +113,7 @@ static void test_island_rules(void)
           "a building that never had workers is not idle");
 
     healthy(&s);
-    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].detail_known       = 1;
     vitals_build(&v, &s, 0);
     CHECK(has_text(&v, "hungry"), "an unhappy house is reported");
@@ -136,7 +136,7 @@ static void test_island_rules(void)
      * Marshfolk had no basics to distinguish. */
     healthy(&s);
     s.islands[0].detail_known       = 1;
-    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].stock[RES_FISH]    = 20;
     vitals_build(&v, &s, 0);
     CHECK(!has_text(&v, "no Fish"), "with Fish in store it stops asking");
@@ -147,7 +147,7 @@ static void test_island_rules(void)
      * the luxuries. */
     healthy(&s);
     s.islands[0].detail_known       = 1;
-    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].stock[RES_FISH]    = 20;
     s.islands[0].stock[RES_GRAIN]   = 20;
     vitals_build(&v, &s, 0);
@@ -159,7 +159,7 @@ static void test_island_rules(void)
      * wrong thing. */
     healthy(&s);
     s.islands[0].detail_known         = 1;
-    s.islands[0].buildings[0].happy   = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].buildings[0].connected = 0;
     vitals_build(&v, &s, 0);
     CHECK(has_text(&v, "not connected"), "the road rule speaks");
@@ -170,7 +170,7 @@ static void test_island_rules(void)
      * good would read as missing. Saying nothing beats inventing a
      * shortage on an island we were not told the stores of (N2). */
     healthy(&s);
-    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].detail_known       = 0;
     vitals_build(&v, &s, 0);
     CHECK(has_text(&v, "hungry"), "a foreign island's hunger still shows");
@@ -201,7 +201,7 @@ static void test_ranking_and_cap(void)
     s.health.backlog_ticks = 40;     /* stalled  */
     s.health.feed_age_s    = 3600;   /* stale    */
     s.health.net_connected = 0;
-    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].buildings[0].happiness = 0;
     s.islands[0].building_count      = 3;
     s.islands[0].buildings[1].type   = BUILDING_FARM;
     s.islands[0].buildings[1].active = 1;
