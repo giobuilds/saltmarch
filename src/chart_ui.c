@@ -195,22 +195,36 @@ void chart_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
         UiRect strip = { panel.x + 14.0f, panel.y + CHART_TITLE_H + 2.0f,
                          panel.w - 28.0f, CHART_HEAD_H };
 
-        SDL_snprintf(buf, sizeof(buf),
+        /* Its own buffer: `buf` is 64 bytes, which this sentence
+         * exceeded by a word and a half, so it rendered as
+         * "...1 blank chart (0" and stopped — a screen that told the
+         * player a fact and then trailed off mid-parenthesis. */
+        char legend[160];
+
+        SDL_snprintf(legend, sizeof(legend),
                      "An expedition: 1 scholar (%d free), 1 boat (%d), "
                      "1 blank chart (%d).  %d%% find nothing.",
                      view->scholars_free, view->boats_free,
                      view->blank_charts, SURVEY_FAIL_PER_MILLE / 10);
-        font_draw_text(renderer, FONT_SMALL, buf,
+        font_draw_text(renderer, FONT_SMALL, legend,
                        (int)strip.x, (int)strip.y, DIM);
     }
 
     /* Column headings, positioned off the first passage row so they
-     * cannot drift from the cells beneath them. */
+     * cannot drift from the cells beneath them.
+     *
+     * Off the first row of the LIST, not the first ROUTE row: a
+     * destination heading comes before the routes under it, so
+     * subtracting a header's height from the first route landed the
+     * column names on top of "Brinehold". Anchoring to whichever row
+     * is first — heading or passage — puts them in the strip above the
+     * list, which is where the layout left room for them. */
     for (i = 0; i < list->count; i++) {
         const UiWidget *w = &list->items[i];
         UiRect          head;
+        int             g = ui_id_group(w->id);
 
-        if (ui_id_group(w->id) != UI_GROUP_ROUTE) continue;
+        if (g != UI_GROUP_ROUTE && g != UI_GROUP_ISLAND) continue;
 
         head    = w->rect;
         head.y -= CHART_HEAD_H;

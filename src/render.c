@@ -345,16 +345,38 @@ void render_ghost(SDL_Renderer *renderer,
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
-/* ---- render_resources ---------------------------------- */
-void render_resources(SDL_Renderer *renderer, const Stockpile *s)
+/* ---- render_resources ----------------------------------
+ * The corner panel is THE GLANCE; the stores overlay (`I`) is the look.
+ * That division was stated when the overlay was built (UI_PLAN Phase 4)
+ * and then only half-implemented: the overlay arrived, and the panel
+ * went on drawing every good there is.
+ *
+ * By 43 goods that is 950 pixels of list starting 16 from the top —
+ * straight through the HUD and off the bottom of a 1080p screen, with
+ * every label overlapping its own bar. It is the third capacity cliff
+ * v1 measured ("the resource panel at ~43"), and it had arrived: a
+ * screenshot of the running game is nine tenths unreadable list.
+ *
+ * So the panel shows WHAT YOU HAVE — the goods with something in them,
+ * plus Gold, which is always worth knowing — capped, with the overflow
+ * counted and the key that shows the rest named. An empty warehouse is
+ * one row rather than forty-three rows of zero, which is also the more
+ * honest picture of an empty warehouse.
+ */
+#define RES_PANEL_MAX_ROWS 12
+
+/* A swatch for every good, not for the seven that existed when this was
+ * written.
+ *
+ * The hand-picked entries stay because they are what a player already
+ * associates with those goods. Everything else is derived from its
+ * CATEGORY, shaded by index so neighbours differ — related goods look
+ * related, and nothing is invisible. The old table left 36 of 43 as
+ * {0,0,0,0}: black swatches on a black panel, which is the same bug its
+ * own comment warns about, one supply chain later. */
+static SDL_Color resource_swatch(int res)
 {
-    /* Designated initialisers, matching RESOURCE_NAMES/SELL_PRICE/
-     * BUY_PRICE (resource.c). These were positional and only covered
-     * 4 of 7 resources after Hops/Malt/Beer were added — which both
-     * shifted Gold's amber onto Hops and left Malt/Beer/Gold with
-     * {0,0,0,0} invisible swatches. Keyed initialisers make a missing
-     * entry obvious rather than silently wrong. */
-    static const SDL_Color RES_COL[RES_COUNT] = {
+    static const SDL_Color NAMED[RES_COUNT] = {
         [RES_WOOD]  = { 139,  90,  43, 255 },
         [RES_FISH]  = {  50, 180, 230, 255 },
         [RES_GRAIN] = { 240, 210,  50, 255 },
@@ -363,36 +385,83 @@ void render_resources(SDL_Renderer *renderer, const Stockpile *s)
         [RES_BEER]  = { 220, 160,  40, 255 },
         [RES_GOLD]  = { 255, 195,   0, 255 },
     };
+    SDL_Color c;
+    int       step;
+
+    if (res < 0 || res >= RES_COUNT) { c.r = c.g = c.b = 90; c.a = 255;
+                                       return c; }
+    if (NAMED[res].a) return NAMED[res];
+
+    /* Deterministic, not random: the same good is the same colour in
+     * every session, which is the whole point of a swatch. */
+    step = (res * 37) % 60;
+    switch (RESOURCE_CATEGORIES[res]) {
+    case RCAT_RAW:
+        c.r = (Uint8)(90 + step);  c.g = (Uint8)(130 + step/2); c.b = 60;
+        break;
+    case RCAT_REFINED:
+        c.r = (Uint8)(120 + step/2); c.g = (Uint8)(110 + step); c.b = 170;
+        break;
+    case RCAT_CURRENCY:
+        c.r = 255; c.g = 195; c.b = 0;
+        break;
+    default:
+        c.r = c.g = c.b = (Uint8)(110 + step);
+        break;
+    }
+    c.a = 255;
+    return c;
+}
+
+void render_resources(SDL_Renderer *renderer, const Stockpile *s)
+{
     SDL_Color text_col  = { 220, 200, 160, 255 };
     SDL_Color label_col = { 160, 140, 100, 255 };
+    SDL_Color more_col  = { 140, 125,  95, 255 };
 
     int panel_x=16, panel_y=16, row_h=22, swatch_w=12;
     int seg_w=7, seg_gap=2, max_segs=10;
     int bar_x  = panel_x + swatch_w + 6;
     int num_x  = bar_x + max_segs*(seg_w+seg_gap) + 8;
     int panel_w= num_x + 52;
-    int panel_h= RES_COUNT * row_h + 10;
-    int i, j;
+    int shown[RES_PANEL_MAX_ROWS];
+    int n = 0, hidden = 0, i, j;
+    int panel_h;
+
+    /* Gold first and always: it is the one number a glance is for. */
+    if (RES_GOLD < RES_COUNT) shown[n++] = (int)RES_GOLD;
+
+    for (i = 0; i < RES_COUNT; i++) {
+        if (i == (int)RES_GOLD) continue;
+        if (s->amount[i] <= 0) continue;
+        if (n < RES_PANEL_MAX_ROWS) shown[n++] = i;
+        else                        hidden++;
+    }
+
+    panel_h = n * row_h + 10 + (hidden ? row_h : 0);
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 20, 16, 10, 200);
-    SDL_FRect bg = { (float)(panel_x-6), (float)(panel_y-6),
-                     (float)panel_w,      (float)panel_h };
-    SDL_RenderFillRect(renderer, &bg);
-    SDL_SetRenderDrawColor(renderer, 90, 75, 45, 180);
-    SDL_RenderRect(renderer, &bg);
+    {
+        SDL_FRect bg = { (float)(panel_x-6), (float)(panel_y-6),
+                         (float)panel_w,      (float)panel_h };
+        SDL_RenderFillRect(renderer, &bg);
+        SDL_SetRenderDrawColor(renderer, 90, 75, 45, 180);
+        SDL_RenderRect(renderer, &bg);
+    }
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 
-    for (i = 0; i < RES_COUNT; i++) {
-        int   amount = s->amount[i];
-        int   segs   = amount / 10;
-        float ry     = (float)(panel_y + i * row_h);
-        char  buf[16];
+    for (i = 0; i < n; i++) {
+        int       res    = shown[i];
+        int       amount = s->amount[res];
+        int       segs   = amount / 10;
+        float     ry     = (float)(panel_y + i * row_h);
+        SDL_Color col    = resource_swatch(res);
+        char      buf[16];
 
         SDL_FRect sw = { (float)panel_x, ry+4.0f,
                          (float)swatch_w, (float)(row_h-8) };
-        SDL_SetRenderDrawColor(renderer,
-            RES_COL[i].r, RES_COL[i].g, RES_COL[i].b, 255);
+        SDL_SetRenderDrawColor(renderer, col.r, col.g, col.b, 255);
         SDL_RenderFillRect(renderer, &sw);
 
         if (segs > max_segs) segs = max_segs;
@@ -402,9 +471,9 @@ void render_resources(SDL_Renderer *renderer, const Stockpile *s)
                               (float)seg_w, (float)(row_h-10) };
             if (j < segs)
                 SDL_SetRenderDrawColor(renderer,
-                    (unsigned char)(RES_COL[i].r*0.85f),
-                    (unsigned char)(RES_COL[i].g*0.85f),
-                    (unsigned char)(RES_COL[i].b*0.85f), 255);
+                    (unsigned char)(col.r*0.85f),
+                    (unsigned char)(col.g*0.85f),
+                    (unsigned char)(col.b*0.85f), 255);
             else
                 SDL_SetRenderDrawColor(renderer, 40, 35, 25, 255);
             SDL_RenderFillRect(renderer, &seg);
@@ -412,11 +481,22 @@ void render_resources(SDL_Renderer *renderer, const Stockpile *s)
             SDL_RenderRect(renderer, &seg);
         }
 
-        font_draw_text(renderer, FONT_SMALL, RESOURCE_NAMES[i],
+        font_draw_text(renderer, FONT_SMALL, RESOURCE_NAMES[res],
                        num_x, (int)ry+1, label_col);
         SDL_snprintf(buf, sizeof(buf), "%d", amount);
         font_draw_text(renderer, FONT_NORMAL, buf,
                        num_x+38, (int)ry, text_col);
+    }
+
+    /* Say what is not shown, and where it is — the same overflow
+     * pattern the ghost list and the HUD tabs use. A panel that
+     * silently stops at twelve is a panel that lies about the
+     * thirteenth. */
+    if (hidden > 0) {
+        char buf[48];
+        SDL_snprintf(buf, sizeof(buf), "+%d more  (I)", hidden);
+        font_draw_text(renderer, FONT_SMALL, buf,
+                       panel_x, panel_y + n * row_h + 2, more_col);
     }
 }
 
