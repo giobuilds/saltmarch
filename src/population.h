@@ -49,6 +49,26 @@
     ((uint32_t)(NEEDS_INTERVAL * SIM_TICKS_PER_SEC))
 #define GOLD_PER_RESIDENT    2     /* gold generated per resident   */
 
+/* ---- happiness (NEEDS_PLAN Phase 2) ------------------------
+ * 0 is "not at all happy" and 10 is "completely happy". Every basic
+ * need met puts a house at NEUTRAL; luxuries take it above.
+ *
+ * INTEGER, AND IT HAS TO BE. This is hashed world state, and this
+ * project's determinism doctrine has no room for a float there: a
+ * float accumulated into hashed state fails as two machines disagreeing
+ * rather than as a wrong answer on one.
+ *
+ * HAPPINESS IS ALSO THE RESERVE, which is why Phase 2 needs no second
+ * field for it. A house's happiness moves ONE STEP per needs tick
+ * toward what its supplies deserve, so a well-fed neighbourhood that
+ * loses its larder drifts down over ten ticks rather than losing
+ * somebody on the first one — and a hungry one that is rescued has to
+ * earn its way back up. The hysteresis the plan asks for falls out of
+ * the drift; nothing counts anything. */
+#define HAPPINESS_MAX        10
+#define HAPPINESS_NEUTRAL     5    /* every basic need met          */
+#define HAPPINESS_GROW        8    /* at or above this, people come */
+
 /* Gold to walk the first tier's upgrade edge. Lives here rather than
  * in game.h since SUPPLY_CHAIN Phase 2: the price of an edge belongs
  * beside the edge, and each tier now carries its own in
@@ -214,7 +234,10 @@ typedef struct {
     int      active;    /* 1 if this slot holds a House             */
     int      residents; /* current population (0–HOUSE_CAPACITY)    */
     uint32_t timer;     /* sim ticks since last needs tick          */
-    int      happy;     /* 1 = needs met last tick, 0 = unhappy     */
+    /* 0..HAPPINESS_MAX. Was a 0/1 flag; NEEDS_PLAN Phase 2 made it a
+     * ladder, and the ladder is also the buffer — see the constants
+     * above. Residents arrive at HAPPINESS_GROW and leave at 0. */
+    int      happiness;
 
     /* The house type this one was upgraded FROM, or BUILDING_NONE.
      * Only a Scholar's House reads it (see tier_basic_needs), but it is

@@ -1,6 +1,6 @@
 # Needs, basics and luxuries — the settled design
 
-> Status: **Phase 1 done; Phase 2 next.** This document is the decision record for
+> Status: **Phases 1-2 done; Phase 3 next.** This document is the decision record for
 > the needs rework, written after the design was settled in conversation
 > and checked against the code. It supersedes the needs half of
 > [new-happiness-design.md](new-happiness-design.md), which remains the
@@ -151,10 +151,31 @@ protocol change: MSG_WORLD carries one). Fixture hash
   was in store; it asks for Grain, because a basic is named before a
   luxury. That ordering is now its own assertion.
 
-**2 — happiness replaces the flag.** `happy` (0/1) becomes `happiness`
-(0..10). Basics met → 5, luxuries raise it, growth on sustained high,
-decline on sustained absence of basics. The reserve lands here: this is
-the phase that stops one missed tick costing a resident.
+**2 — happiness replaces the flag. DONE.** `happy` (0/1) became
+`happiness` (0..10). Basics met → NEUTRAL (5), each luxury an equal
+share of the way to MAX, growth at GROW (8), departure at 0. Save v30,
+snapshot v12, protocol 23. Fixture hash d0b0db6ac6a97f5e →
+cf9c654ed9aa6283.
+
+*The ladder is the reserve, which is why this needed no second field.*
+Happiness moves ONE STEP per needs tick toward what the supplies
+deserve, so nothing counts consecutive failures — the number already
+remembers. A thriving house that loses its larder keeps everybody for
+about ten ticks (five minutes of wall clock) and then loses one at a
+time; a rescued one climbs back at the same pace. The hysteresis the
+brief asked for falls out of the drift rather than being bolted on.
+
+*Basics are genuinely not all-or-nothing now.* A house with one of its
+two basics scores a fraction of neutral, eats what there is, and stays
+alive indefinitely — miserable, not dead. Only a house with nothing
+drifts to zero, and only a house at zero loses anybody. Luxuries are
+read only once every basic is met: people buy gin after bread, not
+instead of it.
+
+*A house that empties completely does not repopulate itself*, because
+there is nobody left to be unhappy. That is deliberate; `tests/
+test_happiness.c` says so out loud rather than leaving it to be
+discovered.
 
 **3 — consumption scales.** Raw × residents, refined × 1.
 `HOUSE_CAPACITY` → 6. `GOLD_PER_RESIDENT` retuned: an island's income

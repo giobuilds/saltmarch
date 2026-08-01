@@ -613,8 +613,13 @@ typedef struct {
  * v29 (NEEDS_PLAN Phase 1): PopData records the house type it was
  * upgraded from, because a Scholar's House needs the basics of
  * wherever its people came from. World state — hashed, and written
- * into the checkpoint beside the residents it belongs to. */
-#define SAVE_VERSION 29u
+ * into the checkpoint beside the residents it belongs to.
+ *
+ * v30 (NEEDS_PLAN Phase 2): the happiness flag became a 0..10 ladder,
+ * so the byte that held it is an int now. The ladder is also the
+ * buffer that stops one missed tick costing a resident, which is why
+ * it had to be a number rather than a bit. */
+#define SAVE_VERSION 30u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1405,7 +1410,7 @@ uint64_t sim_hash(const GameState *gs)
 
             if (p->active) {
                 fnv_bytes(&h, &p->residents, sizeof(p->residents));
-                fnv_bytes(&h, &p->happy, sizeof(p->happy));
+                fnv_bytes(&h, &p->happiness, sizeof(p->happiness));
                 fnv_bytes(&h, &p->origin_tier, sizeof(p->origin_tier));
                 fnv_bytes(&h, &p->timer, sizeof(p->timer));
             }

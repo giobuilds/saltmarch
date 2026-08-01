@@ -75,8 +75,9 @@ static void snapshot_island(UiIsland *out, const Island *isl,
                                                           : b->worker_count);
         u->residents    = (uint8_t)(isl->pop_data[i].active
                                     ? isl->pop_data[i].residents : 0);
-        u->happy        = (uint8_t)(isl->pop_data[i].active
-                                    ? (isl->pop_data[i].happy ? 1 : 0) : 1);
+        u->happiness    = (uint8_t)(isl->pop_data[i].active
+                                    ? isl->pop_data[i].happiness
+                                    : HAPPINESS_NEUTRAL);
         u->origin_tier  = (int16_t)isl->pop_data[i].origin_tier;
     }
 }

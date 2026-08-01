@@ -257,7 +257,11 @@ void pop_init(PopData *p)
     p->active    = 1;
     p->residents = 5;        /* start half-full so growth is visible */
     p->timer     = 0;
-    p->happy     = 0;
+    /* Neutral, not zero: a house that has just been built is neither
+     * delighted nor about to empty, and starting at 0 would mean the
+     * first missed tick of its life cost a resident (NEEDS_PLAN Ph.2). */
+    p->happiness   = HAPPINESS_NEUTRAL;
+    p->origin_tier = BUILDING_NONE;
 }
 
 /* ---- pop_update ----------------------------------------
@@ -268,16 +272,57 @@ void pop_init(PopData *p)
  * consumption — avoiding a sudden stockpile spike every
  * NEEDS_INTERVAL seconds.
  * -------------------------------------------------------- */
+/* What a house's supplies deserve, 0..HAPPINESS_MAX, and what they cost.
+ *
+ * BASICS ARE NOT ALL-OR-NOTHING any more, which is the change this
+ * phase exists for. A house short of one of its two basics is not
+ * dead, it is miserable: it scores a fraction of NEUTRAL and eats what
+ * there is. Only a house with NOTHING drifts to zero, and only a house
+ * at zero loses anybody.
+ *
+ * Luxuries are read only when every basic is met — people buy gin after
+ * bread, not instead of it — and each one met is an equal share of the
+ * distance from NEUTRAL to MAX.
+ *
+ * Consumes what it counts, so the caller cannot forget to. */
+static int happiness_target(const TierDef *tier, const ResourceType *basic,
+                            Stockpile *s)
+{
+    int have = 0, want = 0, lux_have = 0, lux_want = 0, k;
+
+    for (k = 0; k < MAX_TIER_GOODS; k++) {
+        if (basic[k] == RES_COUNT) continue;
+        want++;
+        if (s->amount[basic[k]] > 0) { have++; stockpile_add(s, basic[k], -1); }
+    }
+    if (want == 0) return HAPPINESS_NEUTRAL;      /* a tier that wants nothing */
+    if (have < want)
+        return (HAPPINESS_NEUTRAL * have) / want; /* fed badly, but fed */
+
+    for (k = 0; k < MAX_TIER_GOODS; k++) {
+        if (tier->luxury[k] == RES_COUNT) continue;
+        lux_want++;
+        if (s->amount[tier->luxury[k]] > 0) {
+            lux_have++;
+            stockpile_add(s, tier->luxury[k], -1);
+        }
+    }
+    if (lux_want == 0) return HAPPINESS_MAX;      /* nothing more to want */
+
+    return HAPPINESS_NEUTRAL +
+           ((HAPPINESS_MAX - HAPPINESS_NEUTRAL) * lux_have) / lux_want;
+}
+
 void pop_update(PopData pop[], const Building buildings[], int count,
                Stockpile *s)
 {
-    int i, j;
+    int i;
 
     for (i = 0; i < count; i++) {
         PopData       *p    = &pop[i];
         const TierDef *tier;
         ResourceType   basic[MAX_TIER_GOODS];
-        int            needs_met, k;
+        int            target;
 
         if (!p->active) continue;
 
@@ -286,82 +331,54 @@ void pop_update(PopData pop[], const Building buildings[], int count,
         p->timer = 0;
 
         tier = tier_def_for(buildings[i].type);
-
-        /* --- Needs check: road-connected, plus every good this
-         * tier's TierDef lists (all-or-nothing, same philosophy as
-         * game_tick_buildings' multi-input production). A
-         * disconnected house has no route for a Warehouse to deliver
-         * anything, so it's treated the same as needs unmet. */
-        /* PHASE 1 KEEPS ALL-OR-NOTHING, over the union of both lists.
-         * The split is data this phase; what it MEANS — basics keep you
-         * alive, luxuries make you happy — is Phase 2. Landing both at
-         * once would move the determinism fixture's hash for two
-         * reasons and leave neither attributable. */
         tier_basic_needs(tier, (BuildingType)p->origin_tier, basic);
 
-        needs_met = buildings[i].connected && tier != NULL && p->residents > 0;
-        if (needs_met) {
-            for (k = 0; k < MAX_TIER_GOODS; k++) {
-                if (basic[k] != RES_COUNT && s->amount[basic[k]] <= 0)
-                    { needs_met = 0; break; }
-                if (tier->luxury[k] != RES_COUNT &&
-                    s->amount[tier->luxury[k]] <= 0) { needs_met = 0; break; }
-            }
-        }
+        /* A disconnected house has no route for a Warehouse to deliver
+         * anything down, so it is scored as though the island were
+         * empty however full the warehouse is. */
+        if (!buildings[i].connected || tier == NULL || p->residents <= 0)
+            target = 0;
+        else
+            target = happiness_target(tier, basic, s);
 
-        if (needs_met) {
-            for (j = 0; j < MAX_TIER_GOODS; j++) {
-                if (basic[j] != RES_COUNT)         stockpile_add(s, basic[j], -1);
-                if (tier->luxury[j] != RES_COUNT)  stockpile_add(s, tier->luxury[j], -1);
-            }
+        /* ONE STEP PER TICK, and that is the whole of the hysteresis.
+         * A neighbourhood that loses its larder has ten ticks of
+         * goodwill before anybody leaves; one that is rescued climbs
+         * back at the same pace. Nothing counts consecutive failures,
+         * because the ladder already remembers. */
+        if      (p->happiness < target) p->happiness++;
+        else if (p->happiness > target) p->happiness--;
 
-            /* Generate gold proportional to residents */
-            stockpile_add(s, RES_GOLD,
-                          GOLD_PER_RESIDENT * p->residents);
+        if (p->happiness > HAPPINESS_MAX) p->happiness = HAPPINESS_MAX;
+        if (p->happiness < 0)             p->happiness = 0;
 
-            p->happy = 1;
+        /* Gold is the work these people do, so it follows being fed
+         * rather than being delighted. */
+        if (target >= HAPPINESS_NEUTRAL && p->residents > 0)
+            stockpile_add(s, RES_GOLD, GOLD_PER_RESIDENT * p->residents);
 
-            /* Population grows toward capacity when happy */
-            if (p->residents < HOUSE_CAPACITY)
-                p->residents++;
+        if (p->happiness >= HAPPINESS_GROW && p->residents < HOUSE_CAPACITY) {
+            p->residents++;
+            sim_log("House %d: happy (%d/%d), %d residents",
+                    i, p->happiness, HAPPINESS_MAX, p->residents);
+        } else if (p->happiness == 0 && p->residents > 0) {
+            const char *why = "no road to Warehouse";
+            char        buf[48];
 
-            sim_log("House %d: happy, %d residents, +%d gold",
-                i, p->residents,
-                GOLD_PER_RESIDENT * p->residents);
-
-        } else {
-            /* Needs not met — residents leave */
-            p->happy = 0;
-            if (p->residents > 0)
-                p->residents--;
-
-            /* Name it here too. "missing a required good" told the
-             * player that something was wrong and not which thing,
-             * which is the difference between a log line and an
-             * answer. */
-            {
-                const char *why = "no road to Warehouse";
-                char        buf[48];
-
-                if (buildings[i].connected && tier) {
-                    int m;
-                    why = "needs are already met";   /* only if none is short */
-                    for (m = 0; m < MAX_TIER_GOODS * 2; m++) {
-                        ResourceType g = (m < MAX_TIER_GOODS)
-                                       ? basic[m] : tier->luxury[m - MAX_TIER_GOODS];
-                        if (g == RES_COUNT) continue;
-                        if (s->amount[g] > 0) continue;
-                        snprintf(buf, sizeof(buf), "no %s", RESOURCE_NAMES[g]);
-                        why = buf;
-                        break;
-                    }
-                } else if (buildings[i].connected) {
-                    why = "nowhere to live";
+            if (buildings[i].connected && tier) {
+                int m;
+                why = "nothing they need";
+                for (m = 0; m < MAX_TIER_GOODS; m++) {
+                    if (basic[m] == RES_COUNT) continue;
+                    if (s->amount[basic[m]] > 0) continue;
+                    snprintf(buf, sizeof(buf), "no %s", RESOURCE_NAMES[basic[m]]);
+                    why = buf;
+                    break;
                 }
-
-                sim_log("House %d: unhappy (%s), %d residents",
-                        i, why, p->residents);
             }
+            p->residents--;
+            sim_log("House %d: emptying (%s), %d residents",
+                    i, why, p->residents);
         }
     }
 }
