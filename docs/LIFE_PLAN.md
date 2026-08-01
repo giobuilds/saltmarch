@@ -1,0 +1,304 @@
+# Residents, lives and labour — the design
+
+> Status: **Draft. Nothing built.** The calendar section is deliberately
+> unresolved — see [The calendar problem](#the-calendar-problem), which
+> is the one decision that has to be taken before Phase 4 and cannot be
+> taken from arithmetic alone.
+>
+> This supersedes the *unit of computation* in
+> [new-happiness-design.md](new-happiness-design.md), which says
+> wellbeing is scored per district and "population is a count inside a
+> group struct, not a collection of agents". That is precisely what this
+> document replaces. The six factors, their weights and the log-income
+> curve survive intact — see [The wellbeing
+> projection](#the-wellbeing-projection).
+
+## Why
+
+Three things are true of the current model, and each is a ceiling on
+what the game can say.
+
+**A building's labour is a light switch.** `agents_assign_jobs`
+(agent.c) keeps a `claimed[]` array and skips any building another agent
+has taken, so `Building.worker_count` is 0 or 1 and nothing else.
+Production is a step function of labour: nothing at zero workers, full
+rate at one, and identical at six. The gap between 0 and 1 is infinite
+and everything above it is flat.
+
+**A resident is a number.** `PopData.residents` is an integer, and the
+`Agent` that walks to work is derived state rebuilt from it every
+session. Nobody has a name, an age, a spouse or a history, so nothing
+that happens to an island can happen to a *person*.
+
+**Happiness buys nothing but arrival.** NEEDS_PLAN made happiness a
+ten-rung ladder that decides whether people move in or leave. It does
+not touch what they do while they are here.
+
+## The shape
+
+**Buildings have a job capacity.** A Fisher's Hut staffed by five people
+lands five fish where one lands one. Today's rate becomes the
+*per-worker* rate, not the building rate — the direction that matters,
+and the section below says why.
+
+**Full staffing is worth more than the sum of its workers.** Five
+workers land nine fish, not five. This is the load-bearing number in the
+whole document; it is what pays for everybody who does not work.
+
+**Residents are people.** A name, an age, and one of four stages:
+infant, teenager, adult, retired. Only adults work. They are born, they
+marry, they die. A newly built house arrives peopled — those residents
+are immigrants, adults with no parents on this island, which is both
+the simplest rule and the right fiction.
+
+**Status modifies productivity.** Slept well or poorly, ate well or
+poorly, married or single, employed or unemployed. These raise and lower
+what a worker produces, as an integer percentage with a hard floor.
+
+**The tick becomes a calendar.** Days, months, seasons, years, out of
+the tick counter the sim already keeps.
+
+## The arithmetic that decides it
+
+`tests/test_closure.c` measures **workers per resident** and fails the
+build when a buildable tier cannot be staffed. Every number below comes
+out of it. Today:
+
+| tier | basics | total | headroom to the wall |
+|---|---|---|---|
+| Marshfolk | 0.47 | 0.68 | 32% |
+| Wrights | 0.26 | 0.82 | 18% |
+| Merchants | 0.24 | **0.96** | **4%** |
+
+### 1. The rate change alone is free
+
+"Five workers, five fish" leaves output per worker exactly where it is,
+so the ratio does not move at all. Marshfolk stay at 0.68. No
+`tick_seconds` needs rebalancing for this half.
+
+*The opposite framing is a catastrophe*, and it is one sentence away:
+if today's rate were redefined as the FULL-capacity rate and one worker
+gave a fifth of it, output per worker would divide by five and every
+tier would land at 3-5 workers per resident. The capacity must be
+additive on top of the current rate. This is the single easiest way to
+destroy the economy in this document.
+
+### 2. Only adults working divides everything
+
+Demand scales with residents; supply now scales with adults. So every
+ratio divides by the adult fraction. At a plausible 55%:
+
+| tier | today | adults only |
+|---|---|---|
+| Marshfolk | 0.68 | 1.24 |
+| Wrights | 0.82 | 1.49 |
+| Merchants | 0.96 | **1.75** |
+
+**All three buildable tiers go over the wall, Marshfolk included.** This
+is not a balance problem discovered in playtesting; it is division, and
+it happens on the day the age pyramid lands.
+
+### 3. So the capacity bonus is mandatory, not decorative
+
+With adult fraction *f* and a full-staffing multiplier *m*, the ratio is
+`R / (f · m)`. Staying under the wall needs `m > R / f`:
+
+| tier | required multiplier at f = 0.55 |
+|---|---|
+| Marshfolk | > 1.24 |
+| Wrights | > 1.49 |
+| Merchants | > **1.75** |
+
+**m = 1.8** clears all three — a Fisher's Hut at five workers landing
+nine fish. Merchants come out at 0.97, which is under the wall by three
+percent and no more. Merchants are the tightest tier in the game and
+this document does not improve that; it preserves it.
+
+### 4. Age-weighted rations are what buy real headroom
+
+If infants and the retired eat half a raw ration, demand falls to 77.5%
+of today's while supply is unchanged:
+
+| tier | today | with capacity bonus + age-weighted rations |
+|---|---|---|
+| Marshfolk | 0.68 | 0.53 |
+| Wrights | 0.82 | 0.64 |
+| Merchants | 0.96 | **0.75** |
+
+That is *better than today* across the board, and it is the version to
+build. `tier_good_amount()` is already the one place consumption is
+decided (NEEDS_PLAN Phase 5 made it public precisely so the closure test
+charges what the sim charges), so age-weighting is a change to one
+function and its callers.
+
+### 5. Which sets the productivity floor at 0.75
+
+Modifiers multiply the ratio by `1 / p`. Starting from Merchants at
+0.75, the wall is reached at **p = 0.75**. So a worker's productivity
+may never fall below three quarters of nominal, and that floor is not a
+tuning knob — it is the closure guard wearing a different hat.
+
+**Note what this means without the two levers above: Merchants have 4%
+of headroom today, so ANY modifier able to dip below 1.0 breaks that
+tier immediately.** Status modifiers cannot land before the capacity
+bonus and the age-weighted rations.
+
+### 6. The feedback loop is the dangerous part
+
+Happiness → productivity → goods → happiness is a closed positive loop.
+Unhappy people produce less, so there is less food, so they are
+unhappier. [new-happiness-design.md](new-happiness-design.md) identifies
+exactly this shape for the taxation loop and prescribes the fix: a
+floor, hysteresis, and no single input allowed to dominate.
+
+**Two thirds of that is already built.** The happiness ladder moves one
+rung per needs tick and carries ten rungs of reserve, which is the
+hysteresis, in hashed integer state. The floor is §5. What remains is
+the third rule: status must be several independent inputs, so one bad
+harvest cannot move every one of them at once.
+
+## Residents are world state now
+
+This is the largest change in the document and everything else is
+downstream of it. Names, ages, marriages and deaths enter `sim_hash`,
+come out of the sim's LCG in a fixed order, and land in the snapshot.
+
+**Split identity from motion.** `Agent` is 1060 bytes and 1024 of that
+is `path[]` — derived, never saved, rebuilt every session. Identity does
+not belong in it:
+
+| struct | holds | size | hashed | saved |
+|---|---|---|---|---|
+| `Resident` | name indices, age, stage, spouse, status | ~24 B | yes | yes |
+| `Agent` | position, path, state machine | 1060 B | worker tally only | no |
+
+512 Residents is 12 KB in the snapshot. 512 Agents would be half a
+megabyte. And Agents are only needed for residents who commute, so the
+`MAX_AGENTS` 512 ceiling stops being a ceiling on *population* and
+becomes one on *the working population* — roughly 930 residents at a 55%
+adult fraction, against 512 today.
+
+**A name is two `uint16` indices** into static tables, not a string:
+four bytes, reproducible from the seed, and no allocation anywhere in
+the sim.
+
+**Ask VISIBILITY.md before showing a rival your residents.** Named
+individuals are the first thing in this game that is person-shaped, and
+`docs/VISIBILITY.md` is the document that decides what a client is
+allowed to know. Redaction already exists per-client (SERVER_AUTHORITY
+Phase 3); this is a question about what it should cover, not about
+whether the mechanism is there.
+
+## The calendar problem
+
+**Unresolved, and it does not resolve by arithmetic.** The sim already
+has a working day in it: `AGENT_SHIFT_DURATION` is 60s and
+`AGENT_REST_DURATION` is 15s, so a shift cycle is 75 seconds. Build a
+calendar on that and:
+
+| calendar | one year is | a 70-year life is |
+|---|---|---|
+| 360 days | 7.5 hours | 525 hours |
+| 120 days (12 × 10) | 2.5 hours | 175 hours |
+| 48 days (12 × 4) | 1 hour | 70 hours |
+| 12 days | 15 minutes | 17.5 hours |
+
+**You can have two of: realistic lifespans, a legible calendar, and
+sessions of sane length.** Nobody watches a resident born and die at a
+7.5-hour year. The three honest resolutions:
+
+1. **Short calendar.** A year every 15 minutes. Seasons turn visibly,
+   lives are watchable, and a "year" stops meaning anything like one.
+2. **Short lives.** Keep a legible calendar and let a full life run
+   ~20 years. People are ephemeral by design.
+3. **Decouple ageing from the calendar.** The date is flavour; age
+   advances on its own clock. Cheapest, and the least honest — two
+   clocks that disagree are a thing players notice.
+
+Seasons work under all three. Birth and death do not. **This is the
+conversation to have before Phase 4.**
+
+## The wellbeing projection
+
+[new-happiness-design.md](new-happiness-design.md) says wellbeing is
+computed per district and per tier, "never per resident", because
+population is a count. Individual residents make that decision moot at
+this scale, and the six factors get *easier*, not harder:
+
+| factor | with residents |
+|---|---|
+| Social support | married/single, household size, neighbours |
+| Income | wages, unchanged |
+| Health | age, stage, whether they ate |
+| Freedom | employed/unemployed, reachable job variety |
+| Generosity | unchanged |
+| Corruption | unchanged |
+
+The weights, the normalisation and the `log()` all stay exactly where
+that document puts them: **above** the sim, a read-only projection over
+the UI snapshot, where floats are harmless because no two machines ever
+have to agree on them.
+
+**Happiness → productivity is the one part that crosses into hashed
+state, and that part is integer.** A percentage, one division, at the
+end. `output = (workers * rate_num * pct) / (rate_den * 100)`. Never a
+float in the production path — 3.5 fish is not just illogical, it is a
+desync.
+
+## Phases
+
+One commit each, whole ladder green, and the determinism hash moves once
+per phase so every move is attributable. `tests/test_closure.c` is the
+gate for 1, 2, 5 and 7; it currently assumes one building is one worker
+and has to learn about staffing, adult fraction and the productivity
+floor as those land.
+
+**1 — a building holds a crew.** `BuildingDef.worker_cap`;
+`agents_assign_jobs` fills to capacity instead of claiming exclusively;
+`b->timer += b->worker_count` in place of `b->timer++`, with a `while`
+loop so overshoot is not discarded and inputs are checked per unit. No
+ageing, no identity, no bonus — linear, and therefore ratio-neutral.
+Closure test learns to model staffing.
+
+**2 — full staffing is worth more.** The super-linear bonus, m ≈ 1.8, as
+integer numerator/denominator per def. Nothing else changes. This is the
+phase that makes where labour goes a decision at all, and the phase that
+buys the headroom Phase 5 spends.
+
+**3 — residents have names.** The `Resident` struct, hashed, saved,
+snapshotted. Everyone is an adult, nobody ages, nothing behaves
+differently. Save, snapshot and protocol versions all move; the hash
+moves for the added state only. Deliberately inert, so the serialisation
+is proven before anything depends on it.
+
+**4 — the calendar.** Ticks to days, months, seasons, years. Read-only:
+a date on screen and seasons as flavour. **Blocked on the calendar
+decision above.**
+
+**5 — ageing, birth and death.** Stages gate work. Age-weighted rations
+land in the SAME phase, because this is the phase that would otherwise
+put every tier over the wall — the closure test has to be green on the
+commit that introduces the pyramid, not the one after it.
+
+**6 — marriage and households.** Pairing from the sim's LCG in a fixed
+order. Feeds social support, and gives the ghost feed something worth
+saying.
+
+**7 — status modifies productivity.** Slept, ate, married, employed →
+an integer percentage with the 0.75 floor from §5. Several independent
+inputs, so no single shortage moves all of them.
+
+**8 — the wellbeing projection.** The six factors, per resident, floats,
+entirely above the sim.
+
+## What this does not do
+
+It does not build districts, wages, taxes, corruption or crime. Phases
+1-7 are the simulation's hashed truth about goods and people; the
+explanation offered to the player is Phase 8, and it can be wrong
+without anything desyncing.
+
+It does not make residents individually addressable by commands. A
+player builds houses and industry; they do not order Bess Cobbleworth to
+the fishing hut. Every command in this document is still about
+buildings.

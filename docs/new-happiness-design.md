@@ -1,5 +1,22 @@
 # Saltmarch — wellbeing and steward trackers
 
+> **Partly superseded.** Two sections of this brief have been settled
+> elsewhere and this document is no longer the authority on either:
+>
+> - **The needs half** — what a house wants and what happens when it
+>   goes short — is built. See [NEEDS_PLAN.md](NEEDS_PLAN.md).
+> - **The unit of computation** — "per district, per population tier,
+>   never per resident; population is a count inside a group struct, not
+>   a collection of agents" — is the thing [LIFE_PLAN.md](LIFE_PLAN.md)
+>   replaces. Individual residents with names, ages and marriages make
+>   that decision moot at this scale.
+>
+> **Everything else here still stands**, and this remains the brief for
+> it: the six factors, their weights, the log-income curve, the
+> perceived-versus-actual split, the taxation loop's damping rules, and
+> the tracker/Steward model. LIFE_PLAN Phase 8 is where it lands, as a
+> read-only projection above the simulation.
+
 Design brief. Read the current codebase before planning; this document describes intent, not existing structure. Produce a phased plan and confirm it before writing code.
 
 ## Premise
