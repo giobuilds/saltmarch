@@ -1,9 +1,8 @@
 # Residents, lives and labour — the design
 
-> Status: **Draft. Nothing built.** The calendar section is deliberately
-> unresolved — see [The calendar problem](#the-calendar-problem), which
-> is the one decision that has to be taken before Phase 4 and cannot be
-> taken from arithmetic alone.
+> Status: **Draft. Nothing built.** The calendar is now settled — see
+> [The calendar](#the-calendar), taken from Stellaris after Cities:
+> Skylines' answer was examined and rejected.
 >
 > This supersedes the *unit of computation* in
 > [new-happiness-design.md](new-happiness-design.md), which says
@@ -55,8 +54,13 @@ the simplest rule and the right fiction.
 poorly, married or single, employed or unemployed. These raise and lower
 what a worker produces, as an integer percentage with a hard floor.
 
-**The tick becomes a calendar.** Days, months, seasons, years, out of
-the tick counter the sim already keeps.
+**The needs tick becomes the month.** Days, months, seasons and years
+out of the clock the sim already keeps — and it is the *same* clock,
+not a second one running alongside.
+
+**Residents outlive the session.** A life is 7-8 hours of play. You
+inherit people mid-life and they die on you at a moment you did not
+choose, which is the point.
 
 ## The arithmetic that decides it
 
@@ -169,7 +173,7 @@ not belong in it:
 
 | struct | holds | size | hashed | saved |
 |---|---|---|---|---|
-| `Resident` | name indices, age, stage, spouse, status | ~24 B | yes | yes |
+| `Resident` | name indices, age, stage, spouse, status, tenure | ~24 B | yes | yes |
 | `Agent` | position, path, state machine | 1060 B | worker tally only | no |
 
 512 Residents is 12 KB in the snapshot. 512 Agents would be half a
@@ -189,34 +193,100 @@ allowed to know. Redaction already exists per-client (SERVER_AUTHORITY
 Phase 3); this is a question about what it should cover, not about
 whether the mechanism is there.
 
-## The calendar problem
+## The calendar
 
-**Unresolved, and it does not resolve by arithmetic.** The sim already
-has a working day in it: `AGENT_SHIFT_DURATION` is 60s and
-`AGENT_REST_DURATION` is 15s, so a shift cycle is 75 seconds. Build a
-calendar on that and:
+**Settled: the needs tick is the month.** Everything else is a multiple
+of it, and there is exactly one clock in the game.
 
-| calendar | one year is | a 70-year life is |
+| unit | length | is |
 |---|---|---|
-| 360 days | 7.5 hours | 525 hours |
-| 120 days (12 × 10) | 2.5 hours | 175 hours |
-| 48 days (12 × 4) | 1 hour | 70 hours |
-| 12 days | 15 minutes | 17.5 hours |
+| **month** | 300 sim ticks / 30s | one needs tick — eating, growth, gold |
+| season | 3 months | 90s |
+| **year** | 12 months | **6 minutes** |
+| day | 1s, 30 to the month | cosmetic; never a unit anything is decided on |
+| lifespan | 70-80 years | **7-8 hours** |
 
-**You can have two of: realistic lifespans, a legible calendar, and
-sessions of sane length.** Nobody watches a resident born and die at a
-7.5-hour year. The three honest resolutions:
+### How this was arrived at
 
-1. **Short calendar.** A year every 15 minutes. Seasons turn visibly,
-   lives are watchable, and a "year" stops meaning anything like one.
-2. **Short lives.** Keep a legible calendar and let a full life run
-   ~20 years. People are ephemeral by design.
-3. **Decouple ageing from the calendar.** The date is flavour; age
-   advances on its own clock. Cheapest, and the least honest — two
-   clocks that disagree are a thing players notice.
+The first draft of this document posed the calendar as a trilemma —
+*realistic lifespans, a legible calendar, sessions of sane length, pick
+two* — because `AGENT_SHIFT_DURATION` (60s) plus `AGENT_REST_DURATION`
+(15s) makes a 75-second working day, and a 360-day year built on that
+is 7.5 real hours with a 525-hour lifetime.
 
-Seasons work under all three. Birth and death do not. **This is the
-conversation to have before Phase 4.**
+**Cities: Skylines resolves it by compression.** A cim's default
+lifespan is about **6 in-game years** — a tenth of a human life — and
+one calendar month advances per in-game day. The date stays legible;
+the *lifespan* is what gives. It shipped in the genre's biggest title,
+so it works, but it comes with two documented costs: players reject the
+default in numbers (the popular ageing mods offer 20-24 and 80-96 year
+variants against the stock 5-6), and cims **die in cohorts**, which is
+that game's best-known population complaint.
+
+**Stellaris does not resolve it. It removes it.** 30-day months, 12
+months, a 360-day year, one real second per day — so a year is six
+minutes and a decade is an hour — and *normal pops do not age or die of
+old age at all*. Only **leaders** have lives: a base guaranteed lifespan
+of 80 years, recruitment at a randomised age of 28-50, and a per-month
+death chance once the guarantee expires. Because only a handful of
+entities have lifespans, an 80-year life and a 6-minute year coexist
+with no contradiction anywhere.
+
+**The assumption the trilemma smuggled in was that a life must fit
+inside a session.** It does not. You inherit a Stellaris leader
+mid-life and they die on you, unplanned, at a moment you did not
+choose — which is more dramatic than watching a full arc, not less, and
+is why nobody writes angry threads about Stellaris lifespans.
+
+Dropping that assumption dissolves the trilemma: realistic lifespans and
+a legible calendar are compatible the moment lives are allowed to span
+sessions.
+
+*Anno 1800 is the fourth data point and the one that argues against all
+of this.* It has no calendar and no ageing whatever — population is a
+number — and Anno is what Saltmarch structurally **is**: needs tiers,
+luxuries, islands, ships, an order book. The genre's closest relative
+deliberately does not build this. That is not a reason to stop; it is a
+reason the ageing has to earn its place by producing play Anno cannot,
+which in this design it does, through status modifiers feeding
+productivity (§5, Phase 7).
+
+### One clock, not two
+
+`NEEDS_INTERVAL_TICKS` is 300 sim ticks and is already the economic
+heartbeat: integer, hashed, and where consumption, growth and gold
+happen. It is structurally the same object as Stellaris's monthly tick,
+so the calendar costs no new state beyond a counter.
+
+**The shift cycle should be retuned to match it.** 60s of work plus 15s
+of rest is 75 seconds, which beats against the 30-second needs tick for
+no reason — two unrelated periods drifting past each other, a wart that
+predates this document. Retune to **24s work + 6s rest** and one work
+cycle *is* one month *is* one needs tick: 300 ticks, one clock,
+everything else a multiple. It is a behaviour change and moves the hash,
+and it should land in Phase 4 with the calendar rather than being left
+as a latent oddity for the ageing code to trip over.
+
+Days survive only as decoration, exactly as in Stellaris — 30 to the
+month so the month is uniform, and nothing is ever decided on one.
+
+### Ages must be jittered at spawn
+
+**Stated as an invariant, not a tuning note.** Residents born or spawned
+together age together, become adults together, retire together and die
+together, taking every worker in a chain with them at once. Cities:
+Skylines has this defect and it is the loudest complaint about its
+population model; Stellaris avoids it by recruiting leaders at a
+*randomised* 28-50.
+
+Saltmarch is primed for it: `pop_init` starts a house at five residents
+and growth adds one per needs tick, so a player who lays six cottages in
+a minute creates thirty people of identical age.
+
+New residents therefore arrive with ages drawn from the sim's LCG across
+a spread — adults of 20-45 for a newly built house, since those are
+immigrants — and this must be in from the phase that introduces ageing.
+It is one line then and an economy-breaking retrofit later.
 
 ## The wellbeing projection
 
@@ -245,6 +315,30 @@ end. `output = (workers * rate_num * pct) / (rate_den * 100)`. Never a
 float in the production path — 3.5 fish is not just illogical, it is a
 desync.
 
+### A cast, not a census
+
+**The simulation tracks everyone; the interface tells you about the
+handful that matter this month.** 512 named people is 512 things a
+player cannot care about, and a wellbeing screen that lists them all is
+unreadable by construction.
+
+This is the *other* half of what Stellaris gets right, and it is a UI
+decision rather than a simulation one — leaders matter there because
+there are about ten of them, not because pops are cheap. Surface heads
+of household, the foreman of a chain that is failing, whoever just
+died. One legible line —
+
+> *Bess Cobbleworth, 61, has worked the fishing hut for nineteen years
+> and is hungry*
+
+— is a game. Five hundred rows of the same thing is a spreadsheet, and
+the difference costs nothing in the sim.
+
+Note the ordering risk: this only works if a resident's *history*
+(where they have worked, how long) is cheap to state. Tenure is already
+wanted by the social-support factor, so one small field serves both —
+worth knowing before Phase 3 fixes the `Resident` layout.
+
 ## Phases
 
 One commit each, whole ladder green, and the determinism hash moves once
@@ -268,17 +362,30 @@ buys the headroom Phase 5 spends.
 **3 — residents have names.** The `Resident` struct, hashed, saved,
 snapshotted. Everyone is an adult, nobody ages, nothing behaves
 differently. Save, snapshot and protocol versions all move; the hash
-moves for the added state only. Deliberately inert, so the serialisation
-is proven before anything depends on it.
+moves for the added state only. Deliberately inert, so the
+serialisation is proven before anything depends on it.
 
-**4 — the calendar.** Ticks to days, months, seasons, years. Read-only:
-a date on screen and seasons as flavour. **Blocked on the calendar
-decision above.**
+*Get the layout right here*, because every later phase widens it and a
+snapshot format is expensive to revisit: tenure is wanted by both the
+social-support factor (Phase 8) and the cast lines that make an
+individual worth reading about, so it is one field serving two callers
+rather than an afterthought.
 
-**5 — ageing, birth and death.** Stages gate work. Age-weighted rations
-land in the SAME phase, because this is the phase that would otherwise
-put every tier over the wall — the closure test has to be green on the
-commit that introduces the pyramid, not the one after it.
+**4 — the calendar.** The needs tick becomes the month; season, year and
+the cosmetic day are multiples of it. Read-only to begin with: a date on
+screen and seasons as flavour. **The shift retune (60+15 → 24+6) lands
+here**, so one work cycle is one month before anything depends on the
+alignment.
+
+**5 — ageing, birth and death.** Stages gate work. Two things land in
+the SAME phase and neither is optional:
+
+- **Age-weighted rations**, because this is the phase that would
+  otherwise put every tier over the wall — the closure test has to be
+  green on the commit that introduces the pyramid, not the one after it.
+- **Age jitter at spawn**, because a cohort that ages together dies
+  together, and retrofitting that is an economy-breaking change rather
+  than a balance pass.
 
 **6 — marriage and households.** Pairing from the sim's LCG in a fixed
 order. Feeds social support, and gives the ghost feed something worth
@@ -289,7 +396,7 @@ an integer percentage with the 0.75 floor from §5. Several independent
 inputs, so no single shortage moves all of them.
 
 **8 — the wellbeing projection.** The six factors, per resident, floats,
-entirely above the sim.
+entirely above the sim — surfaced as a cast rather than a census.
 
 ## What this does not do
 
