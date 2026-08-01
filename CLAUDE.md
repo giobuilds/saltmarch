@@ -39,6 +39,13 @@ The build is configured with `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (s
 
 Runs fullscreen at a fixed 1920x1080 logical resolution (`SCREEN_W`/`SCREEN_H` in game.h) via `SDL_LOGICAL_PRESENTATION_STRETCH`.
 
+**Looking at it.** `--screenshot FILE [--screenshot-frames N] [--screenshot-overlay charts|book|yard|stores|world|trade]` draws N frames, saves the last one and exits. It reads the renderer this program owns (`SDL_RenderReadPixels`), so it works under `SDL_VIDEODRIVER=offscreen` with no display — and it has to, because on a Wayland compositor nothing external can capture the window at all (GNOME refuses the screenshot D-Bus API to anything but its own portal; X11 grabbers cannot see a Wayland surface). A screenshot run opens a real 1920x1080 window rather than a fullscreen one, so the capture is at logical resolution instead of whatever the display happens to be. This is the missing half of "anything genuinely visual still needs a human at the keyboard": the human still judges it, but now there is something to look at.
+
+```bash
+SDL_VIDEODRIVER=offscreen ./build/saltmarch --screenshot /tmp/charts.bmp \
+    --screenshot-frames 90 --screenshot-overlay charts
+```
+
 ## Architecture
 
 Uses SDL3's callback-based app model (`SDL_MAIN_USE_CALLBACKS`), not a manual event loop. `src/main.c` implements only `SDL_AppInit` / `SDL_AppEvent` / `SDL_AppIterate` / `SDL_AppQuit` and contains no game logic — it wires subsystems together and owns the frame's render order. When adding a new subsystem, follow this pattern: give it an init/free pair and a per-frame update/render function, then call it from main.c in the right order rather than reaching into other subsystems' internals.

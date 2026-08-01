@@ -92,7 +92,40 @@ typedef struct {
     char          join_host[CONFIG_HOST_LEN];
     uint16_t      join_port;
     int           joined;
+
+    /* --screenshot: draw N frames, save the last one, exit.
+     *
+     * The game takes its own picture because on a modern Wayland
+     * compositor nothing else can: GNOME refuses the screenshot D-Bus
+     * API to anything but its own portal, and X11 grabbers cannot see a
+     * Wayland surface at all. SDL_RenderReadPixels reads the renderer
+     * this program owns, so it works under any compositor and under
+     * none — SDL_VIDEODRIVER=offscreen included, which is what makes it
+     * usable from a script and from CI.
+     *
+     * This is the missing half of UI_PLAN's verification story. Every
+     * phase since Phase 0 has ended with "whether it READS well needs a
+     * human at the keyboard", and that is still true — but a human
+     * cannot look at what cannot be captured, and until now nothing
+     * could capture it. */
+    char          shot_path[512];
+    int           shot_frames;      /* frames to draw before saving     */
+    int           shot_overlay;     /* GameOverlay to open, or 0        */
 } App;
+
+/* Which overlay --screenshot-overlay names. Kept beside the flag rather
+ * than in game.h: this is a debugging convenience, not a concept the
+ * game has. */
+static int overlay_by_name(const char *name)
+{
+    if (SDL_strcmp(name, "book")   == 0) return UI_OVERLAY_BOOK;
+    if (SDL_strcmp(name, "charts") == 0) return UI_OVERLAY_CHARTS;
+    if (SDL_strcmp(name, "yard")   == 0) return UI_OVERLAY_YARD;
+    if (SDL_strcmp(name, "stores") == 0) return UI_OVERLAY_INVENTORY;
+    if (SDL_strcmp(name, "world")  == 0) return UI_OVERLAY_WORLD;
+    if (SDL_strcmp(name, "trade")  == 0) return UI_OVERLAY_TRADE;
+    return 0;
+}
 
 /* Wall-clock unix milliseconds, for feed timestamps and ghost lerp. */
 static uint64_t wall_unix_ms(void)
@@ -122,6 +155,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     GameState    *gs       = NULL;
     App          *app      = NULL;
     SDL_AppResult cli_result;
+    char          shot_path[512];
+    int           shot_frames  = 0;
+    int           shot_overlay = 0;
+    int           i;
+
+    shot_path[0] = '\0';
 
     *appstate = NULL;   /* defined for the CLI and failure paths */
 
@@ -144,9 +183,27 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
+    /* Parsed before the window exists, because --screenshot decides
+     * what kind of window to make: a capture wants the logical
+     * resolution exactly, and a fullscreen window is whatever the
+     * display is — 1024x768 under the offscreen driver, which returns a
+     * downscaled picture that makes text look worse than it is. */
+    for (i = 1; i < argc; i++) {
+        if (SDL_strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
+            SDL_strlcpy(shot_path, argv[++i], sizeof(shot_path));
+            if (shot_frames <= 0) shot_frames = 30;
+        } else if (SDL_strcmp(argv[i], "--screenshot-frames") == 0 &&
+                   i + 1 < argc) {
+            shot_frames = SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--screenshot-overlay") == 0 &&
+                   i + 1 < argc) {
+            shot_overlay = overlay_by_name(argv[++i]);
+        }
+    }
+
     if (!SDL_CreateWindowAndRenderer("Saltmarch",
                                      SCREEN_W, SCREEN_H,
-                                     SDL_WINDOW_FULLSCREEN,   /* CHANGED */
+                                     shot_path[0] ? 0 : SDL_WINDOW_FULLSCREEN,
                                      &window, &renderer)) {
         SDL_Log("Window/renderer failed: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -183,6 +240,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_memset(&app->confirm_list,  0, sizeof(app->confirm_list));
     fx_reject_init(&app->fx);
     SDL_memset(&app->intent, 0, sizeof(app->intent));
+    SDL_strlcpy(app->shot_path, shot_path, sizeof(app->shot_path));
+    app->shot_frames  = shot_frames;
+    app->shot_overlay = shot_overlay;
+
     config_load(&app->cfg);
     SDL_Log("Config: %s (%d server%s remembered)",
             app->cfg.path[0] ? app->cfg.path : "(none)",
@@ -208,7 +269,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
      * the tick gate consult. */
     app->net = NULL;
     {
-        int      i;
         uint32_t resume_id = PLAYER_NONE;
         char     hostbuf[128] = {0};
         uint16_t join_port = NET_DEFAULT_PORT;
@@ -476,6 +536,37 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->input.yard_toggle) {
         gs->yard_open = !gs->yard_open;
         if (gs->yard_open) app->ui.yard_page = 0;
+    }
+
+    /* --screenshot-overlay: open the named screen once, the same way
+     * its key does, so a capture can be of the passages or the yard
+     * rather than always of the map. Done here beside the real toggles
+     * so it cannot drift from what a keypress actually does. */
+    if (app->shot_overlay) {
+        switch (app->shot_overlay) {
+        case UI_OVERLAY_BOOK:
+            gs->book_open = 1;
+            book_view_reset(&app->book);
+            book_draft_default(&app->ui);
+            break;
+        case UI_OVERLAY_CHARTS:
+            gs->charts_open = 1;
+            chart_view_reset(&app->charts);
+            app->ui.chart_page = 0;
+            break;
+        case UI_OVERLAY_YARD:
+            gs->yard_open = 1;
+            app->ui.yard_page = 0;
+            break;
+        case UI_OVERLAY_INVENTORY:
+            gs->inventory_open = 1;
+            app->ui.inventory_page = 0;
+            break;
+        case UI_OVERLAY_WORLD: gs->world_open = 1; break;
+        case UI_OVERLAY_TRADE: gs->trade_open = 1; break;
+        default: break;
+        }
+        app->shot_overlay = 0;
     }
 
     /* UI_PLAN M1: remember the state this frame was drawn in, so a
@@ -1323,6 +1414,29 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     render_reject_flashes(app->r, &isl->camera, &app->fx);
 
     SDL_RenderPresent(app->r);
+
+    /* --screenshot: one frame, off the renderer this program owns.
+     *
+     * Read AFTER present rather than before, because present is what
+     * puts the frame on the backbuffer every driver agrees about;
+     * reading first works on some and returns the previous frame on
+     * others. A few frames of warm-up first so the world has ticked and
+     * the HUD has something in it — frame zero of any game is a picture
+     * of nothing having happened yet. */
+    if (app->shot_path[0] && --app->shot_frames <= 0) {
+        SDL_Surface *shot = SDL_RenderReadPixels(app->r, NULL);
+        int          ok   = 0;
+
+        if (shot) {
+            ok = SDL_SaveBMP(shot, app->shot_path);
+            SDL_DestroySurface(shot);
+        }
+        if (ok) SDL_Log("Screenshot written to %s", app->shot_path);
+        else    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                             "Screenshot failed: %s", SDL_GetError());
+        return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+    }
+
     return SDL_APP_CONTINUE;
 }
 
