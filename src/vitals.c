@@ -101,8 +101,9 @@ static void rule_no_workers(RuleOutput *o, const UiIsland *isl)
  * the simulation already answers. */
 static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
 {
-    int want[RES_COUNT];
-    int i, k, n = 0, best = -1;
+    int          want[RES_COUNT];
+    ResourceType basic[MAX_TIER_GOODS];
+    int          i, k, n = 0, best = -1;
 
     memset(want, 0, sizeof(want));
 
@@ -122,10 +123,15 @@ static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
         tier = tier_def_for((BuildingType)b->type);
         if (!tier) continue;
 
+        /* Both lists, and the basics resolved through the house's own
+         * origin so a Scholar's House asks for what its people ate
+         * (NEEDS_PLAN Phase 1). */
+        tier_basic_needs(tier, (BuildingType)b->origin_tier, basic);
         for (k = 0; k < MAX_TIER_GOODS; k++) {
-            int g = (int)tier->needs[k];
-            if (g < 0 || g >= (int)RES_COUNT) continue;
-            if (isl->stock[g] <= 0) want[g]++;
+            int g = (int)basic[k];
+            int l = (int)tier->luxury[k];
+            if (g >= 0 && g < (int)RES_COUNT && isl->stock[g] <= 0) want[g]++;
+            if (l >= 0 && l < (int)RES_COUNT && isl->stock[l] <= 0) want[l]++;
         }
     }
 

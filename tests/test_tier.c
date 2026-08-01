@@ -114,17 +114,20 @@ static void test_three_inputs(void)
  * serve them is here now. */
 static const TierDef T_FROM = {
     BUILDING_HOUSE,
-    { RES_FISH, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+    { RES_FISH, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+    { RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
     BUILDING_HOUSE_WORKER, 250, BUILDING_NONE
 };
 static const TierDef T_FIVE = {
     BUILDING_HOUSE_WORKER,
-    { RES_WOOD, RES_FISH, RES_GRAIN, RES_HOPS, RES_BEER },
+    { RES_WOOD, RES_FISH, RES_GRAIN, RES_HOPS, RES_BEER, RES_COUNT },
+    { RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
     BUILDING_NONE, 0, BUILDING_NONE
 };
 static const TierDef T_GATED = {
     BUILDING_HOUSE_WORKER,
-    { RES_FISH, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+    { RES_FISH, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+    { RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
     BUILDING_NONE, 0, BUILDING_MARKETPLACE   /* stands in for the Academy */
 };
 
@@ -241,25 +244,76 @@ static void test_real_table(void)
     CHECK(tier_upgrade_requires(BUILDING_HOUSE, TIER_BRANCH_LINE) == BUILDING_NONE,
           "no tier needs a building yet — the Academy is Phase 8");
 
-    /* The needs the plan gives them. Grain is conspicuously absent: it
-     * is milled and baked now, which is what makes the Windmill and
-     * the Bakehouse worth building. */
+    /* The table NEEDS_PLAN Phase 1 gives them.
+     *
+     * This block used to assert the opposite of its last line: "nobody
+     * eats raw Grain any more", because Grain was milled and baked and
+     * the tier wanted the bread. That was the assertion of a game where
+     * a player's first farm fed nobody — which is precisely what killed
+     * the first real player's marshfolk. Marshfolk eat Fish and Grain
+     * now, and the two chains that used to be survival are what
+     * happiness is made of instead. */
     {
         const TierDef *m = tier_def_for(BUILDING_HOUSE);
         const TierDef *w = tier_def_for(BUILDING_HOUSE_WORKER);
-        int i, mn = 0, wn = 0, grain = 0;
+        int i, mb = 0, ml = 0, wb = 0, wl = 0;
         for (i = 0; i < MAX_TIER_GOODS; i++) {
-            if (m->needs[i] != RES_COUNT) mn++;
-            if (w->needs[i] != RES_COUNT) wn++;
-            if (m->needs[i] == RES_GRAIN || w->needs[i] == RES_GRAIN) grain++;
+            if (m->basic[i]  != RES_COUNT) mb++;
+            if (m->luxury[i] != RES_COUNT) ml++;
+            if (w->basic[i]  != RES_COUNT) wb++;
+            if (w->luxury[i] != RES_COUNT) wl++;
         }
-        CHECK(mn == 3 && wn == 4, "Marshfolk want three things, Wrights four");
-        CHECK(grain == 0, "and nobody eats raw Grain any more");
-        CHECK(m->needs[1] == RES_OILSKINS && m->needs[2] == RES_MARSH_GIN,
-              "Marshfolk want Fish, Oilskins and Marsh Gin");
-        CHECK(w->needs[0] == RES_SAUSAGES && w->needs[1] == RES_BREAD &&
-              w->needs[2] == RES_SOAP && w->needs[3] == RES_BEER,
-              "Wrights want Sausages, Bread, Soap and Beer");
+        CHECK(mb == 2 && ml == 2, "Marshfolk: two basics, two luxuries");
+        CHECK(m->basic[0] == RES_FISH && m->basic[1] == RES_GRAIN,
+              "and the basics are a fisher's hut and a farm — the "
+              "opening a player actually builds");
+        CHECK(m->luxury[0] == RES_OILSKINS && m->luxury[1] == RES_MARSH_GIN,
+              "with Oilskins and Marsh Gin bought comfort, not survival");
+        CHECK(wb == 2 && wl == 3, "Wrights: two basics, three luxuries");
+        CHECK(w->basic[0] == RES_SAUSAGES && w->basic[1] == RES_BREAD,
+              "Wrights live on Sausages and Bread");
+
+        /* Inheritance is the property that keeps a first island worth
+         * having after it succeeds. */
+        {
+            const TierDef *a = tier_def_for(BUILDING_HOUSE_ARTISAN);
+            CHECK(a->basic[0] == RES_FISH && a->basic[1] == RES_GRAIN,
+                  "and Artisans still eat what Marshfolk ate");
+        }
+    }
+
+    /* A Scholar's House wants the basics of wherever its people came
+     * from — the first needs in this game that depend on a building's
+     * history rather than its kind. */
+    {
+        const TierDef *sc = tier_def_for(BUILDING_HOUSE_SCHOLAR);
+        ResourceType   got[MAX_TIER_GOODS];
+        int            n, i, fish = 0, sausages = 0, books = 0;
+
+        n = tier_basic_needs(sc, BUILDING_HOUSE, got);
+        for (i = 0; i < n; i++) {
+            if (got[i] == RES_FISH)     fish = 1;
+            if (got[i] == RES_BOOKS)    books = 1;
+            if (got[i] == RES_SAUSAGES) sausages = 1;
+        }
+        CHECK(books && fish && !sausages,
+              "a scholar out of a Marsh Cottage wants Books, Fish and Grain");
+
+        fish = sausages = books = 0;
+        n = tier_basic_needs(sc, BUILDING_HOUSE_WORKER, got);
+        for (i = 0; i < n; i++) {
+            if (got[i] == RES_FISH)     fish = 1;
+            if (got[i] == RES_BOOKS)    books = 1;
+            if (got[i] == RES_SAUSAGES) sausages = 1;
+        }
+        CHECK(books && sausages && !fish,
+              "and one out of a Wright's House wants Books, Sausages and Bread");
+
+        /* A house with no recorded origin — every house in a save
+         * written before this field existed — must still want
+         * something real. */
+        n = tier_basic_needs(sc, BUILDING_NONE, got);
+        CHECK(n >= 2, "an origin nobody recorded falls back to the base tier");
     }
 
     /* Gold is not the gate, and this is the phase where that stops
@@ -271,18 +325,17 @@ static void test_real_table(void)
     CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_NEEDS_GOODS,
           "however rich the island, an unsupplied cottage cannot climb");
 
-    stock[RES_PRESERVES]       = 1;
-    stock[RES_SEWING_MACHINES] = 1;
-    stock[RES_SPECTACLES]      = 1;
-    stock[RES_WINDOWS]         = 1;
-    /* Four of five, and the missing one is the southern good — which
-     * is the shape of the whole phase: everything a northern island
-     * can make, and still not enough. */
+    /* The bar for moving in is the tier's BASICS. You may take a house
+     * in a neighbourhood you cannot yet keep in spectacles — and then
+     * go and build the spectacle shop. Demanding the luxuries too would
+     * make every upgrade wait on the whole chain above it. */
+    stock[RES_FISH]  = 1;
+    stock[RES_GRAIN] = 1;
     CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_NEEDS_GOODS,
-          "every northern good and no Fur Coats is still not enough");
-    stock[RES_FUR_COATS] = 1;
+          "a cottage's own food is not enough to become Artisans");
+    stock[RES_PRESERVES] = 1;
     CHECK(tier_upgrade_check(BUILDING_HOUSE, TIER_BRANCH_LINE, stock, 1, &to) == REJ_OK,
-          "with all five present it may climb");
+          "with the basics of the tier above, it may climb");
     CHECK(to == BUILDING_HOUSE_ARTISAN, "and Artisans is where it goes");
 
     stock[RES_GOLD] = 0;
@@ -533,17 +586,17 @@ static void test_sim_and_ui_agree(void)
     CHECK(isl->stockpile.amount[RES_GOLD] == before,
           "and a refused upgrade costs nothing");
 
-    /* ---- and now the accept path, on the same house ---- */
+    /* ---- and now the accept path, on the same house ----
+     * The Artisans' BASICS: Fish, Grain and Preserves. Their luxuries
+     * are not the price of moving in (NEEDS_PLAN Phase 1). */
+    stockpile_add(&isl->stockpile, RES_FISH, 2);
+    stockpile_add(&isl->stockpile, RES_GRAIN, 2);
     stockpile_add(&isl->stockpile, RES_PRESERVES, 2);
-    stockpile_add(&isl->stockpile, RES_SEWING_MACHINES, 2);
-    stockpile_add(&isl->stockpile, RES_SPECTACLES, 2);
-    stockpile_add(&isl->stockpile, RES_WINDOWS, 2);
-    stockpile_add(&isl->stockpile, RES_FUR_COATS, 2);
 
     ui_snapshot_build(&snap, gs);
     CHECK(snapshot_upgrade_check(&snap.islands[snap.current_island], idx,
                                  TIER_BRANCH_LINE, &to_ui) == REJ_OK,
-          "supply all five and the UI says it may climb");
+          "supply the tier's basics and the UI says it may climb");
     CHECK(to_ui == BUILDING_HOUSE_ARTISAN, "and names Artisans as where");
 
     gs->confirm.open = 1;

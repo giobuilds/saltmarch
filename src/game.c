@@ -608,8 +608,13 @@ typedef struct {
  * for the same reason and at the same cost as v26 — which page a click
  * landed on decides which rows were under the cursor.
  *
- * v28 (UI_PLAN N6): and the shipyard's, on the same argument. */
-#define SAVE_VERSION 28u
+ * v28 (UI_PLAN N6): and the shipyard's, on the same argument.
+ *
+ * v29 (NEEDS_PLAN Phase 1): PopData records the house type it was
+ * upgraded from, because a Scholar's House needs the basics of
+ * wherever its people came from. World state — hashed, and written
+ * into the checkpoint beside the residents it belongs to. */
+#define SAVE_VERSION 29u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1401,6 +1406,7 @@ uint64_t sim_hash(const GameState *gs)
             if (p->active) {
                 fnv_bytes(&h, &p->residents, sizeof(p->residents));
                 fnv_bytes(&h, &p->happy, sizeof(p->happy));
+                fnv_bytes(&h, &p->origin_tier, sizeof(p->origin_tier));
                 fnv_bytes(&h, &p->timer, sizeof(p->timer));
             }
         }
@@ -2148,6 +2154,12 @@ static RejectReason sim_upgrade_house(GameState *gs, int island, int idx,
      * four goods, not a bigger number, which is the rule this whole
      * mechanic exists to teach. */
     stockpile_add(&isl->stockpile, RES_GOLD, -tier->upgrade_gold);
+    /* Where these people came from, recorded on every upgrade rather
+     * than only on the one that reads it: a Scholar's House wants the
+     * basics of the house it grew out of, and a field written on one
+     * path and read on another is a field that eventually is not
+     * written (NEEDS_PLAN Phase 1). */
+    isl->pop_data[idx].origin_tier = (int)from;
     isl->buildings[idx].type = to;
     return REJ_OK;
 }

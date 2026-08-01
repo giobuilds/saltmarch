@@ -216,6 +216,7 @@ static void put_pop(W *w, const PopData *p)
     w_i32(w, (int32_t)p->residents);
     w_u32(w, p->timer);
     w_u8(w,  (uint8_t)(p->happy ? 1 : 0));
+    w_i32(w, (int32_t)p->origin_tier);
 }
 
 static void get_pop(R *r, PopData *p)
@@ -224,6 +225,7 @@ static void get_pop(R *r, PopData *p)
     p->residents = (int)r_i32(r);
     p->timer     = r_u32(r);
     p->happy     = (int)r_u8(r);
+    p->origin_tier = (int)r_i32(r);
 }
 
 /* Only path_len waypoints, not MAX_AGENT_PATH. This one decision is

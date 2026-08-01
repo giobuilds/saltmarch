@@ -105,19 +105,49 @@ static void reachable_goods(const int placeable[BUILDING_TYPE_COUNT],
 
 /* ---- the assertions --------------------------------------- */
 
-static void report_tier(const TierDef *tier, const int makeable[RES_COUNT],
-                        const char *where, int *unmet)
+/* NEEDS_PLAN Phase 1 split this in two, and the split is a design
+ * statement rather than a convenience.
+ *
+ * BASICS must be satisfiable from the climates named — they are
+ * survival, and a tier whose survival needs an island the player has
+ * not got is a tier that cannot exist there. LUXURIES need only be
+ * satisfiable SOMEWHERE in the archipelago: they are what raises
+ * happiness above neutral, and needing to sail for them is the point
+ * of the sea rather than a flaw in the table.
+ *
+ * The first thing this caught: Plantain Fry, a jungle good, joining
+ * the Wrights' luxuries. Under the old single list that read as
+ * "Wrights are unsatisfiable in the north", which would have been a
+ * real fault; under the split it reads as "a northern Wright's House
+ * survives on sausages and bread, and trades south for the rest",
+ * which is the intended shape. */
+static void report_needs(const ResourceType *list, const int makeable[RES_COUNT],
+                         const TierDef *tier, const char *what,
+                         const char *where, int *unmet)
 {
     int k;
     for (k = 0; k < MAX_TIER_GOODS; k++) {
-        if (tier->needs[k] == RES_COUNT) continue;
-        if (!makeable[tier->needs[k]]) {
-            printf("  FAIL: %s cannot be made %s, so %s are stuck unhappy\n",
-                   RESOURCE_NAMES[tier->needs[k]], where,
+        if (list[k] == RES_COUNT) continue;
+        if (!makeable[list[k]]) {
+            printf("  FAIL: %s (%s) cannot be made %s, so %s are stuck\n",
+                   RESOURCE_NAMES[list[k]], what, where,
                    BUILDING_DEFS[tier->house_type].name);
             (*unmet)++;
         }
     }
+}
+
+static void report_tier(const TierDef *tier, const int makeable[RES_COUNT],
+                        const char *where, int *unmet)
+{
+    report_needs(tier->basic, makeable, tier, "basic", where, unmet);
+}
+
+static void report_tier_luxuries(const TierDef *tier,
+                                 const int makeable[RES_COUNT],
+                                 const char *where, int *unmet)
+{
+    report_needs(tier->luxury, makeable, tier, "luxury", where, unmet);
 }
 
 static void test_tiers_are_satisfiable(void)
@@ -164,6 +194,24 @@ static void test_tiers_are_satisfiable(void)
                  "seed %u: Wrights are satisfiable from home plus a highland",
                  SEEDS[s]);
         CHECK(unmet == 0, msg);
+    }
+
+    /* And every LUXURY of every tier must be makeable somewhere in a
+     * full archipelago. A luxury nobody can make anywhere is a tier
+     * that can never be happy — the same fault as an unmakeable basic,
+     * just slower to notice, and the check that would have caught Wool
+     * Cloaks and Plantain Fry being dropped from the table entirely. */
+    {
+        int t, unmet = 0;
+        survey(NORTH_SOUTH, 6, 4242u, placeable);
+        reachable_goods(placeable, makeable);
+        for (t = 0; t < BUILDING_TYPE_COUNT; t++) {
+            const TierDef *tier = tier_def_for((BuildingType)t);
+            if (tier)
+                report_tier_luxuries(tier, makeable, "anywhere at all", &unmet);
+        }
+        CHECK(unmet == 0,
+              "every tier's luxuries can be made somewhere in the world");
     }
 
     /* Artisans (SUPPLY_CHAIN Phase 4, completed in Phase 5) are the
@@ -351,7 +399,8 @@ static void test_no_dead_goods(void)
             int k;
             if (!tier) continue;
             for (k = 0; k < MAX_TIER_GOODS && !wanted; k++)
-                if ((int)tier->needs[k] == r) wanted = 1;
+                if ((int)tier->basic[k] == r || (int)tier->luxury[k] == r)
+                    wanted = 1;
         }
         if (!wanted) {
             printf("  FAIL: nothing wants %s — it can only be sold\n",

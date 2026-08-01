@@ -127,14 +127,32 @@ static void test_island_rules(void)
           "and the strip names the good it wants");
 
     /* Given some Fish, it moves on to the next thing it lacks — the
-     * row follows the shortage rather than being written once. */
+     * row follows the shortage rather than being written once.
+     *
+     * That next thing is GRAIN, not Oilskins, and the difference is the
+     * point of NEEDS_PLAN Phase 1: Grain is a basic and Oilskins is a
+     * luxury, so the strip names what keeps people alive before what
+     * makes them happy. This assertion said "no Oilskins" when
+     * Marshfolk had no basics to distinguish. */
     healthy(&s);
     s.islands[0].detail_known       = 1;
     s.islands[0].buildings[0].happy = 0;
     s.islands[0].stock[RES_FISH]    = 20;
     vitals_build(&v, &s, 0);
     CHECK(!has_text(&v, "no Fish"), "with Fish in store it stops asking");
-    CHECK(has_text(&v, "no Oilskins"), "and asks for the next one instead");
+    CHECK(has_text(&v, "no Grain"),
+          "and asks for the other BASIC before either luxury");
+
+    /* Fed, but joyless: with both basics in store the strip moves on to
+     * the luxuries. */
+    healthy(&s);
+    s.islands[0].detail_known       = 1;
+    s.islands[0].buildings[0].happy = 0;
+    s.islands[0].stock[RES_FISH]    = 20;
+    s.islands[0].stock[RES_GRAIN]   = 20;
+    vitals_build(&v, &s, 0);
+    CHECK(has_text(&v, "no Oilskins"),
+          "a fed but joyless house asks for its luxuries");
 
     /* A house with no road is unhappy for a reason the road rule
      * already gives; naming a good would send the player to build the
