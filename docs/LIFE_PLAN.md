@@ -1,6 +1,6 @@
 # Residents, lives and labour — the design
 
-> Status: **Draft. Nothing built.** The calendar is now settled — see
+> Status: **Phase 1 done; Phase 2 next.** The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -347,12 +347,58 @@ gate for 1, 2, 5 and 7; it currently assumes one building is one worker
 and has to learn about staffing, adult fraction and the productivity
 floor as those land.
 
-**1 — a building holds a crew.** `BuildingDef.worker_cap`;
-`agents_assign_jobs` fills to capacity instead of claiming exclusively;
-`b->timer += b->worker_count` in place of `b->timer++`, with a `while`
-loop so overshoot is not discarded and inputs are checked per unit. No
-ageing, no identity, no bonus — linear, and therefore ratio-neutral.
-Closure test learns to model staffing.
+**1 — a building holds a crew. DONE.** `agents_assign_jobs`' `claimed[]`
+flag became a headcount checked against `building_worker_cap()`;
+`b->timer += b->worker_count` replaced `b->timer++`, inside a `while`
+loop so a crew that earns more than one unit in a tick keeps the
+remainder. No ageing, no identity, no bonus. Save v32 — no field changed
+shape, but a log recorded when one agent could claim a whole Fisher's
+Hut replays into a different world under a rule where five can.
+
+*The crew size is derived from the building's CATEGORY, not stored per
+def.* The categories already say how big a thing is — `BCAT_WORKSHOP` is
+documented as "one artisan's worth of processing", `BCAT_FACTORY` as
+heavy industry — so one table states the rule instead of ninety numbers
+nobody can compare. Footprint deliberately does not enter it: only 1x1
+and 2x2 exist, and a fishing crew is bigger than the hut it lands its
+catch at. A producing category naming no crew falls back to 1, which is
+exactly the old behaviour; `tests/test_defs.c` asserts nothing takes
+that path.
+
+*Ratio-neutral, and measured rather than asserted.* `test_closure`'s
+table is unchanged — 0.68 / 0.82 / 0.96 — because five workers landing
+five fish leaves output per worker exactly where it was. What changed is
+how many BUILDINGS those workers stand in: land and capital, not labour.
+That is why `building_worker_cap()` appears nowhere in that test.
+
+*And the determinism fixture was wrong a third time.* The hash did not
+move, because `replay_record_demo_session` had never placed a PRODUCING
+building — so no agent was ever hired and `island_tick_buildings()`
+skipped every building on the island for the fixture's whole life. The
+production path had never once run under the cross-platform gate. Fixed
+in its own commit with a Fisher's Hut, and the fixture's return value
+now insists somebody was employed and something was made.
+
+*A Sawmill was tried first and broke it*, which is worth recording:
+at ~240 Gold placed it left 135 of the island's 1000 for food, so the
+Grain order partially filled, the Oilskins were refused outright, and
+the house the fixture exists to feed went hungry. **A fixture has a
+budget, and adding to it spends something the older assertions were
+relying on.** The hut is 60 Gold, needs no input, and produces the very
+thing the house eats — so the fixture now buys deliberately less Fish
+than its residents will consume, and "more Fish than were ever
+purchased" is a claim about production that nothing else can explain.
+Fixture hash `215c62c28be52bd6` → `4901bec1db08ed02`.
+
+*One thing learned about `worker_count` while testing it:* it is an
+instantaneous tally, not a roster. Agents work 60s, commute, rest 15s
+and commute back, so reading it on one arbitrary tick can say 0 about a
+building that is plainly producing. Nothing new — it is what the field
+has always meant — but a test that sampled it once would fail
+intermittently for reasons unrelated to hiring, so `test_staffing.c`
+takes the peak over a window. It is also why an island's real output is
+about four fifths of its headcount, which is the shift/needs-tick
+misalignment Phase 4 retunes.
 
 **2 — full staffing is worth more.** The super-linear bonus, m ≈ 1.8, as
 integer numerator/denominator per def. Nothing else changes. This is the

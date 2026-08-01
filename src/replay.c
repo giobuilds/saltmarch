@@ -21,7 +21,10 @@
 #include <string.h>
 
 /* THE FIXTURE HAS TO EXERCISE WHAT IT CLAIMS TO, and this file has been
- * wrong about that twice.
+ * wrong about that three times now. Each was found by a phase whose
+ * hash did not move when it should have, which is the only symptom this
+ * failure has: a gate agreeing with itself about a world where nothing
+ * happens looks exactly like a gate that passed.
  *
  * The first time, it paid for its house in goods a fresh island does
  * not have, so the placement was refused every run and the house it
@@ -40,6 +43,28 @@
  * that return, so a third time is a failing test rather than a hash
  * quietly agreeing with itself.
  *
+ * THE THIRD TIME — found at LIFE_PLAN Phase 1 — was the other half of
+ * the same hole: it had never placed a PRODUCING building. No workplace
+ * meant no agent was ever hired, so island_tick_buildings() skipped
+ * every building on the island for the fixture's whole life and its
+ * production path had never once executed under the cross-platform
+ * gate. A phase that changed how production is staffed and how fast it
+ * runs moved the recorded hash by exactly zero.
+ *
+ * Hence the Fisher's Hut, and the choice was not free. A Sawmill was
+ * tried first and BROKE THE FIXTURE: at ~240 Gold placed (120 plus 20
+ * Wood bought at market) it left 135 of the island's 1000 for food, so
+ * the Grain order partially filled, the Oilskins were refused outright,
+ * and the house this fixture exists to feed went hungry. A fixture has
+ * a budget, and adding to it costs something the earlier assertions
+ * were relying on.
+ *
+ * The hut is 60 Gold, needs no input at all, and produces the very
+ * thing the house eats — so it covers hiring, the headcount-driven
+ * clock and output while making the fixture's economy partly
+ * self-supplying rather than entirely bought. The return value now
+ * insists somebody was employed and something was made.
+ *
  * A note for whoever changes this next: game_place_building SUBMITS a
  * command, it does not apply one. Nothing exists until a tick runs, so
  * the house cannot be found by index at the moment it is asked for —
@@ -47,12 +72,12 @@
 int replay_record_demo_session(GameState *gs, uint32_t seed)
 {
     Island *isl;
-    int     t, i, wr = -1, wc = -1, house = -1, laid = 0;
+    int     t, i, wr = -1, wc = -1, house = -1, hut = -1, laid = 0;
 
     game_new_seeded(gs, seed);
     isl = game_cur_island(gs);
 
-    /* AND THE THIRD THING THIS FIXTURE ASSUMED AND NEVER CHECKED: a
+    /* AND THE THING THIS FIXTURE ASSUMED AND NEVER CHECKED: a
      * fresh island has NO BUILDINGS AT ALL. It has no warehouse, and
      * connectivity is seeded FROM warehouses — so the house the old
      * fixture placed could not have been connected under any road,
@@ -70,15 +95,20 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
      * be looked up until the ticks below have run — which is what the
      * second version of this got wrong. */
     for (wr = 0; wr + 2 < MAP_ROWS && !laid; wr++)
-        for (wc = 0; wc + 2 < MAP_COLS && !laid; wc++) {
-            int rr = wr + 2, rc = wc;          /* road below the store */
-            int hr = wr + 3, hc = wc;          /* house below the road */
+        for (wc = 0; wc + 4 < MAP_COLS && !laid; wc++) {
+            int rr = wr + 2, rc = wc;          /* road below the store  */
+            int hr = wr + 3, hc = wc;          /* house below the road  */
+            int fr = wr + 2, fc = wc + 1;      /* hut beside the road   */
 
             if (!building_can_place(&isl->map, BUILDING_WAREHOUSE, wr, wc))
                 continue;
             if (hr >= MAP_ROWS) continue;
             if (!building_can_place(&isl->map, BUILDING_ROAD,  rr, rc)) continue;
             if (!building_can_place(&isl->map, BUILDING_HOUSE, hr, hc)) continue;
+            /* Coastal, so this is the constraint that actually decides
+             * where the village goes. An island always has a shore. */
+            if (!building_can_place(&isl->map, BUILDING_FISHERS_HUT, fr, fc))
+                continue;
 
             /* Paid in GOLD, not goods. A fresh island holds 1000 Gold
              * and no Wood at all, so the goods payment this used to
@@ -86,13 +116,20 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
             game_place_building(gs, wr, wc, BUILDING_WAREHOUSE, 1);
             game_place_building(gs, rr, rc, BUILDING_ROAD,      1);
             game_place_building(gs, hr, hc, BUILDING_HOUSE,     1);
+            game_place_building(gs, fr, fc, BUILDING_FISHERS_HUT, 1);
             laid = 1;
         }
 
-    /* What marshfolk eat. Bought rather than produced: this fixture
-     * exercises the needs tick, and a farm that has to be staffed first
-     * would make that coverage depend on the agent scheduler too. */
-    game_buy_resource(gs, RES_FISH,     40);
+    /* What marshfolk eat, and DELIBERATELY LESS FISH THAN THEY WILL EAT.
+     * Six needs ticks at five residents is thirty Fish; twenty are
+     * bought. The rest has to be landed by the hut, which is what makes
+     * "more Fish than were ever purchased" below a claim about
+     * production rather than about the market.
+     *
+     * Grain and Oilskins stay bought: the fixture covers ONE producer on
+     * purpose, so a failure points at the production path rather than at
+     * whichever of three chains happened to stall. */
+    game_buy_resource(gs, RES_FISH,     20);
     game_buy_resource(gs, RES_GRAIN,    40);
     game_buy_resource(gs, RES_OILSKINS, 10);
 
@@ -110,9 +147,15 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
     for (i = 0; i < isl->building_count; i++)
         if (isl->buildings[i].active &&
             isl->buildings[i].type == BUILDING_HOUSE) { house = i; break; }
+    for (i = 0; i < isl->building_count; i++)
+        if (isl->buildings[i].active &&
+            isl->buildings[i].type == BUILDING_FISHERS_HUT) { hut = i; break; }
 
-    if (house < 0) return 0;
+    if (house < 0 || hut < 0) return 0;
     return isl->buildings[house].connected &&
            isl->pop_data[house].happiness > HAPPINESS_NEUTRAL &&
-           isl->stockpile.amount[RES_FISH] < 40;
+           isl->buildings[hut].connected &&
+           /* Somebody went to work: more Fish on the island than were
+            * ever bought, which nothing but the hut can explain. */
+           isl->stockpile.amount[RES_FISH] > 20;
 }
