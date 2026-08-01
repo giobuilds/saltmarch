@@ -244,6 +244,22 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
                                     int prereq_present,
                                     BuildingType *out_to);
 
+/* How many units of `g` a house of `residents` people wants per needs
+ * tick. Raw goods scale with the number of mouths; refined goods are one
+ * per household however many live there — you eat as a person, you own
+ * manufactured things as a household (NEEDS_PLAN Phase 3).
+ *
+ * Public since Phase 5 for one reason: tests/test_closure.c measures
+ * whether an island can staff its own supply, and that measurement is
+ * only worth anything if it charges what pop_update charges. A test that
+ * kept its own copy of this rule would go on happily certifying the
+ * economy it was written against — green, and about a game that no
+ * longer exists.
+ *
+ * `residents` of 0 answers 1 rather than 0: an empty house still wants
+ * something, or nothing would ever be delivered to it. */
+int tier_good_amount(ResourceType g, int residents);
+
 /* ---- Per-house population data ------------------------- */
 typedef struct {
     int      active;    /* 1 if this slot holds a House             */

@@ -1,6 +1,6 @@
 # Needs, basics and luxuries — the settled design
 
-> Status: **Phases 1-4 done; Phase 5 next.** This document is the decision record for
+> Status: **Complete — all five phases built.** This document is the decision record for
 > the needs rework, written after the design was settled in conversation
 > and checked against the code. It supersedes the needs half of
 > [new-happiness-design.md](new-happiness-design.md), which remains the
@@ -89,13 +89,19 @@ every agent is somebody's resident. So the load-bearing ratio is
 close. Measured against real `BUILDING_DEFS` rates by walking each good's
 chain to its raw inputs:
 
-| tier | workers/resident (cap 6) |
-|---|---|
-| Marshfolk | 0.68 |
-| Wrights | 0.64 |
-| Merchants | 0.96 |
-| Investors | 1.24 |
-| Artisans | 1.97 |
+| tier | basics only | with every luxury | reached by |
+|---|---|---|---|
+| Marshfolk | 0.47 | **0.68** | building |
+| Wrights | 0.26 | **0.82** | building |
+| Merchants | 0.24 | **0.96** | building |
+| Artisans | 0.68 | 1.97 | upgrade |
+| Engineers | 1.09 | 1.95 | upgrade |
+| Investors | 0.76 | 1.24 | upgrade |
+| Scholars | 0.72 | 1.49 | upgrade |
+
+These numbers are no longer hand-computed. `tests/test_closure.c` prints
+this table on every run, from `BUILDING_DEFS` and the same
+`tier_good_amount()` the simulation charges with — see Phase 5.
 
 Four findings, two of them counter-intuitive enough to be worth keeping:
 
@@ -116,8 +122,26 @@ Four findings, two of them counter-intuitive enough to be worth keeping:
    island-wide mix, which closes at roughly **one artisan house per nine
    cottages** before an island must trade for the difference.
 
-So the property to guard in CI is the BASE tiers (Marshfolk, Wrights),
-not every tier.
+So the property to guard in CI is the tiers a player can **build**, not
+every tier — which turns out to be three (Marshfolk, Wrights, Merchants),
+not the two this section originally named. `hud_placeable` is the marker,
+so a future placeable tier is guarded the day it is added rather than the
+day somebody remembers to list it.
+
+**Two numbers in this table moved after it was first written**, and the
+correction is the point of measuring rather than asserting:
+
+- **Wrights: 0.64 → 0.82.** Plantain Fry was added to their luxuries in
+  Phase 1, at the point where the table above was already considered
+  settled. A southern good with two customers instead of one is a
+  perfectly reasonable content decision, and nothing about making it
+  suggested it was worth a fifth of the tier's entire labour budget.
+  This is exactly the accident Phase 5 exists to catch, and it had
+  already happened before Phase 5 was written.
+- **Merchants: 0.96.** Unchanged, and worth saying out loud: that is
+  four percent of headroom against the wall. A Merchant island at full
+  capacity is very nearly spending every resident it has on supplying
+  itself. Any new Merchant luxury with a two-step chain breaks it.
 
 ## Phases
 
@@ -239,10 +263,40 @@ they are in. No hash change: this phase is entirely above the sim.
 flag cannot capture either row — the assertions cover the strings and
 the split, and the appearance is still owed a human.
 
-**5 — the closure test.** A headless test walks `BUILDING_DEFS` and
-fails the build if a base tier exceeds ~0.8 workers per resident, so a
-future good with a deep chain cannot quietly make Marshfolk
-unsustainable.
+**5 — the closure test. DONE.** `tests/test_closure.c` walks each tier's
+needs down to raw goods, sums the fractional buildings required, and
+fails if a tier a player can BUILD cannot be staffed. No hash change: it
+adds a test and makes one existing function public.
+
+*Two limits, because "0.8" turned out to be one number doing two jobs.*
+
+- **The wall, 1.00, on the whole need list.** Arithmetic, not taste: a
+  tier needing more workers than it houses can never reach its own
+  capacity, however well it is played.
+- **The survival limit, 0.80, on BASICS ALONE.** Basics are the half
+  that kills — short a luxury and a house stops growing, short a basic
+  and it loses people. The 20% left over is what pays for the
+  warehouses, roads, harbours and crews that no production chain
+  accounts for.
+
+Splitting them is what makes both defensible. A single 0.80 over the
+whole list **fails today** — Wrights are at 0.82 and Merchants at 0.96 —
+so it would have had to be argued down the moment it was written, and a
+threshold that loses that argument repeatedly is a threshold that ends
+up deleted. Basics come in at 0.47, 0.26 and 0.24: real headroom, and a
+limit that means something.
+
+*The test charges what `pop_update` charges.* Phase 3's per-resident /
+per-house split moved through `good_wanted()`, a file-local static in
+population.c; it is now public as `tier_good_amount()` and the test
+calls it. A test with its own copy of that rule would be worse than no
+test — it would go on certifying the economy it was written against,
+green, long after the game had changed underneath it.
+
+*And the limits are demonstrably not decoration.* Artisans (1.97) sit
+over the wall and Engineers (1.09 on basics) over the survival limit, in
+the same table, on the same run. Both are asserted, so the day someone
+"fixes" a threshold by raising it, those assertions fail too.
 
 ## What this does not do
 

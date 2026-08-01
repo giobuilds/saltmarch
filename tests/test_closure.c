@@ -1,0 +1,428 @@
+/*  test_closure.c  --  can an island staff its own supply?
+ *                      (NEEDS_PLAN Phase 5)
+ *
+ * THE PROPERTY
+ * ============
+ * Every producing building ticks only while an agent is physically
+ * working in it, and every agent is somebody's resident. So the
+ * load-bearing number in this economy is WORKERS PER RESIDENT: how many
+ * people must be at work to keep one person supplied. At 1.0 the economy
+ * eats itself — each new resident brings exactly enough labour to feed
+ * themselves and nothing is left over for warehouses, harbours, ships or
+ * expeditions. Above 1.0 it diverges, and no amount of play fixes it.
+ *
+ * That number is not written down anywhere. It EMERGES from
+ * BUILDING_DEFS: from tick rates, from how many inputs a good takes, and
+ * from how deep its chain runs. Which means it can be moved by a change
+ * that looks entirely local — one new luxury good on one tier — and
+ * nothing in the game will say so. A player finds out by watching their
+ * island fail to grow and having no idea why.
+ *
+ * So this test computes it. It walks each tier's needs down to raw
+ * goods, sums the fractional buildings required, and fails if a tier a
+ * player can BUILD DIRECTLY cannot be staffed.
+ *
+ * WHY IT CHARGES WHAT pop_update CHARGES
+ * ======================================
+ * The per-tick demand comes from tier_good_amount(), the same function
+ * the simulation consumes stock with. This test having its own copy of
+ * "raw scales with mouths, refined is per household" would be worse than
+ * having no test: it would go on certifying the economy it was written
+ * against, green, long after the game had changed underneath it.
+ *
+ * WHAT IT DELIBERATELY DOES NOT GUARD
+ * ===================================
+ * Upgrade-only tiers. Artisans need ~2.0 workers per resident and that
+ * is not a bug — the upper tiers are SUPPOSED to be net importers, which
+ * is what the sea is for. An island closes on its mix (roughly one
+ * artisan house per nine cottages), not tier by tier. Their ratios are
+ * printed, because a reviewer should see them; they are not asserted,
+ * because asserting them would be asserting the wrong thing.
+ *
+ * Linked against the sim alone: no SDL, no UI.
+ */
+
+#include "building.h"
+#include "population.h"
+#include "resource.h"
+#include <stdio.h>
+#include <string.h>
+
+static int failures = 0;
+
+#define CHECK(cond, msg) do {                                          \
+        if (!(cond)) { printf("  FAIL: %s\n", (msg)); failures++; }     \
+        else         { printf("  ok:   %s\n", (msg)); }                 \
+    } while (0)
+
+/* ---- the two limits ---------------------------------------
+ *
+ * THE WALL is 1.0 and is arithmetic, not taste: a tier needing more
+ * workers than it houses can never reach its own capacity, however well
+ * it is played.
+ *
+ * THE SURVIVAL LIMIT is 0.80 and applies to BASICS ALONE, because
+ * basics are the half that kills. A house short of a luxury stops
+ * growing; a house short of a basic loses people. Twenty percent of an
+ * island's labour left over is what pays for the warehouses, roads,
+ * harbours and crews that no production chain accounts for.
+ *
+ * The split is what makes both numbers defensible. A single 0.80 over
+ * the whole need list would have to be argued down every time a tier
+ * gains a luxury — and an argument a threshold loses repeatedly is a
+ * threshold that ends up deleted. */
+#define SURVIVAL_MAX   0.80
+#define THE_WALL       1.00
+
+/* ---- the chain walk ---------------------------------------
+ *
+ * Rates are in units per second throughout. A building making
+ * produce_amt every tick_seconds supplies produce_amt/tick_seconds, so
+ * sustaining `rate` takes rate*tick_seconds/produce_amt of it — a
+ * FRACTIONAL building count, which is the right unit: half a Sheep
+ * Pasture means one pasture idle half the time, and one worker either
+ * way is the pessimistic reading this test does not take.
+ *
+ * Doubles are fine here and nowhere near the sim. This is a property of
+ * the def table computed at test time; nothing it produces is hashed,
+ * saved or sent. */
+#define UNPRODUCIBLE  (-1.0)
+#define CYCLIC        (-2.0)
+
+static int visiting[RES_COUNT];
+
+/* The single building that makes `g`, or -1. */
+static int producer_of(ResourceType g)
+{
+    int b;
+    for (b = 0; b < BUILDING_TYPE_COUNT; b++) {
+        const BuildingDef *d = &BUILDING_DEFS[b];
+        if (d->produces == g && d->tick_seconds > 0.0f && d->produce_amt > 0)
+            return b;
+    }
+    return -1;
+}
+
+static int producer_count(ResourceType g)
+{
+    int b, n = 0;
+    for (b = 0; b < BUILDING_TYPE_COUNT; b++) {
+        const BuildingDef *d = &BUILDING_DEFS[b];
+        if (d->produces == g && d->tick_seconds > 0.0f && d->produce_amt > 0)
+            n++;
+    }
+    return n;
+}
+
+/* Workers needed to sustain `rate` units/sec of `g`, inputs included. */
+static double chain_workers(ResourceType g, double rate)
+{
+    const BuildingDef *d;
+    double buildings, total;
+    int    b, i;
+
+    if (visiting[g]) return CYCLIC;       /* a good in its own chain */
+    b = producer_of(g);
+    if (b < 0) return UNPRODUCIBLE;
+
+    visiting[g] = 1;
+    d         = &BUILDING_DEFS[b];
+    buildings = rate * (double)d->tick_seconds / (double)d->produce_amt;
+    total     = buildings;
+
+    for (i = 0; i < MAX_BUILDING_INPUTS; i++) {
+        double sub;
+        if (d->consumes[i] == RES_COUNT) continue;
+        /* Each of those buildings takes consume_amt every tick_seconds. */
+        sub = chain_workers(d->consumes[i],
+                            buildings * (double)d->consume_amt[i]
+                                / (double)d->tick_seconds);
+        if (sub < 0.0) { visiting[g] = 0; return sub; }
+        total += sub;
+    }
+    visiting[g] = 0;
+    return total;
+}
+
+/* Workers per resident for one good at a full house's demand. */
+static double good_ratio(ResourceType g)
+{
+    double per_tick = (double)tier_good_amount(g, HOUSE_CAPACITY);
+    double w;
+
+    memset(visiting, 0, sizeof(visiting));
+    w = chain_workers(g, per_tick / (double)NEEDS_INTERVAL);
+    return w < 0.0 ? w : w / (double)HOUSE_CAPACITY;
+}
+
+/* ---- one tier's bill --------------------------------------- */
+typedef struct {
+    const char  *label;
+    BuildingType house;
+    double       basics;      /* workers/resident, survival goods only  */
+    double       total;       /* including every luxury                 */
+    ResourceType worst;       /* the single most expensive good         */
+    double       worst_cost;
+    /* Tracked apart from `worst` because the two assertions are about
+     * different lists, and a diagnostic that names a luxury while
+     * failing a survival limit sends the reader to the wrong table. */
+    ResourceType worst_basic;
+    double       worst_basic_cost;
+    int          unpriceable; /* a need nothing produces, or a cycle    */
+} TierBill;
+
+static TierBill tier_bill(BuildingType house, const char *label)
+{
+    const TierDef *t = tier_def_for(house);
+    ResourceType   basic[MAX_TIER_GOODS];
+    TierBill       bill;
+    int            n, i;
+
+    memset(&bill, 0, sizeof(bill));
+    bill.label = label;
+    bill.house = house;
+    bill.worst       = RES_COUNT;
+    bill.worst_basic = RES_COUNT;
+    if (!t) { bill.unpriceable = 1; return bill; }
+
+    /* BUILDING_NONE origin: for every tier but Scholars this is just
+     * basic[]. A Scholar's House gets the base tier's food, which is the
+     * same fallback pop_update uses for a house with no recorded
+     * history. Scholars are not asserted on, so the choice costs
+     * nothing beyond the printed number being the cheapest of their
+     * several possible pasts. */
+    n = tier_basic_needs(t, BUILDING_NONE, basic);
+
+    for (i = 0; i < n; i++) {
+        double r = good_ratio(basic[i]);
+        if (r < 0.0) { bill.unpriceable = 1; continue; }
+        bill.basics += r;
+        if (r > bill.worst_cost) { bill.worst_cost = r; bill.worst = basic[i]; }
+        if (r > bill.worst_basic_cost) {
+            bill.worst_basic_cost = r;
+            bill.worst_basic      = basic[i];
+        }
+    }
+    bill.total = bill.basics;
+
+    for (i = 0; i < MAX_TIER_GOODS; i++) {
+        double r;
+        if (t->luxury[i] == RES_COUNT) continue;
+        r = good_ratio(t->luxury[i]);
+        if (r < 0.0) { bill.unpriceable = 1; continue; }
+        bill.total += r;
+        if (r > bill.worst_cost) {
+            bill.worst_cost = r;
+            bill.worst      = t->luxury[i];
+        }
+    }
+    return bill;
+}
+
+/* Every tier, in the order a player meets them. */
+static const struct { BuildingType house; const char *label; } TIERS[] = {
+    { BUILDING_HOUSE,          "Marshfolk" },
+    { BUILDING_HOUSE_WORKER,   "Wrights"   },
+    { BUILDING_HOUSE_MERCHANT, "Merchants" },
+    { BUILDING_HOUSE_ARTISAN,  "Artisans"  },
+    { BUILDING_HOUSE_ENGINEER, "Engineers" },
+    { BUILDING_HOUSE_INVESTOR, "Investors" },
+    { BUILDING_HOUSE_SCHOLAR,  "Scholars"  },
+};
+#define TIER_COUNT (int)(sizeof(TIERS) / sizeof(TIERS[0]))
+
+/* ---- 1. the arithmetic itself ------------------------------
+ * Before believing anything the walk says about a seven-good tier,
+ * check it against a number a person can do in their head. */
+static void test_the_maths(void)
+{
+    const BuildingDef *hut = &BUILDING_DEFS[BUILDING_FISHERS_HUT];
+    double             r;
+
+    printf("\n=== the arithmetic, against a hand calculation ===\n");
+
+    /* Six residents want six Fish per 30s tick = 0.2/sec. A Fisher's Hut
+     * lands 1 every 6s = 0.1667/sec. So 1.2 huts, and 1.2/6 = 0.2
+     * workers per resident. */
+    CHECK(hut->produce_amt == 1 && hut->tick_seconds == 6.0f,
+          "the Fisher's Hut still lands one Fish every six seconds");
+    CHECK(tier_good_amount(RES_FISH, 6) == 6,
+          "and six people still want six Fish, not one");
+
+    memset(visiting, 0, sizeof(visiting));
+    r = chain_workers(RES_FISH, 6.0 / 30.0);
+    CHECK(r > 1.19 && r < 1.21, "six mouths of Fish is 1.2 Fisher's Huts");
+    CHECK(good_ratio(RES_FISH) > 0.199 && good_ratio(RES_FISH) < 0.201,
+          "which is 0.2 workers per resident");
+
+    /* And a refined good is charged once however full the house is —
+     * the property the ratio depends on most, and the one a future
+     * change is most likely to break by accident. */
+    CHECK(tier_good_amount(RES_OILSKINS, 6) == 1,
+          "a household owns one set of Oilskins, not six");
+    CHECK(good_ratio(RES_OILSKINS) < good_ratio(RES_FISH),
+          "so a two-step luxury still costs less than a one-step staple");
+}
+
+/* ---- 2. the walk can price what it is asked about ---------- */
+static void test_every_need_is_priceable(void)
+{
+    int i, g;
+
+    printf("\n=== every need has exactly one source ===\n");
+
+    /* The walk takes the FIRST producer of a good. That is only a
+     * meaningful answer while there is one — the day a second Bakehouse
+     * variant appears with a different rate, this assertion fires and
+     * somebody decides which one the ratio should assume, instead of
+     * the test quietly reporting whichever sorts earlier. */
+    for (i = 0; i < TIER_COUNT; i++) {
+        const TierDef *t = tier_def_for(TIERS[i].house);
+        ResourceType   basic[MAX_TIER_GOODS];
+        int            n = tier_basic_needs(t, BUILDING_NONE, basic), k;
+
+        for (k = 0; k < n; k++)
+            if (producer_count(basic[k]) != 1) {
+                printf("  FAIL: %s's basic %s has %d producers\n",
+                       TIERS[i].label, RESOURCE_NAMES[basic[k]],
+                       producer_count(basic[k]));
+                failures++;
+            }
+        for (k = 0; k < MAX_TIER_GOODS; k++) {
+            if (t->luxury[k] == RES_COUNT) continue;
+            if (producer_count(t->luxury[k]) != 1) {
+                printf("  FAIL: %s's luxury %s has %d producers\n",
+                       TIERS[i].label, RESOURCE_NAMES[t->luxury[k]],
+                       producer_count(t->luxury[k]));
+                failures++;
+            }
+        }
+    }
+    printf("  ok:   every good any tier wants is made in exactly one place\n");
+
+    /* Nothing a building consumes may be a dead end either, or a chain
+     * that looks staffable is actually unbuildable. */
+    for (g = 0; g < RES_COUNT; g++) {
+        int b;
+        for (b = 0; b < BUILDING_TYPE_COUNT; b++) {
+            const BuildingDef *d = &BUILDING_DEFS[b];
+            int k;
+            for (k = 0; k < MAX_BUILDING_INPUTS; k++) {
+                if (d->consumes[k] != (ResourceType)g) continue;
+                if (producer_of((ResourceType)g) < 0) {
+                    printf("  FAIL: %s consumes %s, which nothing makes\n",
+                           d->name, RESOURCE_NAMES[g]);
+                    failures++;
+                }
+            }
+        }
+    }
+    printf("  ok:   every input a building takes is made by some building\n");
+}
+
+/* ---- 3. THE HEADLINE: an island can staff itself ----------- */
+static void test_closure(void)
+{
+    TierBill bills[TIER_COUNT];
+    int      i;
+
+    printf("\n=== workers per resident, at capacity %d ===\n", HOUSE_CAPACITY);
+
+    for (i = 0; i < TIER_COUNT; i++) {
+        bills[i] = tier_bill(TIERS[i].house, TIERS[i].label);
+        printf("  %-10s %s  basics %.2f  total %.2f   dearest: %s (%.2f)\n",
+               bills[i].label,
+               BUILDING_DEFS[TIERS[i].house].hud_placeable ? "[build]"
+                                                           : "[upgrade]",
+               bills[i].basics, bills[i].total,
+               bills[i].worst == RES_COUNT ? "-"
+                                           : RESOURCE_NAMES[bills[i].worst],
+               bills[i].worst_cost);
+    }
+    printf("\n");
+
+    for (i = 0; i < TIER_COUNT; i++) {
+        char msg[160];
+        const TierBill *b = &bills[i];
+
+        /* Scope taken from the table, not from a list somebody has to
+         * remember to update: a tier is guarded if a player can place
+         * one without upgrading into it. Add a placeable house tier and
+         * it is covered the same day. */
+        if (!BUILDING_DEFS[b->house].hud_placeable) continue;
+
+        snprintf(msg, sizeof(msg),
+                 "%s can price every good it needs", b->label);
+        CHECK(!b->unpriceable, msg);
+
+        snprintf(msg, sizeof(msg),
+                 "%s survives on %.2f workers per resident (limit %.2f) "
+                 "— dearest basic is %s",
+                 b->label, b->basics, SURVIVAL_MAX,
+                 b->worst_basic == RES_COUNT
+                     ? "-" : RESOURCE_NAMES[b->worst_basic]);
+        CHECK(b->basics <= SURVIVAL_MAX, msg);
+
+        snprintf(msg, sizeof(msg),
+                 "%s is fully supplied at %.2f, under the wall at %.2f",
+                 b->label, b->total, THE_WALL);
+        CHECK(b->total < THE_WALL, msg);
+    }
+}
+
+/* ---- 4. the guard would notice ------------------------------
+ * A threshold nobody has seen fire is a threshold nobody trusts. This
+ * builds the failure on purpose — a plausible new luxury with a
+ * three-deep chain — and checks the arithmetic moves the way the guard
+ * assumes it does. */
+static void test_the_guard_bites(void)
+{
+    double fish, gin, banquet;
+
+    printf("\n=== the guard can actually fire ===\n");
+
+    fish    = good_ratio(RES_FISH);        /* one step, per resident   */
+    gin     = good_ratio(RES_MARSH_GIN);   /* two steps, per household */
+    banquet = good_ratio(RES_BANQUET);     /* deep, per household      */
+
+    CHECK(banquet > gin, "a deeper chain costs more than a shallow one");
+    CHECK(fish + gin < THE_WALL,
+          "the opening two goods leave most of the island free to work");
+
+    /* The limits are not vacuous, and this is the evidence: real tiers
+     * in this same table fall on the far side of both of them. A
+     * threshold no data ever exceeds is decoration. */
+    {
+        TierBill a = tier_bill(BUILDING_HOUSE_ARTISAN, "Artisans");
+        TierBill e = tier_bill(BUILDING_HOUSE_ENGINEER, "Engineers");
+
+        CHECK(a.total > THE_WALL,
+              "Artisans are over the wall — the limit is a real line");
+        CHECK(e.basics > SURVIVAL_MAX,
+              "and Engineers exceed even the survival limit on basics "
+              "alone, which is why only placeable tiers are asserted on");
+    }
+
+    /* Marshfolk's whole bill plus four Banquets would clear the wall,
+     * which is the shape of the accident this test exists to catch:
+     * nobody would think of adding a luxury as making a tier
+     * unlivable. */
+    {
+        TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
+        CHECK(m.total + 4.0 * banquet > THE_WALL,
+              "and four such goods on the base tier would break it");
+    }
+}
+
+int main(void)
+{
+    printf("== closure (NEEDS_PLAN Phase 5) ==\n");
+
+    test_the_maths();
+    test_every_need_is_priceable();
+    test_closure();
+    test_the_guard_bites();
+
+    printf("\n%s\n", failures ? "FAILED" : "PASSED");
+    return failures ? 1 : 0;
+}

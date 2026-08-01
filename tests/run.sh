@@ -91,6 +91,7 @@ for src in "$root"/tests/test_*.c; do
         test_orderbook) link_objs="";      link_sdl="" ;;
         test_charts)   link_objs="";        link_sdl="" ;;
         test_happiness) link_objs="";       link_sdl="" ;;
+        test_closure)  link_objs="";        link_sdl="" ;;
         test_accounts) link_objs="$netlib";  link_sdl="" ;;
         test_tier)     link_objs="$uilib";  link_sdl="" ;;
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;

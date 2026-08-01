@@ -301,7 +301,7 @@ void pop_init(PopData *p)
  *
  * The classification is RESOURCE_CATEGORIES, which already existed for
  * the stores overlay — no good had to be reclassified for this. */
-static int good_wanted(ResourceType g, int residents)
+int tier_good_amount(ResourceType g, int residents)
 {
     if (RESOURCE_CATEGORIES[g] == RCAT_RAW)
         return residents > 0 ? residents : 1;
@@ -324,7 +324,7 @@ static int happiness_target(const TierDef *tier, const ResourceType *basic,
         int need, got;
         if (basic[k] == RES_COUNT) continue;
         want++;
-        need = good_wanted(basic[k], residents);
+        need = tier_good_amount(basic[k], residents);
         got  = s->amount[basic[k]] < need ? s->amount[basic[k]] : need;
         if (got > 0) stockpile_add(s, basic[k], -got);
         if (got == need) have++;
@@ -337,7 +337,7 @@ static int happiness_target(const TierDef *tier, const ResourceType *basic,
         int need, got;
         if (tier->luxury[k] == RES_COUNT) continue;
         lux_want++;
-        need = good_wanted(tier->luxury[k], residents);
+        need = tier_good_amount(tier->luxury[k], residents);
         got  = s->amount[tier->luxury[k]] < need ? s->amount[tier->luxury[k]]
                                                  : need;
         if (got > 0) stockpile_add(s, tier->luxury[k], -got);
