@@ -58,7 +58,13 @@ typedef struct {
     struct {
         char    label[24];
         uint8_t met;
-    } needs[MAX_TIER_GOODS];
+        /* Whether this is something the tier lives on or something it
+         * is merely glad of (NEEDS_PLAN Phase 4). The popup shows both
+         * because moving in is gated on the basics alone, and a player
+         * looking at a greyed luxury should be able to tell that it is
+         * not what is stopping them. */
+        uint8_t luxury;
+    } needs[MAX_TIER_GOODS * 2];
     int32_t  need_count;
     /* Why the upgrade is refused, for the line under the list.
      * REJ_OK when it is not. */

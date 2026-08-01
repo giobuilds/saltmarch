@@ -151,7 +151,7 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
                          next ? BUILDING_DEFS[next->house_type].name
                               : "nothing");
                 snprintf(out->lines[out->line_count++], CONFIRM_LINE_LEN,
-                         "They will want all of this, every time:");
+                         "To live, and then to be glad of it:");
 
                 /* One row per good the tier being entered will need.
                  * This is the whole point of the popup — the upgrade is
@@ -159,8 +159,15 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
                  * keep supplying them. Listed for the FIRST branch;
                  * the second names its destination on its button. */
                 if (next) {
+                    /* Basics first, then luxuries, each marked for what
+                     * it is (NEEDS_PLAN Phase 4). Both are shown because
+                     * moving in is gated on the BASICS alone: a player
+                     * looking at a greyed luxury should be able to see
+                     * that it is not what is stopping them, and that
+                     * they will want it once they are in. */
                     for (k = 0; k < MAX_TIER_GOODS; k++) {
                         if (next->basic[k] == RES_COUNT) continue;
+                        out->needs[out->need_count].luxury = 0;
                         snprintf(out->needs[out->need_count].label,
                                  sizeof(out->needs[0].label), "%s",
                                  RESOURCE_NAMES[next->basic[k]]);
@@ -168,13 +175,25 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
                             (uint8_t)(isl->stock[next->basic[k]] > 0);
                         out->need_count++;
                     }
+                    for (k = 0; k < MAX_TIER_GOODS; k++) {
+                        if (next->luxury[k] == RES_COUNT) continue;
+                        if (out->need_count >= MAX_TIER_GOODS * 2) break;
+                        out->needs[out->need_count].luxury = 1;
+                        snprintf(out->needs[out->need_count].label,
+                                 sizeof(out->needs[0].label), "%s",
+                                 RESOURCE_NAMES[next->luxury[k]]);
+                        out->needs[out->need_count].met =
+                            (uint8_t)(isl->stock[next->luxury[k]] > 0);
+                        out->need_count++;
+                    }
                 }
                 if (prereq_type != BUILDING_NONE && !prereq_present &&
-                    out->need_count < MAX_TIER_GOODS) {
+                    out->need_count < MAX_TIER_GOODS * 2) {
                     snprintf(out->needs[out->need_count].label,
                              sizeof(out->needs[0].label), "%s",
                              BUILDING_DEFS[prereq_type].name);
-                    out->needs[out->need_count].met = 0;
+                    out->needs[out->need_count].met    = 0;
+                    out->needs[out->need_count].luxury = 0;
                     out->need_count++;
                 }
                 out->refusal = (int32_t)why;
@@ -267,8 +286,14 @@ void confirm_build(UiList *out, const ConfirmView *view,
      * missing is information, not a button. */
     for (i = 0; i < view->need_count; i++) {
         UiRect r = ui_row(&l, CONFIRM_NEED_H);
+        /* The value carries both facts the drawer needs: met, and
+         * whether this is something they live on or something they are
+         * glad of. Packed rather than passed alongside, because a
+         * UiWidget has one int and the alternative is a second list the
+         * drawer would have to index in step (NEEDS_PLAN Phase 4). */
         ui_list_push(out, ui_id(UI_GROUP_NONE, (uint16_t)i), r,
-                     view->needs[i].label, view->needs[i].met,
+                     view->needs[i].label,
+                     view->needs[i].met + (view->needs[i].luxury ? 2 : 0),
                      (uint8_t)(UI_W_HEADER |
                                (view->needs[i].met ? 0u : UI_W_MUTED)));
     }

@@ -83,40 +83,63 @@ static void rule_no_workers(RuleOutput *o, const UiIsland *isl)
         emit(o, VITAL_WARN, n, "%d without workers", n);
 }
 
-/* NAME THE GOOD.
+/* NAME THE GOOD, AND SAY WHICH KIND OF TROUBLE IT IS.
  *
  * This said "%d houses going hungry", which is the fact a player can
  * already see happening and not the one they need. A Marsh Cottage
- * wants Fish, Oilskins and Marsh Gin, all-or-nothing, every needs tick
- * — and the intuitive opening (a house, a fisher, a lumberjack, a
- * farm) supplies exactly one of the three, so the first thing that
- * happens in a new game is residents leaving for a reason nothing on
- * screen states. The tier's needs are right there in TierDef; there
- * was no reason to keep them to ourselves.
+ * wants Fish and Grain to live and Oilskins and Marsh Gin to be glad of
+ * it — and the intuitive opening supplies one of the four, so the first
+ * thing that happens in a new game is residents leaving for a reason
+ * nothing on screen states. The tier's lists are right there in
+ * TierDef; there was no reason to keep them to ourselves.
+ *
+ * NEEDS_PLAN Phase 4 splits the sentence in two, because the two
+ * situations want different things from the player and one of them is
+ * not urgent at all:
+ *
+ *   STARVING    below neutral: a BASIC is short, happiness is falling,
+ *               and when it reaches the floor people start leaving.
+ *   DISCONTENT  at neutral or above but below GROW: everybody is fed
+ *               and nobody is arriving. A luxury is missing. This is a
+ *               growth problem, not an emergency, and saying it in the
+ *               same words as starvation taught players to ignore both.
  *
  * The good named is the one the most houses are short of, because the
- * strip has one row for this and a player fixes one chain at a time.
- * `tier_def_for` is the sim's own, not a copy: a screen that had its
- * own idea of what a house eats would be a second answer to a question
- * the simulation already answers. */
+ * strip has one row for each and a player fixes one chain at a time.
+ * `tier_def_for` is the sim's own, not a copy: a screen with its own
+ * idea of what a house eats would be a second answer to a question the
+ * simulation already answers. */
+static int most_wanted(const int want[RES_COUNT], int known)
+{
+    int i, best = -1;
+
+    /* Only for an island we are actually told the stores of: a rival's
+     * arrive as zeroes, and every good would read as missing (N2). */
+    if (!known) return -1;
+    for (i = 0; i < (int)RES_COUNT; i++)
+        if (want[i] > 0 && (best < 0 || want[i] > want[best])) best = i;
+    return best;
+}
+
 static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
 {
-    int          want[RES_COUNT];
+    int          starve_want[RES_COUNT], joyless_want[RES_COUNT];
     ResourceType basic[MAX_TIER_GOODS];
-    int          i, k, n = 0, best = -1;
+    int          i, k, starving = 0, joyless = 0, best;
 
-    memset(want, 0, sizeof(want));
+    memset(starve_want,  0, sizeof(starve_want));
+    memset(joyless_want, 0, sizeof(joyless_want));
 
     for (i = 0; i < isl->building_count; i++) {
         const UiBuilding *b = &isl->buildings[i];
         const TierDef    *tier;
+        int               hungry;
 
         if (!b->active || b->residents == 0) continue;
-        /* Below neutral is a house that is not being fed. At or above
-         * it, the house is alive and merely wanting for luxuries —
-         * which is a different sentence, and Phase 4's to say. */
-        if (b->happiness >= HAPPINESS_NEUTRAL) continue;
-        n++;
+        if (b->happiness >= HAPPINESS_GROW) continue;   /* thriving */
+
+        hungry = b->happiness < HAPPINESS_NEUTRAL;
+        if (hungry) starving++; else joyless++;
 
         /* A house with no road is unhappy for a reason rule_disconnected
          * already says out loud, and naming a good it cannot receive
@@ -126,31 +149,42 @@ static void rule_hungry_houses(RuleOutput *o, const UiIsland *isl)
         tier = tier_def_for((BuildingType)b->type);
         if (!tier) continue;
 
-        /* Both lists, and the basics resolved through the house's own
-         * origin so a Scholar's House asks for what its people ate
-         * (NEEDS_PLAN Phase 1). */
+        /* The basics resolved through the house's own origin, so a
+         * Scholar's House asks for what its people ate (Phase 1). */
         tier_basic_needs(tier, (BuildingType)b->origin_tier, basic);
         for (k = 0; k < MAX_TIER_GOODS; k++) {
             int g = (int)basic[k];
             int l = (int)tier->luxury[k];
-            if (g >= 0 && g < (int)RES_COUNT && isl->stock[g] <= 0) want[g]++;
-            if (l >= 0 && l < (int)RES_COUNT && isl->stock[l] <= 0) want[l]++;
+
+            if (hungry) {
+                if (g >= 0 && g < (int)RES_COUNT && isl->stock[g] <= 0)
+                    starve_want[g]++;
+            } else {
+                if (l >= 0 && l < (int)RES_COUNT && isl->stock[l] <= 0)
+                    joyless_want[l]++;
+            }
         }
     }
 
-    if (n == 0) return;
-
-    /* Only for an island we are actually told the stores of: a rival's
-     * arrive as zeroes, and every good would read as missing (N2). */
-    if (isl->detail_known) {
-        for (i = 0; i < (int)RES_COUNT; i++)
-            if (want[i] > 0 && (best < 0 || want[i] > want[best])) best = i;
+    if (starving > 0) {
+        best = most_wanted(starve_want, isl->detail_known);
+        if (best >= 0)
+            emit(o, VITAL_WARN, starving, "%d starving — no %s",
+                 starving, RESOURCE_NAMES[best]);
+        else
+            emit(o, VITAL_WARN, starving, "%d houses going hungry", starving);
     }
 
-    if (best >= 0)
-        emit(o, VITAL_WARN, n, "%d hungry — no %s", n, RESOURCE_NAMES[best]);
-    else
-        emit(o, VITAL_WARN, n, "%d houses going hungry", n);
+    /* Emitted after, and quieter: a fed island that has stopped growing
+     * is a thing to fix this evening rather than this minute. */
+    if (joyless > 0) {
+        best = most_wanted(joyless_want, isl->detail_known);
+        if (best >= 0)
+            emit(o, VITAL_INFO, joyless, "%d fed, not growing — no %s",
+                 joyless, RESOURCE_NAMES[best]);
+        else
+            emit(o, VITAL_INFO, joyless, "%d fed but not growing", joyless);
+    }
 }
 
 /* A full store is production thrown away, and it is invisible until

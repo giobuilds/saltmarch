@@ -1,6 +1,6 @@
 # Needs, basics and luxuries — the settled design
 
-> Status: **Phases 1-3 done; Phase 4 next.** This document is the decision record for
+> Status: **Phases 1-4 done; Phase 5 next.** This document is the decision record for
 > the needs rework, written after the design was settled in conversation
 > and checked against the code. It supersedes the needs half of
 > [new-happiness-design.md](new-happiness-design.md), which remains the
@@ -214,9 +214,30 @@ run); a fixture that can quietly cover nothing needs a check that says
 so, because a hash agreeing with itself about a world where nothing
 happens is not a determinism gate.
 
-**4 — say it on screen.** The alert strip separates *starving* (a basic
-is missing) from *discontent* (a luxury is), and the confirm popup shows
-a tier's two lists rather than one.
+**4 — say it on screen. DONE.** The alert strip is two rules now,
+because the two situations want different things from the player and
+one of them is not urgent at all:
+
+- **starving** — below neutral, a basic is short, happiness is falling
+  and at the floor people leave. `WARN`, and it names the missing basic:
+  *"3 starving — no Grain"*.
+- **fed, not growing** — at neutral or above but below GROW. Everybody
+  is alive, nobody is arriving, a luxury is why. `INFO`, quieter, and
+  named the same way: *"4 fed, not growing — no Oilskins"*.
+
+Saying both in the same words is what taught players to ignore either.
+The happiness value decides which sentence, so a house at the floor is
+starving whatever is in the warehouse — which is what the test fixture
+had to be taught, and is the right reading.
+
+The confirm popup shows both of a tier's lists, marked. Moving in is
+gated on the BASICS alone, so a player looking at a greyed luxury can
+see it is not what is stopping them and that they will want it once
+they are in. No hash change: this phase is entirely above the sim.
+
+*Not visually verified.* A fresh world has no houses, so the screenshot
+flag cannot capture either row — the assertions cover the strings and
+the split, and the appearance is still owed a human.
 
 **5 — the closure test.** A headless test walks `BUILDING_DEFS` and
 fails the build if a base tier exceeds ~0.8 workers per resident, so a

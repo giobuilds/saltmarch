@@ -116,7 +116,8 @@ static void test_island_rules(void)
     s.islands[0].buildings[0].happiness = 0;
     s.islands[0].detail_known       = 1;
     vitals_build(&v, &s, 0);
-    CHECK(has_text(&v, "hungry"), "an unhappy house is reported");
+    CHECK(has_text(&v, "starving"),
+          "a house below neutral is reported as STARVING, not merely unhappy");
 
     /* And WHICH good it is short of, which is the whole difference
      * between a symptom and an answer. A Marsh Cottage wants Fish,
@@ -143,16 +144,36 @@ static void test_island_rules(void)
     CHECK(has_text(&v, "no Grain"),
           "and asks for the other BASIC before either luxury");
 
-    /* Fed, but joyless: with both basics in store the strip moves on to
-     * the luxuries. */
+    /* Fed, but not growing. NEEDS_PLAN Phase 4 makes this its own
+     * sentence at its own severity: everybody is alive, nobody is
+     * arriving, and a luxury is why. Saying that in the same words as
+     * starvation is what taught players to ignore both.
+     *
+     * The happiness value is what decides which sentence — a house at 0
+     * is starving whatever is in the warehouse — so the fixture has to
+     * put it between NEUTRAL and GROW rather than at the floor. */
     healthy(&s);
-    s.islands[0].detail_known       = 1;
-    s.islands[0].buildings[0].happiness = 0;
-    s.islands[0].stock[RES_FISH]    = 20;
-    s.islands[0].stock[RES_GRAIN]   = 20;
+    s.islands[0].detail_known           = 1;
+    s.islands[0].buildings[0].happiness = HAPPINESS_NEUTRAL + 1;
+    s.islands[0].stock[RES_FISH]        = 20;
+    s.islands[0].stock[RES_GRAIN]       = 20;
     vitals_build(&v, &s, 0);
     CHECK(has_text(&v, "no Oilskins"),
           "a fed but joyless house asks for its luxuries");
+    CHECK(has_text(&v, "not growing"),
+          "and is told it has stopped growing, not that it is starving");
+    CHECK(!has_text(&v, "starving"),
+          "a fed house is never called starving");
+
+    /* And a starving house is never filed as a growth problem. */
+    healthy(&s);
+    s.islands[0].detail_known           = 1;
+    s.islands[0].buildings[0].happiness = 1;
+    s.islands[0].stock[RES_OILSKINS]    = 20;
+    vitals_build(&v, &s, 0);
+    CHECK(has_text(&v, "starving"), "a house below neutral is starving");
+    CHECK(!has_text(&v, "not growing"),
+          "and the growth row keeps out of it");
 
     /* A house with no road is unhappy for a reason the road rule
      * already gives; naming a good would send the player to build the
