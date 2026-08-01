@@ -86,9 +86,26 @@
  * prerequisite". It exists for the Academy (Phase 8) and is otherwise
  * unused today; the rule is written now so Phase 8 adds a table row
  * rather than a special case. */
+/* ---- basics and luxuries (NEEDS_PLAN Phase 1) --------------
+ * `needs[]` became two lists, because one list could only express one
+ * idea: everything is equally required, and missing any of it is death.
+ *
+ *   basic[]   -- survival. A Marsh Cottage's are Fish and Grain, which
+ *                is a fisher's hut and a farm: the opening a player
+ *                actually reaches for now keeps them alive.
+ *   luxury[]  -- comfort. What raises happiness above neutral and what
+ *                makes a population grow.
+ *
+ * A tier's basics INCLUDE the basics of the tier below it, so Fish and
+ * Grain never stop being wanted and a first island keeps its value
+ * after it succeeds — which is the opposite of what happened before,
+ * where upgrading a house killed the demand that built it.
+ *
+ * RES_COUNT is the unused sentinel in both, as in BuildingDef.consumes[]. */
 typedef struct {
     BuildingType house_type;
-    ResourceType needs[MAX_TIER_GOODS];
+    ResourceType basic[MAX_TIER_GOODS];
+    ResourceType luxury[MAX_TIER_GOODS];
     BuildingType next_tier;
     int          upgrade_gold;
     BuildingType requires_building;
@@ -100,6 +117,26 @@ typedef struct {
  * table — the drift that would follow is exactly what UI_PLAN
  * decision 3 exists to prevent. */
 const TierDef *tier_def_for(BuildingType type);
+
+/* A Scholar's House needs the basics of WHERE ITS PEOPLE CAME FROM.
+ *
+ * One reached from a Marsh Cottage wants Fish, Grain and Books; one
+ * reached from a Wright's House wants Sausages, Bread and Books. That
+ * makes it the first thing in this game whose needs depend on its
+ * history rather than its kind, and it follows from the existing rule
+ * that ANY house may become a Scholar's House where an Academy stands
+ * — a scholar's household need not have been a merchant's first.
+ *
+ * `origin` is PopData.origin_tier: the house type this one was upgraded
+ * FROM, or BUILDING_NONE for a house that was never upgraded (and for
+ * every house in a save written before this field existed, which is why
+ * the fallback has to be a real answer rather than an assertion).
+ *
+ * Writes at most MAX_TIER_GOODS entries into `out`, RES_COUNT-padded,
+ * and returns how many are real. For every tier except Scholars this is
+ * just a copy of `basic[]`. */
+int tier_basic_needs(const TierDef *tier, BuildingType origin,
+                     ResourceType out[MAX_TIER_GOODS]);
 
 /* ---- the two ways up (SUPPLY_CHAIN Phase 8) ----------------
  * A house on a line climbs to its own next tier. An island with an
@@ -178,6 +215,14 @@ typedef struct {
     int      residents; /* current population (0–HOUSE_CAPACITY)    */
     uint32_t timer;     /* sim ticks since last needs tick          */
     int      happy;     /* 1 = needs met last tick, 0 = unhappy     */
+
+    /* The house type this one was upgraded FROM, or BUILDING_NONE.
+     * Only a Scholar's House reads it (see tier_basic_needs), but it is
+     * recorded for every upgrade rather than only that one, because a
+     * field written on one path and read on another is a field that
+     * eventually is not written. World state: hashed, saved,
+     * snapshotted. */
+    int      origin_tier;
 } PopData;
 
 /* Initialise a PopData block for a newly placed house.

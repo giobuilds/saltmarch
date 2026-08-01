@@ -160,12 +160,12 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
                  * the second names its destination on its button. */
                 if (next) {
                     for (k = 0; k < MAX_TIER_GOODS; k++) {
-                        if (next->needs[k] == RES_COUNT) continue;
+                        if (next->basic[k] == RES_COUNT) continue;
                         snprintf(out->needs[out->need_count].label,
                                  sizeof(out->needs[0].label), "%s",
-                                 RESOURCE_NAMES[next->needs[k]]);
+                                 RESOURCE_NAMES[next->basic[k]]);
                         out->needs[out->need_count].met =
-                            (uint8_t)(isl->stock[next->needs[k]] > 0);
+                            (uint8_t)(isl->stock[next->basic[k]] > 0);
                         out->need_count++;
                     }
                 }

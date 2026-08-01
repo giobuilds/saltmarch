@@ -137,7 +137,12 @@ typedef struct NetSession NetSession;
  *    ignores both and behaves exactly as before — but the frames
  *    changed size, and a peer that cannot say who it is must be turned
  *    away at the handshake rather than part way through a join. */
-#define NET_PROTO_VERSION     21u
+/* 22: a house's origin tier joins the snapshot (NEEDS_PLAN Phase 1).
+ *    MSG_WORLD carries a snapshot, so a snapshot format change is a
+ *    protocol change for the same reason a resource-vocabulary change
+ *    is — an older peer would decode the pop records one field short
+ *    and every house after the first would be wrong. */
+#define NET_PROTO_VERSION     22u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

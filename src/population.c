@@ -26,67 +26,116 @@
  * Wright's House edge that used to exist is gone: a Wright's House is
  * now something you build. */
 static const TierDef TIER_DEFS[] = {
-    /* SUPPLY_CHAIN Phase 4 gives the Marsh Cottage somewhere to go.
-     * Until now both base tiers were terminal and sim_upgrade_house's
-     * accept path had no content to run on; this is the edge that puts
-     * it back under test end to end. */
+    /* Marshfolk. Fish and Grain are a fisher's hut and a farm — the
+     * opening every player reaches for, which until NEEDS_PLAN kept
+     * nobody alive because the tier wanted Oilskins and Marsh Gin
+     * instead, two chains behind fertility checks. Those are what
+     * happiness is now made of. */
     { BUILDING_HOUSE,
-      { RES_FISH, RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT,
+      { RES_FISH, RES_GRAIN, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+      { RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT, RES_COUNT,
         RES_COUNT },
       BUILDING_HOUSE_ARTISAN, 400, BUILDING_NONE },
-    /* SUPPLY_CHAIN Phase 6 completes the second line. */
+
+    /* Wrights. The second base tier, and the other line's floor.
+     * Plantain Fry is a luxury here as well as for Merchants: a
+     * southern good with two customers rather than one. */
     { BUILDING_HOUSE_WORKER,
-      { RES_SAUSAGES, RES_BREAD, RES_SOAP, RES_BEER, RES_COUNT,
+      { RES_SAUSAGES, RES_BREAD, RES_COUNT, RES_COUNT, RES_COUNT,
+        RES_COUNT },
+      { RES_SOAP, RES_BEER, RES_PLANTAIN_FRY, RES_COUNT, RES_COUNT,
         RES_COUNT },
       BUILDING_HOUSE_ENGINEER, 600, BUILDING_NONE },
-    /* Phase 4 shipped this tier with four needs because Fur Coats
-     * needs Cloth, Cloth needs Cotton, and no northern profile grows
-     * cotton. SUPPLY_CHAIN Phase 5 settles that debt: the fifth need
-     * arrives with the southern islands, and with it the property the
-     * whole climate exists for — an Artisans neighbourhood cannot be
-     * reached without a colony in the south and a ship between.
-     *
-     * Five is also MAX_TIER_GOODS exactly, so this row is the first
-     * real content to use the full width Phase 2 reserved. */
+
+    /* Artisans inherit Fish and Grain, which is the whole point of
+     * inheritance: a home island's first two chains are still wanted
+     * by the tier that outgrew them. Sewing Machines sit in luxury
+     * rather than basic so an Artisan neighbourhood survives a Machine
+     * Shop outage instead of dying of one — a change of meaning, not
+     * of cost, since a refined good is charged per house either way. */
     { BUILDING_HOUSE_ARTISAN,
-      { RES_PRESERVES, RES_SEWING_MACHINES, RES_SPECTACLES, RES_WINDOWS,
-        RES_FUR_COATS, RES_COUNT },
-      BUILDING_NONE, 0, BUILDING_NONE },
-    /* Engineers (Phase 6) are the deepest tier so far and the first
-     * that needs the WHOLE archipelago: Pocket Watches want highland
-     * gold ore, Gramophones want jungle shellac, a Banquet wants a
-     * coast for its lobster, and Lamps want the northern glass and
-     * iron behind everything else. */
-    { BUILDING_HOUSE_ENGINEER,
-      { RES_LAMPS, RES_POCKET_WATCHES, RES_GRAMOPHONES, RES_BANQUET,
+      { RES_FISH, RES_GRAIN, RES_PRESERVES, RES_COUNT, RES_COUNT,
+        RES_COUNT },
+      { RES_SEWING_MACHINES, RES_FUR_COATS, RES_SPECTACLES, RES_WINDOWS,
         RES_COUNT, RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
-    /* The third line (Phase 7). Every one of these six begins in the
-     * south: coffee and plantains in the jungle, cane, maize and
-     * alpaca on the plantations. Six is MAX_TIER_GOODS, widened this
-     * phase so Wool Cloaks and Plantain Fry could have a tier instead
-     * of being chains nothing eats. */
+
+    /* Engineers inherit the Wrights' table. */
+    { BUILDING_HOUSE_ENGINEER,
+      { RES_SAUSAGES, RES_BREAD, RES_LAMPS, RES_POCKET_WATCHES,
+        RES_COUNT, RES_COUNT },
+      { RES_GRAMOPHONES, RES_BANQUET, RES_COUNT, RES_COUNT, RES_COUNT,
+        RES_COUNT },
+      BUILDING_NONE, 0, BUILDING_NONE },
+
+    /* Merchants: the third line's floor, southern from the first day. */
     { BUILDING_HOUSE_MERCHANT,
-      { RES_COFFEE, RES_RUM, RES_FLATBREAD, RES_MARSH_HATS,
-        RES_WOOL_CLOAKS, RES_PLANTAIN_FRY },
+      { RES_COFFEE, RES_FLATBREAD, RES_COUNT, RES_COUNT, RES_COUNT,
+        RES_COUNT },
+      { RES_RUM, RES_MARSH_HATS, RES_WOOL_CLOAKS, RES_PLANTAIN_FRY,
+        RES_COUNT, RES_COUNT },
       BUILDING_HOUSE_INVESTOR, 900, BUILDING_NONE },
+
     /* Investors are the scarcity tier: grapes only on the highland,
      * pearls only off an atoll, and Jewellery wanting both of the
-     * rarest deposits in the world at once. */
+     * rarest deposits in the world at once. Five basics is the widest
+     * list here and the reason MAX_TIER_GOODS is not four. */
     { BUILDING_HOUSE_INVESTOR,
-      { RES_SPARKLING_WINE, RES_CIGARS, RES_CHOCOLATE, RES_JEWELLERY,
-        RES_PERFUME, RES_COUNT },
+      { RES_COFFEE, RES_FLATBREAD, RES_SPARKLING_WINE, RES_CIGARS,
+        RES_CHOCOLATE, RES_COUNT },
+      { RES_JEWELLERY, RES_PERFUME, RES_COUNT, RES_COUNT, RES_COUNT,
+        RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
-    /* Scholars (Phase 8) are on no line: reached from ANY house, and
-     * only where an Academy stands. requires_building is what carries
-     * that -- the existing prerequisite mechanism, given its first
-     * real content after being proven synthetically since Phase 3. */
+
+    /* Scholars are on no line: reached from ANY house, and only where
+     * an Academy stands. Their basics are Books plus WHATEVER THE HOUSE
+     * THEY CAME FROM ATE — see tier_basic_needs(). The basic[] list
+     * here is therefore the fallback for a Scholar's House with no
+     * recorded origin, and Books is the only entry every scholar
+     * shares. */
     { BUILDING_HOUSE_SCHOLAR,
-      { RES_BOOKS, RES_CHARTS, RES_COFFEE, RES_SPECTACLES,
-        RES_COUNT, RES_COUNT },
+      { RES_BOOKS, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
+      { RES_CHARTS, RES_COFFEE, RES_SPECTACLES, RES_COUNT, RES_COUNT,
+        RES_COUNT },
       BUILDING_NONE, 0, BUILDING_ACADEMY },
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
+
+/* A scholar's household need not have been a merchant's first: their
+ * basics are Books plus whatever the house they came from ate. See
+ * population.h. Every other tier answers with a copy of basic[].
+ *
+ * The fallback for an unknown origin is Marshfolk's, not nothing: a
+ * Scholar's House restored from a save written before origin_tier
+ * existed has to want SOMETHING, and the base tier's food is the one
+ * answer that is true of every island. */
+int tier_basic_needs(const TierDef *tier, BuildingType origin,
+                     ResourceType out[MAX_TIER_GOODS])
+{
+    const TierDef *from;
+    int            n = 0, i;
+
+    for (i = 0; i < MAX_TIER_GOODS; i++) out[i] = RES_COUNT;
+    if (!tier) return 0;
+
+    for (i = 0; i < MAX_TIER_GOODS; i++)
+        if (tier->basic[i] != RES_COUNT) out[n++] = tier->basic[i];
+
+    if (tier->house_type != BUILDING_HOUSE_SCHOLAR) return n;
+
+    from = tier_def_for(origin);
+    if (!from || from->house_type == BUILDING_HOUSE_SCHOLAR)
+        from = tier_def_for(BUILDING_HOUSE);      /* the base tier's food */
+    if (!from) return n;
+
+    for (i = 0; i < MAX_TIER_GOODS && n < MAX_TIER_GOODS; i++) {
+        int dup = 0, k;
+        if (from->basic[i] == RES_COUNT) continue;
+        for (k = 0; k < n; k++) if (out[k] == from->basic[i]) dup = 1;
+        if (!dup) out[n++] = from->basic[i];
+    }
+    return n;
+}
 
 const TierDef *tier_def_for(BuildingType type)
 {
@@ -179,8 +228,13 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
      * the thing they have to go and build, not the money they happen
      * to be short of as well. */
     for (k = 0; k < MAX_TIER_GOODS; k++) {
-        if (next->needs[k] == RES_COUNT) continue;
-        if (stock[next->needs[k]] <= 0) return REJ_NEEDS_GOODS;
+        /* The bar for entry is the tier's BASICS, not everything it
+         * will ever want: you may move into a neighbourhood you cannot
+         * yet keep in spectacles, and then go and build the spectacle
+         * shop. Demanding the luxuries too would make every upgrade
+         * wait on the whole chain above it. */
+        if (next->basic[k] == RES_COUNT) continue;
+        if (stock[next->basic[k]] <= 0) return REJ_NEEDS_GOODS;
     }
 
     if (stock[RES_GOLD] < tier->upgrade_gold) return REJ_CANT_AFFORD;
@@ -222,6 +276,7 @@ void pop_update(PopData pop[], const Building buildings[], int count,
     for (i = 0; i < count; i++) {
         PopData       *p    = &pop[i];
         const TierDef *tier;
+        ResourceType   basic[MAX_TIER_GOODS];
         int            needs_met, k;
 
         if (!p->active) continue;
@@ -237,18 +292,28 @@ void pop_update(PopData pop[], const Building buildings[], int count,
          * game_tick_buildings' multi-input production). A
          * disconnected house has no route for a Warehouse to deliver
          * anything, so it's treated the same as needs unmet. */
+        /* PHASE 1 KEEPS ALL-OR-NOTHING, over the union of both lists.
+         * The split is data this phase; what it MEANS — basics keep you
+         * alive, luxuries make you happy — is Phase 2. Landing both at
+         * once would move the determinism fixture's hash for two
+         * reasons and leave neither attributable. */
+        tier_basic_needs(tier, (BuildingType)p->origin_tier, basic);
+
         needs_met = buildings[i].connected && tier != NULL && p->residents > 0;
         if (needs_met) {
             for (k = 0; k < MAX_TIER_GOODS; k++) {
-                if (tier->needs[k] == RES_COUNT) continue;
-                if (s->amount[tier->needs[k]] <= 0) { needs_met = 0; break; }
+                if (basic[k] != RES_COUNT && s->amount[basic[k]] <= 0)
+                    { needs_met = 0; break; }
+                if (tier->luxury[k] != RES_COUNT &&
+                    s->amount[tier->luxury[k]] <= 0) { needs_met = 0; break; }
             }
         }
 
         if (needs_met) {
-            for (j = 0; j < MAX_TIER_GOODS; j++)
-                if (tier->needs[j] != RES_COUNT)
-                    stockpile_add(s, tier->needs[j], -1);
+            for (j = 0; j < MAX_TIER_GOODS; j++) {
+                if (basic[j] != RES_COUNT)         stockpile_add(s, basic[j], -1);
+                if (tier->luxury[j] != RES_COUNT)  stockpile_add(s, tier->luxury[j], -1);
+            }
 
             /* Generate gold proportional to residents */
             stockpile_add(s, RES_GOLD,
@@ -281,8 +346,9 @@ void pop_update(PopData pop[], const Building buildings[], int count,
                 if (buildings[i].connected && tier) {
                     int m;
                     why = "needs are already met";   /* only if none is short */
-                    for (m = 0; m < MAX_TIER_GOODS; m++) {
-                        ResourceType g = tier->needs[m];
+                    for (m = 0; m < MAX_TIER_GOODS * 2; m++) {
+                        ResourceType g = (m < MAX_TIER_GOODS)
+                                       ? basic[m] : tier->luxury[m - MAX_TIER_GOODS];
                         if (g == RES_COUNT) continue;
                         if (s->amount[g] > 0) continue;
                         snprintf(buf, sizeof(buf), "no %s", RESOURCE_NAMES[g]);
