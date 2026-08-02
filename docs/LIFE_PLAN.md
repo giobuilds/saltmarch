@@ -1,6 +1,6 @@
 # Residents, lives and labour — the design
 
-> Status: **Phases 1-2 done; Phase 3 next.** The calendar is settled — see
+> Status: **Phases 1-3 done; Phase 4 next.** The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -462,17 +462,42 @@ worth nothing to Wrights and Merchants, and how Merchants turned out to
 project onto the wall. Better found here than at Phase 5, where the fix
 would be a rebalance of the whole def table rather than a decision.
 
-**3 — residents have names.** The `Resident` struct, hashed, saved,
-snapshotted. Everyone is an adult, nobody ages, nothing behaves
-differently. Save, snapshot and protocol versions all move; the hash
-moves for the added state only. Deliberately inert, so the
-serialisation is proven before anything depends on it.
+**3 — residents have names. DONE.** `Resident` — 24 bytes, exactly as
+budgeted — hashed, saved and snapshotted. Nobody ages, nothing behaves
+differently, and nothing reads them yet. Save v34, snapshot v13,
+protocol 24. Fixture hash `e9a9639f4bcd06a0` → `4e89f60ee1e27388`.
 
-*Get the layout right here*, because every later phase widens it and a
-snapshot format is expensive to revisit: tenure is wanted by both the
-social-support factor (Phase 8) and the cast lines that make an
-individual worth reading about, so it is one field serving two callers
-rather than an afterthought.
+*Names are DERIVED, not stored.* This sim has no mutable RNG stream —
+outcomes come from hashing an identity (`survey_hash`, survey.c), which
+is stronger than a stream because there is no shared cursor to step out
+of order. A name is a pure function of (`world_seed`, `id`): identical
+on every machine, absent from the snapshot, two table lookups to ask
+for. 48 given names against 40 surnames is 1920 combinations, and the
+collisions that do occur read as kin rather than as a bug.
+
+*The stage is derived too*, from `age_months` alone. A stored stage
+would be a second place for the truth to live and a second thing to
+keep consistent.
+
+*Age spread landed here rather than at Phase 5.* The array is being
+created now, so seeding arrivals at 20-45 costs one hash; retrofitting
+it after ageing ships would be an economy-breaking change. That is the
+anti-cohort invariant, and `tests/test_resident.c` asserts it against a
+real village rather than against a constructed struct.
+
+*What the tests are for, since there is no behaviour to test:*
+identity must be reproducible, or every later phase inherits a desync
+nobody can localise; and the format must survive a round trip, because
+a snapshot is what a save embeds and what `MSG_WORLD` sends — a field
+dropped here is a field silently lost on every join and every reload.
+The strongest assertion available is that an encoded world and its
+decoded twin hash identically.
+
+*One thing this phase nearly repeated.* The cohort test first ran ticks
+on a fresh island, found nobody, printed a note and passed — a fresh
+island has no buildings at all. That is the same silent non-coverage
+found three times in `replay.c`'s fixture, and it took the same fix: lay
+a village, and fail rather than shrug if it cannot be laid.
 
 **4 — the calendar.** The needs tick becomes the month; season, year and
 the cosmetic day are multiples of it. Read-only to begin with: a date on

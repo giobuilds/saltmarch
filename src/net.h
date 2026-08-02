@@ -142,7 +142,7 @@ typedef struct NetSession NetSession;
  *    protocol change for the same reason a resource-vocabulary change
  *    is — an older peer would decode the pop records one field short
  *    and every house after the first would be wrong. */
-#define NET_PROTO_VERSION     23u
+#define NET_PROTO_VERSION     24u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

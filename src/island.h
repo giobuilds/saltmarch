@@ -24,6 +24,7 @@
 #include "building.h"
 #include "population.h"
 #include "agent.h"
+#include "resident.h"
 #include "simclock.h"
 
 /* Job assignment runs every AGENT_ASSIGN_INTERVAL seconds, expressed in
@@ -93,6 +94,15 @@ typedef struct {
     Agent      agents[MAX_AGENTS];
     int        agent_count;
     int        agent_assign_timer;   /* sim ticks since last assign pass */
+
+    /* ---- who those agents actually are (LIFE_PLAN Phase 3) ----
+     * Agents are motion: derived, never saved, rebuilt every session.
+     * Residents are IDENTITY: hashed, saved, snapshotted. next_resident_id
+     * is world state because it decides what everybody is called — names
+     * are a pure function of (world_seed, id) rather than stored bytes. */
+    Resident   residents[MAX_RESIDENTS];
+    int        resident_count;
+    uint32_t   next_resident_id;
 
     int        settled;         /* 0 = generated but not colonised     */
     MapProfile profile;
@@ -243,7 +253,11 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  * completion before the next island's begins.
  *
  * Takes no dt: it advances the island by exactly one fixed sim tick. */
-void island_update(Island *isl);
+/* `world_seed` is threaded in for LIFE_PLAN Phase 3: a resident's name
+ * is a pure function of (world_seed, id) rather than stored bytes, so
+ * the island needs the seed at the moment somebody is born. It is the
+ * only thing here that reaches outside the island. */
+void island_update(Island *isl, uint32_t world_seed);
 
 /* Recompute this island's per-resource storage cap from the number of
  * active Warehouses ON THIS ISLAND. Per-island by necessity: otherwise

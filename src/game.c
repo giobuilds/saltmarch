@@ -1255,7 +1255,7 @@ void sim_run_one_tick(GameState *gs)
     if (gs->predict_only != 0u) {
         for (i = 0; i < MAX_ISLANDS; i++)
             if (gs->islands[i].owner == gs->predict_only)
-                island_update(&gs->islands[i]);
+                island_update(&gs->islands[i], gs->world_seed);
         gs->sim_tick_no++;
         return;
     }
@@ -1270,7 +1270,7 @@ void sim_run_one_tick(GameState *gs)
     /* 3. Every settled island's full pipeline, one tick, in order —
      * see island_update()'s ordering constraint. */
     for (i = 0; i < MAX_ISLANDS; i++)
-        island_update(&gs->islands[i]);
+        island_update(&gs->islands[i], gs->world_seed);
 
     /* 4. Voyages advance independently of any island. Insurance is
      * settled either side of the move: what was at sea before, and
@@ -1413,6 +1413,31 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &isl->research_boats, sizeof(isl->research_boats));
         fnv_bytes(&h, &isl->research_boats_out, sizeof(isl->research_boats_out));
         fnv_bytes(&h, &isl->scholars_out, sizeof(isl->scholars_out));
+
+        /* Residents (LIFE_PLAN Phase 3). Hashed even though nothing
+         * reads them yet: state outside the hash is state the F9
+         * self-check and the cross-platform gate cannot see, and the
+         * whole point of landing this phase inert is to prove the
+         * serialisation before behaviour depends on it. next_resident_id
+         * goes in too — it decides what everybody is called, so two
+         * worlds that disagree about it are two different worlds.
+         *
+         * Field by field rather than a struct dump: Resident has
+         * padding, and hashing padding is hashing uninitialised bytes,
+         * which is stable within one run and different across machines
+         * (the exact failure ci/sanitize.sh's MSan pass exists for). */
+        fnv_bytes(&h, &isl->next_resident_id, sizeof(isl->next_resident_id));
+        fnv_bytes(&h, &isl->resident_count, sizeof(isl->resident_count));
+        for (b = 0; b < isl->resident_count; b++) {
+            const Resident *p = &isl->residents[b];
+            fnv_bytes(&h, &p->active, sizeof(p->active));
+            if (!p->active) continue;
+            fnv_bytes(&h, &p->home_idx, sizeof(p->home_idx));
+            fnv_bytes(&h, &p->id, sizeof(p->id));
+            fnv_bytes(&h, &p->age_months, sizeof(p->age_months));
+            fnv_bytes(&h, &p->spouse, sizeof(p->spouse));
+            fnv_bytes(&h, &p->tenure_months, sizeof(p->tenure_months));
+        }
 
         for (b = 0; b < isl->building_count; b++) {
             const Building *bd = &isl->buildings[b];

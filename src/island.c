@@ -133,7 +133,7 @@ static void island_tick_buildings(Island *isl)
  * timers count integer ticks; agent movement still advances by the
  * constant SIM_TICK_SECONDS, which is deterministic on one machine and
  * outside the F9 hash anyway. */
-void island_update(Island *isl)
+void island_update(Island *isl, uint32_t world_seed)
 {
     if (!isl->settled) return;
 
@@ -157,6 +157,12 @@ void island_update(Island *isl)
      * tick's island_tick_buildings(). */
     agents_sync(isl->agents, &isl->agent_count, isl->buildings,
                 isl->pop_data, isl->building_count);
+
+    /* The same reconciliation, over identity rather than motion. After
+     * agents_sync so the two see the same pop_data in the same tick. */
+    residents_sync(isl->residents, &isl->resident_count,
+                   &isl->next_resident_id, isl->buildings, isl->pop_data,
+                   isl->building_count, world_seed);
 
     if (++isl->agent_assign_timer >= AGENT_ASSIGN_INTERVAL_TICKS) {
         isl->agent_assign_timer = 0;

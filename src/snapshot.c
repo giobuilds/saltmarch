@@ -277,6 +277,33 @@ static int get_agent(R *r, Agent *a)
     return 1;
 }
 
+/* A person: 24 bytes in memory and 24 on the wire (LIFE_PLAN Phase 3).
+ *
+ * NO NAME IS WRITTEN. A resident's name is a pure function of
+ * (world_seed, id) — see resident.c — so storing it would be storing a
+ * derived value, the same mistake put_island explains at length about
+ * the map grid. The id is what carries it. */
+static void put_resident(W *w, const Resident *p)
+{
+    w_u8(w, (uint8_t)(p->active ? 1 : 0));
+    w_i32(w, (int32_t)p->home_idx);
+    w_u32(w, p->id);
+    w_i32(w, p->age_months);
+    w_i32(w, p->spouse);
+    w_u32(w, p->tenure_months);
+}
+
+static void get_resident(R *r, Resident *p)
+{
+    memset(p, 0, sizeof(*p));
+    p->active        = (int)r_u8(r);
+    p->home_idx      = (int)r_i32(r);
+    p->id            = r_u32(r);
+    p->age_months    = r_i32(r);
+    p->spouse        = r_i32(r);
+    p->tenure_months = r_u32(r);
+}
+
 static void put_ship(W *w, const Ship *s)
 {
     int i;
@@ -648,11 +675,16 @@ static void put_island(W *w, const Island *isl)
 
     w_i32(w, (int32_t)na);
     for (i = 0; i < na; i++) put_agent(w, &isl->agents[i]);
+
+    w_u32(w, isl->next_resident_id);
+    w_i32(w, (int32_t)isl->resident_count);
+    for (i = 0; i < isl->resident_count; i++)
+        put_resident(w, &isl->residents[i]);
 }
 
 static int get_island(R *r, Island *isl)
 {
-    int i, nb, na;
+    int i, nb, na, nr;
 
     memset(isl, 0, sizeof(*isl));
 
@@ -703,6 +735,15 @@ static int get_island(R *r, Island *isl)
     isl->agent_count = na;
     for (i = 0; i < na; i++)
         if (!get_agent(r, &isl->agents[i])) return 0;
+
+    /* Bounds-checked like every other count here: this buffer arrives
+     * off a socket from an untrusted peer, and a count it chose is the
+     * classic way to be asked to write past the end of an array. */
+    isl->next_resident_id = r_u32(r);
+    nr = (int)r_i32(r);
+    if (r->bad || nr < 0 || nr > MAX_RESIDENTS) return 0;
+    isl->resident_count = nr;
+    for (i = 0; i < nr; i++) get_resident(r, &isl->residents[i]);
 
     return !r->bad;
 }
