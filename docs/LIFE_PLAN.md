@@ -932,9 +932,60 @@ same question without insisting they be neighbours.
 Costs about seven seconds to record and replay. Fixture hash
 `86899f082c03924e` → `f71bc0b54f4e5556`.
 
-**8 — status modifies productivity.** Slept, ate, married, employed →
-an integer percentage with the 0.75 floor from §5. Several independent
-inputs, so no single shortage moves all of them.
+**8 — status modifies productivity. DONE.** `resident_productivity()`
+returns an integer percentage in a band of 85-140, and production
+advances by the crew's condition as well as its headcount. Save v37,
+protocol 28. Fixture hash `f71bc0b54f4e5556` → `10dc16be1a45550c`.
+
+*Four inputs, and none of them is the others* — §6's rule made
+arithmetic. **Prime** (grown, not retired), **married**, **fed** (the
+household's happiness), and **tenure**, which Phase 3 has tracked and
+nothing has read until now. `test_productivity.c` moves one at a time
+and asserts the others hold still, because a test that only checked the
+total would pass on one input dressed up as four. It also asserts that
+no single input spans the band, which is the property §6 actually asks
+for: one bad harvest cannot move a worker from the ceiling to the floor.
+
+*The floor is 85, not the 75 this document wrote.* §5's guidance was
+computed against a 50% adult fraction; the working share Phase 7b
+measures is 24%, where the base tier sits at 0.98 against a wall of
+1.00 and even a 5% penalty would put it over. **That calculation was
+not treated as a specification**, and the reason is worth recording: it
+is a projection over the def table times one constant that has been
+re-derived four times — 0.55 guessed, then 0.48, 0.33, 0.13, 0.24 — and
+across those revisions the test was changed to match the sim every
+single time rather than the sim changed to match the test. Two percent
+of such a number is inside its own error. The band is shallower below
+than above because that is a sensible hedge, not because 0.98 is a law.
+
+*Youth is a missing bonus, not a penalty.* A twelve-year-old works at
+the baseline and an adult above it. Stated the other way round it would
+charge a young island twice for a fact it already pays for in
+dependants — and it would have pushed the closure projection the wrong
+way for a purely presentational choice.
+
+**The stall that nearly shipped.** The obvious way to apply a
+percentage is `advance * percent / 100`. For a lone worker at the floor
+that is `1 * 85 / 100`, which is **zero** — a single hungry fisherman
+lands nothing at all, forever. A slowdown becomes a stall, and no
+fixture that staffs a building fully can see it. Both the timer and the
+period are scaled by `PRODUCTIVITY_BASE` instead, so the percentage
+multiplies and never divides; `Building.timer` is compared against
+`period` and read by nothing else, so the change of scale costs nothing.
+The last test in `test_productivity.c` drives one miserable worker
+through the real sim and is what would have caught it.
+
+*Two fixture mistakes on the way to that test*, both worth the note.
+Pinning a household's happiness to ZERO does not make a miserable
+worker — `pop_update` sheds a resident at zero, so it empties the house
+and measures nothing. And the pin has to be applied AFTER the tick,
+because happiness walks one rung toward what the larder deserves, so a
+1 set beforehand is a 0 by the time anybody looks. Then the hut turned
+out not to be road-connected at all: connectivity is 4-adjacent, and a
+hut diagonal to the pavement lands nothing for a reason that has
+nothing to do with productivity.
+
+**9 — the wellbeing projection.**
 
 **9 — the wellbeing projection.** The six factors, per resident, floats,
 entirely above the sim — surfaced as a cast rather than a census.
