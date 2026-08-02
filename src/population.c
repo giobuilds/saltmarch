@@ -350,7 +350,9 @@ static int happiness_target(const TierDef *tier, const ResourceType *basic,
 }
 
 void pop_update(PopData pop[], const Building buildings[], int count,
-               Stockpile *s)
+               Stockpile *s,
+               int (*mouths_at)(const void *ctx, int house_idx),
+               const void *ctx)
 {
     int i;
 
@@ -374,8 +376,17 @@ void pop_update(PopData pop[], const Building buildings[], int count,
          * empty however full the warehouse is. */
         if (!buildings[i].connected || tier == NULL || p->residents <= 0)
             target = 0;
-        else
-            target = happiness_target(tier, basic, p->residents, s);
+        else {
+            /* MOUTHS, NOT HEADS (LIFE_PLAN Phase 5). An adult eats a
+             * whole ration, a child or an elder a half — so a house of
+             * six with two children is charged for five, and only for
+             * the goods that were ever per-person in the first place.
+             * NULL means every head is a mouth, which is what this did
+             * before ages existed. */
+            int mouths = mouths_at ? mouths_at(ctx, i) : p->residents;
+            if (mouths < 1) mouths = 1;
+            target = happiness_target(tier, basic, mouths, s);
+        }
 
         /* ONE STEP PER TICK, and that is the whole of the hysteresis.
          * A neighbourhood that loses its larder has ten ticks of

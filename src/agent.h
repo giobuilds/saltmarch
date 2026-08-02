@@ -92,9 +92,16 @@ typedef struct {
  * pop_update(), and once after a successful game_load() to rebuild the
  * agent population from the freshly-restored pop_data instead of
  * trying to serialize agents at all. */
+/* `adults_at(ctx, house_idx)` answers how many people in that house are
+ * old enough to work — LIFE_PLAN Phase 5's labour gate, passed as a
+ * callback so agent.c never learns what an age is. Pass NULL and every
+ * resident counts, which is the pre-Phase-5 behaviour and what the
+ * headless tests that predate ages rely on. */
 void agents_sync(Agent agents[], int *agent_count,
                  const Building buildings[], const PopData pop_data[],
-                 int building_count);
+                 int building_count,
+                 int (*adults_at)(const void *ctx, int house_idx),
+                 const void *ctx);
 
 /* Periodic (see AGENT_ASSIGN_INTERVAL): assigns every unemployed,
  * AGENT_IDLE_HOME agent to the nearest still-open job (by road-network

@@ -79,6 +79,29 @@ typedef struct {
     uint32_t tenure_months;  /* at the current workplace               */
 } Resident;
 
+/* ---- how long a life is (LIFE_PLAN Phase 5) ---------------
+ * Stellaris's shape, because it is the one that works: a GUARANTEED
+ * span nobody dies before, then a rising monthly chance after it. The
+ * alternative — everybody dies on their birthday at exactly N — is how
+ * a population ends up dying in cohorts even when its ages are spread,
+ * because a chain staffed by people hired the same year still loses
+ * them the same year.
+ *
+ * At a six-minute year (calendar.h) seventy years is seven hours of
+ * play, so most residents outlive the session they were born into.
+ * That is the intent: you inherit people mid-life and they die on you
+ * at a moment you did not choose. */
+#define LIFE_GUARANTEED_YEARS  70
+
+/* Per-mille chance of dying in a given month, once past the guarantee
+ * and rising with every year beyond it. 10 + 5*years is about 1% a
+ * month at seventy and 3.5% at seventy-five, which puts the typical
+ * death in the mid-seventies and makes a hundred-year-old rare rather
+ * than impossible. */
+#define LIFE_DEATH_BASE_PERMILLE   10
+#define LIFE_DEATH_RISE_PERMILLE    5
+#define LIFE_DEATH_MAX_PERMILLE   500
+
 /* Which stage `r` is in, from its age alone. */
 int resident_stage(const Resident *r);
 
@@ -113,5 +136,37 @@ void resident_name(const Resident *r, uint32_t world_seed,
 void residents_sync(Resident residents[], int *count, uint32_t *next_id,
                     const Building buildings[], const PopData pop_data[],
                     int building_count, uint32_t world_seed);
+
+/* How many residents of `home_idx` are old enough to work.
+ *
+ * THIS IS WHAT GATES LABOUR, and it does so by the simplest available
+ * route: agents_sync spawns one agent per ADULT rather than per
+ * resident, so a child has no agent, therefore no job, therefore no
+ * shift. Nothing in agent.c or island.c had to learn what an age is. */
+int residents_adults_at(const Resident residents[], int count, int home_idx);
+
+/* Effective mouths at `home_idx` for the needs tick: an adult eats a
+ * whole ration and everybody else a half, rounded UP so a house of
+ * children is never fed for free.
+ *
+ * Raw goods only — refined goods are charged per household and the
+ * number of mouths never entered their cost, which is why this lever
+ * is worth much less than LIFE_PLAN first assumed (see its §4). */
+int residents_mouths_at(const Resident residents[], int count, int home_idx);
+
+/* One month older, and some of them die of it.
+ *
+ * Deaths are RESIDENT-DRIVEN and decrement pop_data[home].residents as
+ * they happen, which is the opposite direction from growth: growth is
+ * decided by the needs tick and residents_sync follows it. Keeping the
+ * two directions separate is what stops the reconciliation fighting
+ * itself — a death that only removed a Resident would be undone by the
+ * next sync, and one that only decremented the count would kill an
+ * arbitrary person rather than the old one.
+ *
+ * Call once per needs tick (one month). `tick` salts the death draw so
+ * the same resident is not asked the same question twice. */
+void residents_age(Resident residents[], int count, PopData pop_data[],
+                   uint32_t world_seed, uint64_t tick);
 
 #endif /* RESIDENT_H */

@@ -257,7 +257,7 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  * is a pure function of (world_seed, id) rather than stored bytes, so
  * the island needs the seed at the moment somebody is born. It is the
  * only thing here that reaches outside the island. */
-void island_update(Island *isl, uint32_t world_seed);
+void island_update(Island *isl, uint32_t world_seed, uint64_t tick);
 
 /* Recompute this island's per-resource storage cap from the number of
  * active Warehouses ON THIS ISLAND. Per-island by necessity: otherwise

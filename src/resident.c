@@ -165,6 +165,72 @@ static void despawn_one_for_home(Resident r[], int count, int home_idx)
         }
 }
 
+int residents_adults_at(const Resident r[], int count, int home_idx)
+{
+    int i, n = 0;
+    for (i = 0; i < count; i++)
+        if (r[i].active && r[i].home_idx == home_idx
+            && resident_stage(&r[i]) == LIFE_ADULT) n++;
+    return n;
+}
+
+int residents_mouths_at(const Resident r[], int count, int home_idx)
+{
+    int i, adults = 0, others = 0;
+
+    for (i = 0; i < count; i++) {
+        if (!r[i].active || r[i].home_idx != home_idx) continue;
+        if (resident_stage(&r[i]) == LIFE_ADULT) adults++;
+        else                                     others++;
+    }
+    /* Rounded up: half of three is two here, not one. A shortage should
+     * cost the island, not be quietly forgiven by integer division. */
+    return adults + (others + 1) / 2;
+}
+
+/* Past the guarantee, a rising monthly chance. Salted with the tick so
+ * a resident is asked a fresh question each month rather than the same
+ * one forever — without that, whoever survived their first roll would
+ * survive every roll and live indefinitely. */
+static int resident_dies(const Resident *r, uint32_t world_seed, uint64_t tick)
+{
+    int years = r->age_months / MONTHS_PER_YEAR;
+    int past, permille;
+
+    if (years < LIFE_GUARANTEED_YEARS) return 0;
+
+    past     = years - LIFE_GUARANTEED_YEARS;
+    permille = LIFE_DEATH_BASE_PERMILLE + LIFE_DEATH_RISE_PERMILLE * past;
+    if (permille > LIFE_DEATH_MAX_PERMILLE) permille = LIFE_DEATH_MAX_PERMILLE;
+
+    return (int)(resident_hash(world_seed,
+                               r->id ^ (uint32_t)(tick & 0xFFFFFFFFu),
+                               0x5555u) % 1000u) < permille;
+}
+
+void residents_age(Resident r[], int count, PopData pop_data[],
+                   uint32_t world_seed, uint64_t tick)
+{
+    int i;
+
+    for (i = 0; i < count; i++) {
+        if (!r[i].active) continue;
+
+        r[i].age_months++;
+        if (r[i].tenure_months < 0xFFFFFFFFu) r[i].tenure_months++;
+
+        if (!resident_dies(&r[i], world_seed, tick)) continue;
+
+        r[i].active = 0;
+        /* The house is one smaller, and pop_update will see that this
+         * same tick. Clamped rather than trusted: a resident whose
+         * house was demolished under them must not drive a count
+         * negative. */
+        if (pop_data && pop_data[r[i].home_idx].residents > 0)
+            pop_data[r[i].home_idx].residents--;
+    }
+}
+
 void residents_sync(Resident residents[], int *count, uint32_t *next_id,
                     const Building buildings[], const PopData pop_data[],
                     int building_count, uint32_t world_seed)

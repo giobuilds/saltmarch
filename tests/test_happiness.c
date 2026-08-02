@@ -70,7 +70,7 @@ static void stock_luxuries(World *w, int n)
 static void needs_tick(World *w)
 {
     w->p[0].timer = NEEDS_INTERVAL_TICKS - 1;
-    pop_update(w->p, w->b, 1, &w->s);
+    pop_update(w->p, w->b, 1, &w->s, NULL, NULL);
 }
 
 /* ---- 1. a full larder climbs, and the house grows ---------- */

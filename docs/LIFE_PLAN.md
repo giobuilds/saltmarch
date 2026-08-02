@@ -1,6 +1,6 @@
 # Residents, lives and labour — the design
 
-> Status: **Phases 1-4 done; Phase 5 next (and blocked — see §4).** The calendar is settled — see
+> Status: **Phases 1-5 done; Phase 6 next.** The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -125,59 +125,72 @@ this document does not improve that; it preserves it.
 
 ### 4. Age-weighted rations buy less than this document first claimed
 
-**The original version of this section was wrong, and Phase 2's test
-found it.** It said that if infants and the retired eat half a ration,
-demand falls to 77.5% of today's across the board, giving 0.53 / 0.64 /
-0.75. It applied that factor to the *whole* bill.
+**This section has been wrong twice, and both errors were found by
+measurement rather than by review.**
 
-It cannot. `tier_good_amount()` charges **refined goods per household**,
-so the number of mouths never entered their cost and reducing some of
-those mouths to half rations cannot reduce it. The lever only touches
-goods charged per resident — which is to say, raw ones.
+*The first version* said the half ration takes demand to 77.5% across
+the board, giving 0.53 / 0.64 / 0.75. It applied that factor to the
+whole bill. It cannot: `tier_good_amount()` charges **refined goods per
+household**, so the number of mouths never entered their cost. Only
+Marshfolk eat anything raw — Fish and Grain. Everything above them is
+manufactured, and structurally immune to the lever.
 
-And **only Marshfolk eat anything raw.** Measured, at Phase 2's rates:
+*The second version* proposed two fixes, and **Phase 5 measured both
+before building them. Each makes the problem worse:**
 
-| tier | today | of which raw | projected under an age pyramid |
-|---|---|---|---|
-| Marshfolk | 0.38 | 0.26 | **0.59** |
-| Wrights | 0.47 | 0.00 | **0.86** |
-| Merchants | 0.55 | 0.00 | **1.00 — on the wall** |
+| | Merchants today | projected |
+|---|---|---|
+| as shipped | 0.55 | 1.10 |
+| charge provisions per person | **3.31** | 4.67 |
+| add Fish as a basic | 0.66 | 1.16 |
+| both | 3.42 | 4.82 |
 
-Fish and Grain are the only raw goods any tier eats. Sausages, Bread,
-Coffee, Flatbread and every luxury above them are refined, so Wrights
-and Merchants are structurally immune to the ration lever.
+The reason is one line: the problem is *too much work per eater*, and
+both proposals **add demand**. Removing the per-household discount
+multiplies a bill sixfold; adding a need adds to it. A ~22% ration
+discount on part of the bill can never offset either.
 
-**Merchants project exactly onto the wall, and a tier at the wall cannot
-grow.** That is a Phase 5 blocker, asserted in `tests/test_closure.c` so
-it cannot be forgotten, and it is *not* a defect in the economy as it
-stands — every buildable tier is comfortably clear today. What it means
-is that Phase 5 needs a third lever for the tiers that eat nothing raw.
-The candidates, none chosen:
+**And the number the whole blocker rested on was invented.** The 0.55
+adult fraction was a guess written into this document. `test_ageing.c`
+now runs a real island for sixty years and measures it:
 
-- **Charge some refined goods per resident after all** — clothing and
-  food-like refined goods scale with mouths more plausibly than a lamp
-  does.
-- **Give the upper tiers a raw basic**, which would also give a home
-  island's first two chains a customer three tiers up.
-- **Raise the crew bonus** above 2w-1 for the categories those chains
-  run through.
-- **Accept it and let Merchants be import-only**, which the sea already
-  supports and which is arguably what a merchant tier *is*.
+> **worst year 50%, typical 81%, best 100%**
+
+An island peopled by adult immigrants who then age in place sits far
+above the guess. So **nothing in the economy needed rebalancing at
+all** — which is the finding, and it only exists because the guess was
+replaced by a measurement before anything was built on it.
+
+### 4b. Merchants are import-only, by decision
+
+At the *typical* 81% every tier closes comfortably. At the **worst
+measured decade** Marshfolk reach 0.63 and Wrights 0.95 — both clear —
+and Merchants reach **1.10**, over the wall.
+
+Three fixes were measured and rejected (the table above, plus
+shortening the luxury list, which changes what the tier is). So the
+decision is that **a merchant town does not feed itself.** The sea
+already supports that, and it is arguably what a merchant town *is*.
+
+`tests/test_closure.c` asserts this rather than exempting it, so the day
+somebody makes Merchants self-sufficient the test reports that the
+policy has changed instead of quietly passing.
 
 ### 5. Which sets the productivity floor
 
-Modifiers multiply the ratio by `1 / p`. **Measured against Phase 2's
-actual rates rather than the estimate this section first carried:**
+Modifiers multiply the ratio by `1 / p`. Against the measured floor
+(50% adults) and the tiers that must feed themselves:
 
-- Against *today's* table (0.38 / 0.47 / 0.55), the wall is reached at
-  p = 0.55 — so a floor of 0.6 is safe for the game as it stands.
-- Against the *projected* table (0.59 / 0.86 / 1.00), Merchants are
-  already at the wall with p = 1.0, and Wrights reach it at p = 0.86.
+- Marshfolk reach the wall at **p = 0.63**, Wrights at **p = 0.95**.
+- So a productivity floor of **0.95** is what Wrights can bear in a bad
+  decade, and anything lower is a bet that the demographic trough and
+  the unhappiness trough never coincide.
 
-So the floor cannot be fixed until §4's third lever is chosen. What is
-already certain is that **status modifiers must not land before Phase 5
-settles it**: a modifier that can dip below 1.0 is a multiplier on a
-ratio that is not yet known to have room for one.
+That is tighter than this document once assumed and is a real
+constraint on Phase 7: **status modifiers have very little room below
+1.0**, and most of their range should be upward — a well-rested, well-
+fed, married worker producing *more* rather than a miserable one
+producing less.
 
 ### 6. The feedback loop is the dangerous part
 
@@ -527,25 +540,48 @@ under a second of wall clock, so only ten ticks pass. Advancement is
 covered by assertion — every tick of a month and a full year — not by
 the picture.
 
-**5 — ageing, birth and death.** Stages gate work. **Blocked on §4's
-third lever**: as measured at Phase 2, Merchants project exactly onto
-the wall and Wrights reach 0.86, because neither eats anything raw and
-the half-ration lever therefore cannot touch them. Three things land in
-the SAME phase and none is optional:
+**5 — ageing and death. DONE.** Ages advance one month per calendar
+month, stages gate work, rations are age-weighted, and people die past a
+guaranteed span. Fixture hash `4f2068b0c0a4a622` → `bb7e381ae6ab6c0d`.
 
-- **Age-weighted rations**, because this is the phase that would
-  otherwise put every tier over the wall — the closure test has to be
-  green on the commit that introduces the pyramid, not the one after it.
-- **Age jitter at spawn**, because a cohort that ages together dies
-  together, and retrofitting that is an economy-breaking change rather
-  than a balance pass.
-- **Whatever §4's third lever turns out to be**, because without it the
-  commit that introduces the pyramid is the commit that puts a buildable
-  tier on the wall.
+*Birth moved to Phase 6.* A birth needs a couple and marriage is Phase
+6, so a birth here would have been arbitrary. Deferring it also means
+this phase's population is immigrants who age and die — which makes the
+adult fraction **measurable before children enter it**, and that number
+was the whole blocker.
 
-**6 — marriage and households.** Pairing from the sim's LCG in a fixed
-order. Feeds social support, and gives the ghost feed something worth
-saying.
+*The labour gate is one line.* `agents_sync` spawns one agent per ADULT
+rather than per resident, so a child has no agent, therefore no
+workplace, therefore no shift. Nothing in agent.c or island.c had to
+learn what an age is; both take a callback.
+
+*Deaths are resident-driven, growth is count-driven.* A death removes
+the Resident and decrements the house; growth is decided by the needs
+tick and `residents_sync` follows. Keeping those directions apart is
+what stops the reconciliation fighting itself — a death that only
+removed a Resident would be undone by the next sync, and one that only
+decremented the count would kill an arbitrary person rather than the
+old one.
+
+*Death has a guaranteed span and then a rising monthly chance*
+(Stellaris's shape). Everybody dying on their birthday at exactly N is
+how a population dies in cohorts even when its ages are spread, because
+a chain staffed by people hired the same year still loses them the same
+year.
+
+*Ageing is triggered by the CALENDAR, not by a per-house timer.*
+`PopData.timer` staggers with when each house was built, so ageing off
+it would have people in different streets getting older at different
+rates. That alignment is what Phase 4 was for.
+
+**6 — marriage, households and birth.** Pairing derived from identity in
+a fixed order, and the births that follow from it. Feeds social support,
+and gives the ghost feed something worth saying.
+
+*Watch the adult fraction here.* Phase 5 measured 81% typical because
+every resident arrives an adult. Children will push it down, and the
+closure projection is asserted against the worst measured year — so this
+is the phase where that assertion starts doing real work.
 
 **7 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent

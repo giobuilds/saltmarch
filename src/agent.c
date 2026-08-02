@@ -80,7 +80,9 @@ static void despawn_one_agent_for_home(Agent agents[], int agent_count,
 
 void agents_sync(Agent agents[], int *agent_count,
                  const Building buildings[], const PopData pop_data[],
-                 int building_count)
+                 int building_count,
+                 int (*adults_at)(const void *ctx, int house_idx),
+                 const void *ctx)
 {
     int i;
 
@@ -94,7 +96,12 @@ void agents_sync(Agent agents[], int *agent_count,
         if (!pop_data[i].active) continue;
 
         live   = count_live_agents_for_home(agents, *agent_count, i);
-        target = pop_data[i].residents;
+
+        /* ONE AGENT PER ADULT, not per resident (LIFE_PLAN Phase 5).
+         * A child has no agent, so it never claims a workplace and
+         * never takes a shift — the labour gate is this line, and
+         * nothing else in this file needed to know why. */
+        target = adults_at ? adults_at(ctx, i) : pop_data[i].residents;
 
         for (k = live; k < target; k++)
             spawn_agent(agents, agent_count, i, buildings);

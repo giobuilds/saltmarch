@@ -1255,7 +1255,7 @@ void sim_run_one_tick(GameState *gs)
     if (gs->predict_only != 0u) {
         for (i = 0; i < MAX_ISLANDS; i++)
             if (gs->islands[i].owner == gs->predict_only)
-                island_update(&gs->islands[i], gs->world_seed);
+                island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no);
         gs->sim_tick_no++;
         return;
     }
@@ -1270,7 +1270,7 @@ void sim_run_one_tick(GameState *gs)
     /* 3. Every settled island's full pipeline, one tick, in order —
      * see island_update()'s ordering constraint. */
     for (i = 0; i < MAX_ISLANDS; i++)
-        island_update(&gs->islands[i], gs->world_seed);
+        island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no);
 
     /* 4. Voyages advance independently of any island. Insurance is
      * settled either side of the move: what was at sea before, and

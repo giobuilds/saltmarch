@@ -471,24 +471,22 @@ static void test_the_guard_bites(void)
      * the headroom this phase just bought — see below. */
 }
 
-/* ---- 5. what Phase 5 will do to all of this ----------------
- * LIFE_PLAN's central arithmetic claim is that the crew bonus pays for
- * the residents who cannot work. That claim is checkable NOW, against
- * the real table rather than against the sums in the document, and it
- * is worth checking now because the phase that would discover it wrong
- * is the phase that introduces ageing — by which point the fix is a
- * rebalance of the whole def table rather than a tuning pass.
+/* ---- 5. the economy under an age pyramid -------------------
+ * Both levers are BUILT now (LIFE_PLAN Phase 5): only adults are given
+ * agents, and rations are age-weighted for the goods charged per
+ * resident. Goods charged per house do not move, which is why the bill
+ * is split raw/refined rather than scaled whole.
  *
- * Two levers, both from the plan:
- *   - only adults work, so supply scales by ADULT_FRACTION while demand
- *     does not;
- *   - infants and the retired eat a half ration, so demand for goods
- *     charged PER RESIDENT falls. Goods charged per house do not move,
- *     which is why the bill is split raw/refined rather than scaled
- *     whole.
+ * ADULT_FRACTION IS MEASURED, NOT GUESSED. The first version of this
+ * section used 0.55, a number invented while writing LIFE_PLAN, and
+ * five sections of that document were arithmetic on top of it.
+ * tests/test_ageing.c now runs a real island for sixty years and
+ * reports the worst year, and this is that floor.
  *
- * Neither is built. This asserts the arithmetic, not the behaviour. */
-#define ADULT_FRACTION    0.55
+ * The FLOOR, not the mean — measured at 81% typical and 50% at worst.
+ * Closure has to hold in the bad decade, because a bad decade is when
+ * an island actually fails. */
+#define ADULT_FRACTION    0.50
 #define NON_ADULT_RATION  0.50
 
 static double projected(const TierBill *b)
@@ -515,46 +513,52 @@ static void test_the_headroom_is_for_something(void)
                projected(&b) >= THE_WALL ? "   <-- OVER THE WALL" : "");
     }
 
-    /* The opening every player takes has to survive the pyramid, or
-     * ageing cannot ship at all. This one IS asserted. */
+    /* The two tiers that must feed themselves, at the WORST measured
+     * adult fraction. Marshfolk are the opening every player takes;
+     * Wrights are the other line's floor. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
+        TierBill w = tier_bill(BUILDING_HOUSE_WORKER, "Wrights");
         char     msg[160];
 
         snprintf(msg, sizeof(msg),
-                 "Marshfolk survive an age pyramid at %.2f", projected(&m));
+                 "Marshfolk feed themselves through the worst decade "
+                 "(%.2f)", projected(&m));
         CHECK(projected(&m) < THE_WALL, msg);
+
+        snprintf(msg, sizeof(msg),
+                 "and so do Wrights (%.2f)", projected(&w));
+        CHECK(projected(&w) < THE_WALL, msg);
     }
 
-    /* THE HALF RATION CANNOT HELP A TIER THAT EATS NOTHING RAW, and
-     * Merchants are that tier. Coffee, Flatbread, Rum, Marsh Hats, Wool
-     * Cloaks and Plantain Fry are all REFINED — charged per household by
-     * tier_good_amount, so the number of mouths never entered their cost
-     * and reducing some of those mouths to half rations cannot reduce it.
+    /* MERCHANTS ARE IMPORT-ONLY, BY DECISION (LIFE_PLAN Phase 5).
      *
-     * LIFE_PLAN's own Phase 5 table missed this: it applied the 77.5%
-     * factor to the whole bill and predicted 0.75 for Merchants. The
-     * real projection is 1.00, exactly ON the wall, and a tier at the
-     * wall cannot grow.
+     * They eat nothing raw — Coffee, Flatbread, Rum, Marsh Hats, Wool
+     * Cloaks and Plantain Fry are all REFINED, charged per household,
+     * so the number of mouths never entered their cost and the half
+     * ration cannot touch them. Through a bad demographic decade they
+     * clear the wall, and a tier at the wall cannot grow.
      *
-     * Asserted rather than merely printed, because the structural fact —
-     * this tier is immune to that lever — is what a future fix has to
-     * work around, and it would otherwise be rediscovered the hard way
-     * at Phase 5. */
+     * Three fixes were measured and rejected: charging provisions per
+     * person multiplies their bill sixfold (0.55 -> 3.31), adding a raw
+     * basic adds to it rather than subtracting (0.55 -> 0.66), and
+     * shortening their luxury list changes what the tier is.
+     *
+     * So the decision is that a merchant town does not feed itself. The
+     * sea already supports that; it is arguably what a merchant town
+     * IS. This is asserted rather than merely exempted, so that the day
+     * somebody makes Merchants self-sufficient the test says the policy
+     * has changed rather than silently passing. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE_MERCHANT, "Merchants");
         char     msg[160];
 
         snprintf(msg, sizeof(msg),
-                 "Merchants eat nothing raw (%.2f of %.2f), so the half "
-                 "ration moves them not at all: %.2f either way",
+                 "Merchants eat nothing raw (%.2f of %.2f) and reach %.2f "
+                 "in a bad decade — import-only, by decision",
                  m.raw, m.total, projected(&m));
         CHECK(m.raw < 0.001 && projected(&m) >= THE_WALL, msg);
     }
-
-    printf("\n  NOTE: Merchants project ON the wall. That is a LIFE_PLAN\n"
-           "  Phase 5 blocker, recorded in the plan — not a defect in the\n"
-           "  economy as it stands today, which test_closure asserts above.\n");
 }
 
 int main(void)

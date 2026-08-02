@@ -291,8 +291,18 @@ void pop_init(PopData *p);
  * `count`     – number of building slots to check
  * `s`         – island stockpile (read and written)
  * Takes no dt: it advances one fixed tick. */
+/* `mouths_at(ctx, house_idx)` answers how many RATIONS that house eats
+ * — an adult a whole one, a child or an elder a half (LIFE_PLAN Phase
+ * 5). Raw goods only: refined goods are charged per household, so the
+ * number of mouths never entered their cost and halving some of them
+ * cannot reduce it.
+ *
+ * Pass NULL and every resident eats a full ration, which is the
+ * pre-Phase-5 behaviour the tests written before ages rely on. */
 void pop_update(PopData pop[], const Building buildings[], int count,
-               Stockpile *s);
+               Stockpile *s,
+               int (*mouths_at)(const void *ctx, int house_idx),
+               const void *ctx);
 
 /* Return the total population across all active houses. */
 int pop_total(const PopData pop[], int count);

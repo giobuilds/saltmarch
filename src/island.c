@@ -1,6 +1,7 @@
 /*  island.c  --  Per-island map, economy and population  */
 
 #include "island.h"
+#include "calendar.h"
 #include "connectivity.h"
 #include "simclock.h"
 #include "simlog.h"
@@ -133,7 +134,22 @@ static void island_tick_buildings(Island *isl)
  * timers count integer ticks; agent movement still advances by the
  * constant SIM_TICK_SECONDS, which is deterministic on one machine and
  * outside the F9 hash anyway. */
-void island_update(Island *isl, uint32_t world_seed)
+/* Adapts residents_adults_at() to the callback agents_sync takes, so
+ * agent.c stays ignorant of what an age is. */
+static int island_adults_at(const void *ctx, int house_idx)
+{
+    const Island *isl = (const Island *)ctx;
+    return residents_adults_at(isl->residents, isl->resident_count, house_idx);
+}
+
+/* The same adapter for rations. */
+static int island_mouths_at(const void *ctx, int house_idx)
+{
+    const Island *isl = (const Island *)ctx;
+    return residents_mouths_at(isl->residents, isl->resident_count, house_idx);
+}
+
+void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
 {
     if (!isl->settled) return;
 
@@ -148,15 +164,34 @@ void island_update(Island *isl, uint32_t world_seed)
     island_tick_buildings(isl);
 
     /* Population needs (uses this tick's `connected`). */
+    /* A MONTH OLDER, ONCE A MONTH — and some of them die of it.
+     *
+     * The trigger is the calendar, not a per-house timer. PopData.timer
+     * runs per house and staggers with when each was built, so ageing
+     * off it would have people in different streets aging at different
+     * rates. CALENDAR_MONTH_TICKS is global and is the same period, so
+     * every resident on every island turns a month older together.
+     * That alignment is what Phase 4 was for.
+     *
+     * Before pop_update, so this month's household is what gets fed:
+     * somebody who dies this month does not also eat this month.
+     * Deaths drive the resident count DOWN; growth drives it up and
+     * residents_sync follows. Keeping those two directions apart is
+     * what stops the reconciliation fighting itself. */
+    if (tick % CALENDAR_MONTH_TICKS == 0)
+        residents_age(isl->residents, isl->resident_count, isl->pop_data,
+                      world_seed, tick);
+
     pop_update(isl->pop_data, isl->buildings, isl->building_count,
-               &isl->stockpile);
+               &isl->stockpile, island_mouths_at, isl);
 
     /* Reconcile agents[] against the residents counts pop_update() may
      * have just changed, periodically assign jobs, then advance every
      * agent's state machine/position and retally worker_count for next
      * tick's island_tick_buildings(). */
     agents_sync(isl->agents, &isl->agent_count, isl->buildings,
-                isl->pop_data, isl->building_count);
+                isl->pop_data, isl->building_count,
+                island_adults_at, isl);
 
     /* The same reconciliation, over identity rather than motion. After
      * agents_sync so the two see the same pop_data in the same tick. */
