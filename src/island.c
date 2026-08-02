@@ -58,9 +58,51 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  *
  * Reads and writes only THIS island's stockpile — a Malthouse can
  * only consume Grain and Hops stored on its own island. */
+/* The average productivity of the crew standing in each building right
+ * now, as a percentage (LIFE_PLAN Phase 8).
+ *
+ * ONE PASS OVER THE AGENTS, not one per building. An Agent carries no
+ * link to the Resident walking it — agents_sync spawns one per
+ * working-age resident of a house and never records which — so what an
+ * agent can say is WHICH HOUSEHOLD it came from, and the household's
+ * average is the granularity that supports. Adding the link would mean
+ * widening a struct that is snapshotted, for a number that changes
+ * every month.
+ *
+ * Buildings with nobody in them are left at PRODUCTIVITY_BASE; their
+ * production is already gated on worker_count elsewhere. */
+static void island_crew_productivity(const Island *isl, int out[MAX_BUILDINGS])
+{
+    int sum[MAX_BUILDINGS], n[MAX_BUILDINGS];
+    int i;
+
+    for (i = 0; i < isl->building_count; i++) {
+        sum[i] = 0; n[i] = 0; out[i] = PRODUCTIVITY_BASE;
+    }
+
+    for (i = 0; i < isl->agent_count; i++) {
+        const Agent *a = &isl->agents[i];
+        int          h;
+
+        if (!a->active || a->state != AGENT_WORKING)      continue;
+        if (a->work_idx < 0 || a->work_idx >= isl->building_count) continue;
+        h = a->home_idx;
+        if (h < 0 || h >= isl->building_count)            continue;
+
+        sum[a->work_idx] += residents_house_productivity(
+                                isl->residents, isl->resident_count, h,
+                                isl->pop_data[h].happiness);
+        n[a->work_idx]++;
+    }
+
+    for (i = 0; i < isl->building_count; i++)
+        if (n[i] > 0) out[i] = sum[i] / n[i];
+}
+
 static void island_tick_buildings(Island *isl, const Faction *market)
 {
     int i, j;
+    int crew[MAX_BUILDINGS];
     /* The taxable base for the WHOLE ISLAND this tick, summed before
      * anything is taken from it.
      *
@@ -71,6 +113,9 @@ static void island_tick_buildings(Island *isl, const Faction *market)
      * division over the island's whole earnings has the same meaning and
      * survives the arithmetic. */
     int32_t base = 0;
+
+    island_crew_productivity(isl, crew);
+
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
@@ -87,6 +132,19 @@ static void island_tick_buildings(Island *isl, const Faction *market)
          * +0.5 rounds to the nearest tick. */
         period = (uint32_t)(def->tick_seconds * SIM_TICKS_PER_SEC + 0.5f);
         if (period == 0) period = 1;
+        /* BOTH SIDES SCALED BY PRODUCTIVITY_BASE (LIFE_PLAN Phase 8),
+         * so the crew's percentage multiplies the advance without ever
+         * dividing it.
+         *
+         * The obvious form — advance * crew / 100 — TRUNCATES TO ZERO
+         * for a lone worker in a bad way: work_advance(1) is 1, and
+         * 1 * 85 / 100 is 0, so a single hungry fisherman would land
+         * nothing at all, forever. That is a stall rather than a
+         * slowdown, and it is the same rounding trap the monthly tax
+         * levy hit. Scaling the period instead keeps the arithmetic
+         * exact and costs nothing: Building.timer is compared against
+         * `period` and read by nothing else. */
+        period *= PRODUCTIVITY_BASE;
 
         /* EVERY WORKER ADVANCES THE CLOCK (LIFE_PLAN Phase 1). Five
          * people in a Fisher's Hut land five fish where one lands one:
@@ -106,7 +164,14 @@ static void island_tick_buildings(Island *isl, const Faction *market)
          * (Phase 2): building_work_advance() returns 2w-1, because one
          * worker alone pays an overhead the second one arrives to find
          * already paid. Still integer, still no division. */
-        b->timer += (uint32_t)building_work_advance(def, b->worker_count);
+        /* AND WHAT THE CREW IS WORTH (LIFE_PLAN Phase 8). The headcount
+         * decides how fast the clock advances; their condition decides
+         * how much each of them is worth while doing it. Integer
+         * throughout — this feeds a hashed timer, and a float here
+         * would fail as two machines disagreeing rather than as a wrong
+         * number on one. */
+        b->timer += (uint32_t)(building_work_advance(def, b->worker_count)
+                               * crew[i]);
 
         produced = 0;
         while (b->timer >= period) {

@@ -342,6 +342,65 @@ int residents_reserve_ration(const Resident residents[], int count);
  * roof; they are simply not yet a household. */
 int residents_settle_house(Resident residents[], int count, int home_idx);
 
+/* ---- what a worker is worth (LIFE_PLAN Phase 8) ------------
+ * Slept, ate, married, employed -> an integer percentage. A hundred is
+ * an ordinary worker; the band runs from PRODUCTIVITY_MIN to
+ * PRODUCTIVITY_MAX.
+ *
+ * INTEGER PERCENT, NOT A FLOAT. This multiplies production, production
+ * is hashed, and a float accumulated into hashed state fails as two
+ * machines disagreeing rather than as a wrong answer on one.
+ *
+ * FOUR INDEPENDENT INPUTS, which is the rule LIFE_PLAN section 6 asks
+ * for: "status must be several independent inputs, so one bad harvest
+ * cannot move every one of them at once". A famine moves `fed` and
+ * nothing else; a young island moves `prime` and nothing else. Each is
+ * worth little alone and they do not share a cause.
+ *
+ * WHAT SECTION 5 SAYS ABOUT THE FLOOR, and why it is 85 rather than the
+ * 75 written there: modifiers multiply the closure ratio by 1/p, and at
+ * the working share Phase 7b measures the base tier sits close enough
+ * to the wall that a deep floor would put it over. That calculation is
+ * a projection over the def table rather than a measurement, so it is
+ * not treated as a specification — but it is a reason to keep the
+ * downward half of the band shallower than the upward half. */
+#define PRODUCTIVITY_BASE   100
+#define PRODUCTIVITY_MIN     85
+#define PRODUCTIVITY_MAX    140
+
+/* What each input is worth. Deliberately small and deliberately
+ * uneven: no single one of them decides anything. */
+#define PROD_PRIME_BONUS     10   /* grown, and not yet retired        */
+#define PROD_MARRIED_BONUS    5   /* somebody to come home to          */
+#define PROD_FED_BONUS       10   /* more than the basics              */
+#define PROD_HUNGRY_PENALTY  15   /* the house is below neutral        */
+#define PROD_TIRED_PENALTY    5   /* carrying a child, or very old     */
+#define PROD_TENURE_MAX      15   /* knowing the work                  */
+/* Months at one workplace to earn the whole tenure bonus. Five years:
+ * long enough that a settled crew is worth protecting, short enough
+ * that a player sees it inside a session. */
+#define PROD_TENURE_FULL     60
+
+/* One resident's productivity, as a percentage.
+ *
+ * `happiness` is their household's, 0..HAPPINESS_MAX — the one input
+ * that comes from outside the person. Everything else is read off the
+ * Resident. Clamped to the band, so a caller cannot produce a rate the
+ * economy was never balanced against. */
+int resident_productivity(const Resident *r, int happiness);
+
+/* The average productivity of everybody of working age at `home_idx`,
+ * as a percentage, or PRODUCTIVITY_BASE when nobody lives there.
+ *
+ * PER HOUSEHOLD RATHER THAN PER PERSON, because an Agent carries no
+ * link back to the Resident who is walking it — one agent is spawned
+ * per working-age resident of a house, and which one it is was never
+ * recorded. Averaging over the household is the granularity that link
+ * actually supports, and adding the link would mean widening a struct
+ * that is snapshotted for a number that changes every month. */
+int residents_house_productivity(const Resident residents[], int count,
+                                 int home_idx, int happiness);
+
 /* Who inherits `home`, or -1 (LIFE_PLAN Phase 7b).
  *
  * A HOUSE IS A LINE, NOT A TENANCY. The elders of a house are whoever

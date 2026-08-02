@@ -99,6 +99,7 @@ for src in "$root"/tests/test_*.c; do
         test_marriage) link_objs="";        link_sdl="" ;;
         test_reserve)  link_objs="";        link_sdl="" ;;
         test_tax)      link_objs="";        link_sdl="" ;;
+        test_productivity) link_objs=""; link_sdl="" ;;
         test_accounts) link_objs="$netlib";  link_sdl="" ;;
         test_tier)     link_objs="$uilib";  link_sdl="" ;;
         *)             link_objs="$objs $netlib $uilib"; link_sdl="$sdlflags" ;;

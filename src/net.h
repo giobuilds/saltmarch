@@ -161,7 +161,11 @@ typedef struct NetSession NetSession;
  *    enters the world through tax rather than through housing. A peer
  *    on 26 would misread every resident after the first AND disagree
  *    about how much money the island has. */
-#define NET_PROTO_VERSION     27u
+/* 28: productivity (LIFE_PLAN Phase 8). No field changed shape, but
+ *    Building.timer changed scale and production now depends on who is
+ *    standing in the building — so a peer on 27 decodes every frame
+ *    perfectly and disagrees about how much was made. */
+#define NET_PROTO_VERSION     28u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

@@ -666,8 +666,16 @@ typedef struct {
  * emigrate if none is built, and gold that enters the world as taxed
  * wages instead of being minted by housing. A log recorded under any
  * earlier rule replays into an island with a different population, a
- * different workforce and a different amount of money. */
-#define SAVE_VERSION 36u
+ * different workforce and a different amount of money.
+ *
+ * v37 (LIFE_PLAN Phase 8): what a worker is worth. Production advances
+ * by the crew's condition as well as its headcount, so every island in
+ * every recorded log produces at a different rate from the one it was
+ * recorded at. Building.timer also changed SCALE — both it and the
+ * production period are multiplied by PRODUCTIVITY_BASE so the
+ * percentage never divides — so a v36 timer read as a v37 one is an
+ * accumulator a hundredth of the way to where it should be. */
+#define SAVE_VERSION 37u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

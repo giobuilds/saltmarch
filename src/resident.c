@@ -368,6 +368,70 @@ static int siblings(const Resident *a, const Resident *b)
  *
  * Returns that heir's index, or -1 while the house still has an elder
  * in it, or has nobody born there. */
+/* ---- what a worker is worth (LIFE_PLAN Phase 8) ------------
+ * See resident.h for the band, the four inputs and why the floor sits
+ * where it does.
+ */
+int resident_productivity(const Resident *r, int happiness)
+{
+    int p = PRODUCTIVITY_BASE, stage;
+
+    if (!r || !r->active) return PRODUCTIVITY_BASE;
+    stage = resident_stage(r);
+
+    /* 1. PRIME. A youth of twelve works, and works at the baseline; an
+     * adult is worth more. Stated as a bonus for being grown rather
+     * than a penalty for being young, so the floor of the band belongs
+     * to somebody in a bad way rather than to every child on the
+     * island — and so a young island is not punished twice for the same
+     * fact it is already paying for in dependants. */
+    if (stage == LIFE_ADULT) p += PROD_PRIME_BONUS;
+    if (stage == LIFE_RETIRED) p -= PROD_TIRED_PENALTY;
+
+    /* 2. MARRIED. Small, because it is the input a player has the least
+     * control over. */
+    if (r->spouse >= 0) p += PROD_MARRIED_BONUS;
+
+    /* 3. FED, which is the household's business rather than the
+     * person's, and the only one of the four a bad harvest can move.
+     * Above neutral means the luxuries arrived too. */
+    if (happiness > HAPPINESS_NEUTRAL)      p += PROD_FED_BONUS;
+    else if (happiness < HAPPINESS_NEUTRAL) p -= PROD_HUNGRY_PENALTY;
+
+    /* 4. TENURE, read here for the first time since Phase 3 tracked it.
+     * Ramps linearly to PROD_TENURE_MAX over PROD_TENURE_FULL months,
+     * which makes a settled crew worth keeping and gives demolishing a
+     * workplace a cost that is not just the gold. */
+    {
+        uint32_t t = r->tenure_months;
+        if (t > (uint32_t)PROD_TENURE_FULL) t = (uint32_t)PROD_TENURE_FULL;
+        p += (int)t * PROD_TENURE_MAX / PROD_TENURE_FULL;
+    }
+
+    /* A pregnancy is not counted here: she holds no job at all while
+     * carrying (residents_adults_at), so there is no output of hers to
+     * scale. */
+
+    if (p < PRODUCTIVITY_MIN) p = PRODUCTIVITY_MIN;
+    if (p > PRODUCTIVITY_MAX) p = PRODUCTIVITY_MAX;
+    return p;
+}
+
+int residents_house_productivity(const Resident r[], int count,
+                                 int home_idx, int happiness)
+{
+    int i, n = 0, sum = 0;
+
+    for (i = 0; i < count; i++) {
+        if (!r[i].active || r[i].home_idx != home_idx) continue;
+        if (r[i].pregnancy > 0) continue;          /* holds no job */
+        if (!of_working_age(&r[i])) continue;
+        sum += resident_productivity(&r[i], happiness);
+        n++;
+    }
+    return n ? sum / n : PRODUCTIVITY_BASE;
+}
+
 int residents_heir_of(const Resident r[], int count, int home)
 {
     int i, heir = -1;
