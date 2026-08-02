@@ -483,10 +483,14 @@ static void test_the_guard_bites(void)
  * tests/test_ageing.c now runs a real island for sixty years and
  * reports the worst year, and this is that floor.
  *
- * The FLOOR, not the mean — measured at 81% typical and 50% at worst.
- * Closure has to hold in the bad decade, because a bad decade is when
- * an island actually fails. */
-#define ADULT_FRACTION    0.50
+ * THE WORST SUSTAINED STRETCH, not the worst year and not the mean.
+ * Across ten seeds: 80% typical, 41% in the single worst year, and 48%
+ * averaged over the worst five consecutive years. A single bad year is
+ * absorbed by the happiness ladder — ten months of buffer, which exists
+ * for exactly this — so the year is the wrong statistic and the
+ * five-year mean is the right one. Closure has to hold through a bad
+ * decade, because a bad decade is when an island actually fails. */
+#define ADULT_FRACTION    0.48
 #define NON_ADULT_RATION  0.50
 
 static double projected(const TierBill *b)

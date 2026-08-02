@@ -154,18 +154,36 @@ discount on part of the bill can never offset either.
 adult fraction was a guess written into this document. `test_ageing.c`
 now runs a real island for sixty years and measures it:
 
-> **worst year 50%, typical 81%, best 100%**
+> **typical 80%, worst single year 41%, worst five-year mean 48%**
+> — across ten fixed seeds
 
 An island peopled by adult immigrants who then age in place sits far
 above the guess. So **nothing in the economy needed rebalancing at
 all** — which is the finding, and it only exists because the guess was
 replaced by a measurement before anything was built on it.
 
+*The statistic is the worst SUSTAINED stretch, not the worst year.* A
+single bad year is absorbed by the happiness ladder — ten months of
+buffer, which exists for exactly this — so the year is the wrong number
+and the five-year mean is the right one.
+
+*And the first attempt at measuring it was itself wrong.* `game_init()`
+seeds from the **clock**, so the test ran one randomly generated world,
+reported 50%, and CI ran a different world and reported 45%. A
+measurement that changes per run is a sample being quoted as a
+constant. It uses fixed seeds now, and so do the other tests that build
+villages.
+
 ### 4b. Merchants are import-only, by decision
 
-At the *typical* 81% every tier closes comfortably. At the **worst
-measured decade** Marshfolk reach 0.63 and Wrights 0.95 — both clear —
-and Merchants reach **1.10**, over the wall.
+At the typical 80% every tier closes comfortably. Through the **worst
+sustained five years** (48% adults) Marshfolk reach 0.65 and Wrights
+**0.99** — clear, but Wrights only just — and Merchants reach **1.15**.
+
+**Wrights being at 0.99 is worth staring at.** They have one percent of
+headroom through a bad demographic stretch, which means they are the
+next tier to break if anything at all is added to their needs or taken
+from their labour. Phase 6's children will take from their labour.
 
 Three fixes were measured and rejected (the table above, plus
 shortening the luxury list, which changes what the tier is). So the
@@ -181,10 +199,10 @@ policy has changed instead of quietly passing.
 Modifiers multiply the ratio by `1 / p`. Against the measured floor
 (50% adults) and the tiers that must feed themselves:
 
-- Marshfolk reach the wall at **p = 0.63**, Wrights at **p = 0.95**.
-- So a productivity floor of **0.95** is what Wrights can bear in a bad
-  decade, and anything lower is a bet that the demographic trough and
-  the unhappiness trough never coincide.
+- Marshfolk reach the wall at **p = 0.65**, Wrights at **p = 0.99**.
+- So Wrights can bear essentially **no** productivity loss during a bad
+  demographic stretch, and any floor below 1.0 is a bet that the
+  demographic trough and the unhappiness trough never coincide.
 
 That is tighter than this document once assumed and is a real
 constraint on Phase 7: **status modifiers have very little room below

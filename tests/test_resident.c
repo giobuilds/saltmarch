@@ -156,6 +156,11 @@ static int build_houses(GameState *gs, int n)
 static void test_arrivals_are_not_a_cohort(void)
 {
     GameState *gs = game_init();
+    /* Seeded: game_init() takes its seed from the CLOCK, so an
+     * unseeded test is a different world every run — which is how
+     * test_ageing came to report one number locally and another in
+     * CI. */
+    if (gs) game_new_seeded(gs, 4242u);
     Island    *isl;
     int        i, oldest = 0, youngest = 1 << 30, live = 0;
 
@@ -204,6 +209,7 @@ static void test_snapshot_round_trip(void)
 
     printf("\n=== a person survives being sent over a wire ===\n");
     if (!a || !b) { printf("  FAIL: game_init\n"); failures++; return; }
+    game_new_seeded(a, 4242u);
 
     /* With people in it, or the round trip proves only that zero
      * residents survive being sent, which they would either way. */

@@ -185,6 +185,11 @@ static int run_and_peak(GameState *gs, int hut, int ticks, int *landed)
 static void test_a_crew_is_hired(void)
 {
     GameState *gs = game_init();
+    /* Seeded: game_init() takes its seed from the CLOCK, so an
+     * unseeded test is a different world every run — which is how
+     * test_ageing came to report one number locally and another in
+     * CI. */
+    if (gs) game_new_seeded(gs, 4242u);
     Island    *isl;
     int        hut, cap, peak;
 
@@ -231,6 +236,11 @@ static void test_a_crew_is_hired(void)
 static void test_production_scales(void)
 {
     GameState *gs = game_init();
+    /* Seeded: game_init() takes its seed from the CLOCK, so an
+     * unseeded test is a different world every run — which is how
+     * test_ageing came to report one number locally and another in
+     * CI. */
+    if (gs) game_new_seeded(gs, 4242u);
     int        hut, landed = 0, workers;
 
     printf("\n=== five hands, five fish ===\n");
@@ -273,6 +283,11 @@ static void test_production_scales(void)
 static void test_nobody_still_means_nothing(void)
 {
     GameState *gs = game_init();
+    /* Seeded: game_init() takes its seed from the CLOCK, so an
+     * unseeded test is a different world every run — which is how
+     * test_ageing came to report one number locally and another in
+     * CI. */
+    if (gs) game_new_seeded(gs, 4242u);
     int        hut, landed = 0, peak;
 
     printf("\n=== and an empty hut is still an empty hut ===\n");
