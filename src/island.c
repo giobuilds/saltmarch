@@ -35,6 +35,13 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
     isl->docking_allowed = 1;
     isl->charter_timer   = 0;
     isl->charter_arrears = 0;
+    /* The settlers an island is allowed to import (LIFE_PLAN Phase 6c).
+     * Everything past this has to be born here. */
+    isl->founder_allowance = FOUNDER_ALLOWANCE;
+    /* Tax starts modest and fully paid; unhappiness is what erodes it. */
+    isl->tax_rate_permille   = TAX_RATE_DEFAULT_PERMILLE;
+    isl->compliance_permille = COMPLIANCE_FULL_PERMILLE;
+    isl->unhappy_streak      = 0;
     /* escrow[] was zeroed by the memset above. */
 
     sim_log("Island '%s' generated (seed=%u, profile=%d, settled=%d)",
@@ -51,9 +58,19 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  *
  * Reads and writes only THIS island's stockpile — a Malthouse can
  * only consume Grain and Hops stored on its own island. */
-static void island_tick_buildings(Island *isl)
+static void island_tick_buildings(Island *isl, const Faction *market)
 {
     int i, j;
+    /* The taxable base for the WHOLE ISLAND this tick, summed before
+     * anything is taken from it.
+     *
+     * TAXING EACH CYCLE SEPARATELY ROUNDS TO NOTHING. A single Fisher's
+     * Hut cycle is a few coins of wages, and a few coins times a tenth,
+     * in integers, is zero — so an island of ten huts collected nothing
+     * at all, which is exactly what the first run of this measured. One
+     * division over the island's whole earnings has the same meaning and
+     * survives the arithmetic. */
+    int32_t base = 0;
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
         const BuildingDef *def = &BUILDING_DEFS[b->type];
@@ -115,6 +132,38 @@ static void island_tick_buildings(Island *isl)
             if (def->produces != RES_COUNT) {
                 stockpile_add(&isl->stockpile, def->produces, def->produce_amt);
                 produced += def->produce_amt;
+
+                /* ---- what the work is worth (Phase 7) --------
+                 * A completed cycle earns the market value of what it
+                 * made, valued at the faction's standing bid — a price
+                 * that already exists, is already hashed sim state, and
+                 * already moves with supply, so nothing here needs a
+                 * second price table to keep in step.
+                 *
+                 * The crew is paid first; what is left is the business's
+                 * profit. Neither is stored — no building keeps books —
+                 * because the player never sees a balance sheet, only
+                 * the tax. Modelling business capital and consumer
+                 * spending is explicitly a later phase
+                 * (docs/new-happiness-design.md).
+                 *
+                 * Integer throughout, including the two divisions: this
+                 * feeds the treasury, the treasury is hashed, and a
+                 * float here would fail as two machines disagreeing
+                 * rather than as a wrong number on one. */
+                if (market) {
+                    int32_t revenue = (int32_t)faction_bid(market,
+                                                           def->produces)
+                                    * def->produce_amt;
+                    int32_t wages   = WAGE_PER_WORKER * b->worker_count;
+                    int32_t profit  = revenue - wages;
+
+                    /* A business that cannot cover its wages makes no
+                     * profit; it does not make a NEGATIVE one that
+                     * shelters the rest of the island from tax. */
+                    if (profit < 0) profit = 0;
+                    base += wages + profit;
+                }
             }
         }
 
@@ -126,6 +175,9 @@ static void island_tick_buildings(Island *isl)
                 RESOURCE_NAMES[def->produces],
                 isl->stockpile.amount[def->produces]);
     }
+
+    /* Banked, not taxed — the levy is monthly (island_update). */
+    isl->tax_base += base;
 }
 
 /* ---- island_update --------------------------------------
@@ -134,6 +186,15 @@ static void island_tick_buildings(Island *isl)
  * timers count integer ticks; agent movement still advances by the
  * constant SIM_TICK_SECONDS, which is deterministic on one machine and
  * outside the F9 hash anyway. */
+/* How many live residents name `idx` as home. */
+static int count_live_at(const Island *isl, int idx)
+{
+    int i, n = 0;
+    for (i = 0; i < isl->resident_count; i++)
+        if (isl->residents[i].active && isl->residents[i].home_idx == idx) n++;
+    return n;
+}
+
 /* Adapts residents_adults_at() to the callback agents_sync takes, so
  * agent.c stays ignorant of what an age is. */
 static int island_adults_at(const void *ctx, int house_idx)
@@ -149,7 +210,106 @@ static int island_mouths_at(const void *ctx, int house_idx)
     return residents_mouths_at(isl->residents, isl->resident_count, house_idx);
 }
 
-void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
+/* ---- founding a household (LIFE_PLAN Phase 7) --------------
+ * A house laid on the map is an empty house. It becomes a HOUSEHOLD
+ * either by spending one of the island's hundred founder places — a
+ * couple off a boat — or, once those are gone, out of the reserve.
+ *
+ * A house that can do neither STANDS EMPTY and is asked again next
+ * month. That is deliberate and is the mechanic: laying roofs faster
+ * than the island can raise people leaves you with roofs.
+ *
+ * THE ALLOWANCE IS SPENT PER HOUSE, ONCE (pop_data.founded). A house
+ * that starves to empty is re-settled from the reserve or not at all;
+ * without that rule a village that keeps failing quietly burns the
+ * island's whole immigration quota, which is what the prototype did —
+ * a hundred places turned into sixty-three houses on seed 777.
+ *
+ * Returns 0, 1 or 2. ONE IS A REAL ANSWER: somebody may take a roof
+ * alone and wait for a spouse, so this is also called on a house that
+ * already holds a single unmarried adult. */
+int island_settle_house(Island *isl, int idx, uint32_t world_seed)
+{
+    int got, live;
+
+    if (idx < 0 || idx >= isl->building_count) return 0;
+    if (!isl->pop_data[idx].active)            return 0;
+
+    /* THE COUNT IS THE AUTHORITY, not the residents array.
+     *
+     * These two normally agree — residents_sync exists to keep them
+     * agreeing — but they can be out of step for a tick, and a test or
+     * a snapshot may hand this function a house whose count was set
+     * directly. An earlier version took `count_live_at` as the truth
+     * and then ASSIGNED `live + got` back over pop_data, which silently
+     * wrote a house of forty down to zero the first month it ran. Read
+     * the count, add what was housed, never overwrite. */
+    live = isl->pop_data[idx].residents;
+    if (live >= 2) return 0;                    /* a household already */
+
+    if (live == 0 && count_live_at(isl, idx) == 0
+        && !isl->pop_data[idx].founded && isl->founder_allowance > 0) {
+        got = residents_found_pair(isl->residents, &isl->resident_count,
+                                   &isl->next_resident_id, idx, world_seed);
+        if (got) isl->founder_allowance--;
+    } else {
+        got = residents_settle_house(isl->residents, isl->resident_count, idx);
+    }
+
+    if (got > 0) isl->pop_data[idx].founded = 1;
+    isl->pop_data[idx].residents += got;
+    return got;
+}
+
+int island_tax_happiness(const Island *isl)
+{
+    int32_t over = isl->tax_rate_permille - TAX_RATE_DEFAULT_PERMILLE;
+
+    if (over <= 0) return 0;
+    /* Linear from the default up to the maximum, then clamped. Integer,
+     * and the clamp is what makes it a contributor rather than a
+     * dominator. */
+    {
+        int32_t span = TAX_RATE_MAX_PERMILLE - TAX_RATE_DEFAULT_PERMILLE;
+        int     rungs = (int)((over * TAX_HAPPINESS_MAX + span - 1) / span);
+        return -(rungs > TAX_HAPPINESS_MAX ? TAX_HAPPINESS_MAX : rungs);
+    }
+}
+
+void island_update_compliance(Island *isl)
+{
+    int i, houses = 0, unhappy = 0;
+
+    for (i = 0; i < isl->building_count; i++) {
+        if (!isl->pop_data[i].active || isl->pop_data[i].residents <= 0)
+            continue;
+        houses++;
+        if (isl->pop_data[i].happiness < HAPPINESS_NEUTRAL) unhappy++;
+    }
+    if (houses == 0) return;
+
+    /* An island is "unhappy" when most of its households are. */
+    if (unhappy * 2 > houses) isl->unhappy_streak++;
+    else                      isl->unhappy_streak = 0;
+
+    if (isl->unhappy_streak > COMPLIANCE_PATIENCE_TICKS) {
+        /* Only now, and only one step. */
+        isl->compliance_permille -= COMPLIANCE_STEP_PERMILLE;
+    } else if (isl->unhappy_streak == 0) {
+        /* Recovery is twice as fast as decline: trust returns quicker
+         * than it is lost, so a rescued island is not condemned by the
+         * quarter it had. */
+        isl->compliance_permille += COMPLIANCE_STEP_PERMILLE * 2;
+    }
+
+    if (isl->compliance_permille < COMPLIANCE_MIN_PERMILLE)
+        isl->compliance_permille = COMPLIANCE_MIN_PERMILLE;
+    if (isl->compliance_permille > COMPLIANCE_FULL_PERMILLE)
+        isl->compliance_permille = COMPLIANCE_FULL_PERMILLE;
+}
+
+void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
+                   const Faction *market)
 {
     if (!isl->settled) return;
 
@@ -161,7 +321,7 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
      * tick's agents_update() call below — a harmless one-tick lag, the
      * same pattern already established for `connected` relative to a
      * newly-placed building. */
-    island_tick_buildings(isl);
+    island_tick_buildings(isl, market);
 
     /* Population needs (uses this tick's `connected`). */
     /* A MONTH OLDER, ONCE A MONTH — and some of them die of it.
@@ -178,12 +338,92 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
      * Deaths drive the resident count DOWN; growth drives it up and
      * residents_sync follows. Keeping those two directions apart is
      * what stops the reconciliation fighting itself. */
-    if (tick % CALENDAR_MONTH_TICKS == 0)
+    if (tick % CALENDAR_MONTH_TICKS == 0) {
         residents_age(isl->residents, isl->resident_count, isl->pop_data,
                       world_seed, tick);
+        /* After ageing, so somebody who died this month does not marry
+         * this month — and so this month's new adults are eligible on
+         * the month they become adults rather than the one after. */
+        residents_marry(isl->residents, isl->resident_count,
+                        isl->pop_data, isl->building_count,
+                        world_seed, tick);
+        /* And after marriage, so a couple wed this month may begin one
+         * this month. This is the ONLY thing that grows a house now
+         * (LIFE_PLAN Phase 6b) — pop_update below can still empty one,
+         * but it can no longer fill one. */
+        residents_breed(isl->residents, &isl->resident_count,
+                        &isl->next_resident_id, isl->pop_data,
+                        isl->building_count, world_seed, tick);
+
+        /* ---- the reserve eats (Phase 6c) ------------------
+         * Half a ration of each staple per unhoused person, taken from
+         * the same stockpile the houses draw on and BEFORE they do, so
+         * a reserve the island cannot feed shows up as houses going
+         * hungry rather than as a free crowd. Nobody in the reserve
+         * works, so this is pure cost until somebody roofs them. */
+        {
+            int want = residents_reserve_ration(isl->residents,
+                                                isl->resident_count);
+            if (want > 0) {
+                stockpile_add(&isl->stockpile, RES_FISH,  -want);
+                stockpile_add(&isl->stockpile, RES_GRAIN, -want);
+            }
+        }
+
+        /* ---- roofs with room are offered the reserve -------
+         * Every month, not only when a house is laid: a house that
+         * stood empty for want of settlers fills as the island grows
+         * into it, and a lone occupant is offered a spouse. Fewer than
+         * two live residents is the test, so both cases are the same
+         * call.
+         *
+         * Before emigration, deliberately — somebody housed this month
+         * is not then asked to leave for having waited too long. */
+        {
+            int b;
+            for (b = 0; b < isl->building_count; b++)
+                if (isl->pop_data[b].active)
+                    island_settle_house(isl, b, world_seed);
+        }
+
+        /* ---- and those nobody roofed in time leave ---------
+         * The only bound on population. `emigrate` is installed by the
+         * world (game.c), which is the only layer that can see another
+         * island to send somebody to; an island on its own can only
+         * lose them. */
+        isl->left_last_month = residents_emigrate(isl->residents,
+                                                  isl->resident_count, tick,
+                                                  isl->emigrate,
+                                                  isl->emigrate_ctx);
+
+        /* And what the island thinks of its taxes. Monthly, on the same
+         * calendar trigger as everything else here, so compliance moves
+         * at the pace the happiness ladder does. */
+        island_update_compliance(isl);
+
+        /* ---- and the levy (Phase 7) ------------------------
+         * THE TREASURY IS THE ISLAND'S GOLD — the same RES_GOLD the
+         * harbour deposits trade income into, so imports keep working
+         * exactly as they did. What changed is that production no
+         * longer puts gold here; tax does.
+         *
+         * One division over a month of earnings rather than one per
+         * production cycle: see Island.tax_base for why that is
+         * correctness and not tidiness. Compliance applies second, so a
+         * floored island still pays its third rather than nothing. */
+        {
+            int32_t taxed = isl->tax_base * isl->tax_rate_permille / 1000;
+
+            taxed = taxed * isl->compliance_permille / 1000;
+            if (taxed > 0) stockpile_add(&isl->stockpile, RES_GOLD, taxed);
+            isl->tax_last_month = taxed;
+            isl->tax_base       = 0;
+        }
+    }
 
     pop_update(isl->pop_data, isl->buildings, isl->building_count,
-               &isl->stockpile, island_mouths_at, isl);
+               &isl->stockpile, island_mouths_at, isl,
+               island_tax_happiness(isl));
 
     /* Reconcile agents[] against the residents counts pop_update() may
      * have just changed, periodically assign jobs, then advance every

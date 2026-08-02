@@ -124,16 +124,30 @@ static int build_village(GameState *gs, int houses)
              * rather than building a village that can never fish. */
             if (!building_can_place(&isl->map, BUILDING_FISHERS_HUT, fr, wc))
                 continue;
-            for (h = 0; h < houses; h++)
-                if (!building_can_place(&isl->map, BUILDING_HOUSE,
+            /* A ROW OF PAVEMENT, NOT ONE TILE. The houses used to sit in
+             * the road's own row, so only the first of them touched it
+             * and every other house on the island was unreachable —
+             * which went unnoticed while one house held five people and
+             * one connected house was still a crew. With a couple to a
+             * house it stopped being enough, and the fixture was
+             * measuring an unreachable village rather than an
+             * understaffed hut. Same trap, same fix, as the one recorded
+             * in test_ageing's build_village. */
+            for (h = 0; h < houses; h++) {
+                if (!building_can_place(&isl->map, BUILDING_ROAD,
                                         rr, wc + 1 + h)) ok = 0;
+                if (!building_can_place(&isl->map, BUILDING_HOUSE,
+                                        fr, wc + 1 + h)) ok = 0;
+            }
             if (!ok) continue;
 
             game_place_building(gs, wr, wc, BUILDING_WAREHOUSE, 1);
             game_place_building(gs, rr, wc, BUILDING_ROAD,      1);
             game_place_building(gs, fr, wc, BUILDING_FISHERS_HUT, 1);
-            for (h = 0; h < houses; h++)
-                game_place_building(gs, rr, wc + 1 + h, BUILDING_HOUSE, 1);
+            for (h = 0; h < houses; h++) {
+                game_place_building(gs, rr, wc + 1 + h, BUILDING_ROAD,  1);
+                game_place_building(gs, fr, wc + 1 + h, BUILDING_HOUSE, 1);
+            }
             laid = 1;
         }
 
@@ -180,8 +194,15 @@ static int run_and_peak(GameState *gs, int hut, int ticks, int *landed)
 }
 
 /* ---- 2. who gets hired -------------------------------------
- * THE HEADLINE. Two houses is a dozen residents against one hut; before
- * this phase exactly one of them would ever have had a job. */
+ * THE HEADLINE. Several houses' worth of residents against one hut;
+ * before this phase exactly one of them would ever have had a job.
+ *
+ * FOUR HOUSES, NOT TWO, SINCE LIFE_PLAN Phase 6b. A house opens with a
+ * COUPLE in it now rather than five grown strangers, so two houses is
+ * four people and this test would be measuring an understaffed hut
+ * rather than a crewed one. The village has to be laid wide enough that
+ * the hut's five berths are the scarce thing, which is the whole point
+ * of the assertion. */
 static void test_a_crew_is_hired(void)
 {
     GameState *gs = game_init();
@@ -196,7 +217,7 @@ static void test_a_crew_is_hired(void)
     printf("\n=== a crew, not a claim ===\n");
     if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
 
-    hut = build_village(gs, 2);
+    hut = build_village(gs, 4);
     if (hut < 0) {
         printf("  FAIL: could not lay a village on this island\n");
         failures++;
@@ -246,7 +267,7 @@ static void test_production_scales(void)
     printf("\n=== five hands, five fish ===\n");
     if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
 
-    hut = build_village(gs, 2);
+    hut = build_village(gs, 4);
     if (hut < 0) {
         printf("  FAIL: could not lay a village\n");
         failures++;

@@ -81,6 +81,9 @@ void inventory_view_build(InventoryView *out, const UiSnapshot *snap,
     out->scholar_capacity  = isl->scholar_capacity;
     out->research_boats    = isl->research_boats;
     out->insured           = isl->insure_shipments;
+    out->tax_rate_permille   = isl->tax_rate_permille;
+    out->tax_last_month      = isl->tax_last_month;
+    out->compliance_permille = isl->compliance_permille;
     out->yours             = (uint8_t)(isl->owner != PLAYER_NONE &&
                                        isl->owner == snap->local_player_id);
 }
@@ -106,7 +109,7 @@ static float wanted_height(const InventoryView *v)
 {
     return INVENTORY_MARGIN * 2.0f + INVENTORY_TITLE_H + INVENTORY_HEAD_H +
            (float)v->row_count * (INVENTORY_ROW_H + INVENTORY_ROW_GAP) +
-           INVENTORY_HARBOUR_H + INVENTORY_FOOTER_H;
+           INVENTORY_HARBOUR_H + INVENTORY_TAX_H + INVENTORY_FOOTER_H;
 }
 
 static UiRect panel_rect(const InventoryView *v, float sw, float sh)
@@ -120,7 +123,7 @@ static int rows_per_page(UiRect panel)
 {
     float body = panel.h - (INVENTORY_MARGIN * 2.0f + INVENTORY_TITLE_H +
                             INVENTORY_HEAD_H + INVENTORY_HARBOUR_H +
-                            INVENTORY_FOOTER_H);
+                            INVENTORY_TAX_H + INVENTORY_FOOTER_H);
     int   n = ui_rows_that_fit(body, INVENTORY_ROW_H, INVENTORY_ROW_GAP);
     return n < 1 ? 1 : n;
 }
@@ -207,6 +210,54 @@ void inventory_build(UiList *out, const InventoryView *view,
         if (!view->yours) ui_list_disable_last(out, REJ_NOT_OWNER);
     }
 
+    /* ---- the treasury (LIFE_PLAN Phase 7) ------------------
+     * Rate, steppers, and the two numbers that say what the rate is
+     * actually doing. Steppers rather than a slider because ui_kit has
+     * no drag handling — see UI_ACTION_TAX.
+     *
+     * Each button carries THE RATE IT WOULD SET, not a delta. So the
+     * end of the range disables itself by the value it holds being out
+     * of bounds, and the hit decoder has nothing to compute. */
+    {
+        UiRect line = ui_row(&l, INVENTORY_TAX_H);
+        UiRect cell;
+        int    down = view->tax_rate_permille - TAX_RATE_STEP_PERMILLE;
+        int    up   = view->tax_rate_permille + TAX_RATE_STEP_PERMILLE;
+
+        line.h = 28.0f;
+
+        cell = line; cell.w = 150.0f;
+        snprintf(label, sizeof(label), "Tax  %d.%d%%",
+                 view->tax_rate_permille / 10, view->tax_rate_permille % 10);
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_NONE), cell,
+                     label, view->tax_rate_permille, UI_W_HEADER);
+
+        cell.x += 156.0f; cell.w = 40.0f;
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_TAX), cell,
+                     "-", down, 0);
+        if (down < 0 || !view->yours)
+            ui_list_disable_last(out, view->yours ? REJ_UNAVAILABLE
+                                                  : REJ_NOT_OWNER);
+
+        cell.x += 46.0f;
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_TAX), cell,
+                     "+", up, 0);
+        if (up > TAX_RATE_MAX_PERMILLE || !view->yours)
+            ui_list_disable_last(out, view->yours ? REJ_UNAVAILABLE
+                                                  : REJ_NOT_OWNER);
+
+        /* What it collected and how much of it is being paid. The
+         * second number is the one that matters when the rate is high:
+         * compliance falling is the island telling you it has had
+         * enough, and without it a shrinking take looks like a
+         * shrinking economy. */
+        cell.x += 56.0f; cell.w = 240.0f;
+        snprintf(label, sizeof(label), "%d/mo   %d%% paid",
+                 view->tax_last_month, view->compliance_permille / 10);
+        ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_NONE), cell,
+                     label, view->tax_last_month, UI_W_HEADER);
+    }
+
     {
         UiRect footer  = ui_row(&l, INVENTORY_FOOTER_H);
         UiRect prev    = { footer.x, footer.y + 4.0f, 70.0f, 30.0f };
@@ -260,6 +311,13 @@ InventoryHit inventory_hit(const UiList *list, const UiState *st,
              * rather than re-read from the view — so the click and the
              * label the player read cannot disagree (UI_PLAN N8). */
             hit.kind = INVENTORY_HIT_INSURANCE;
+            hit.on   = w->value;
+            break;
+        case UI_ACTION_TAX:
+            /* Same rule, same reason: the widget carries the RATE it
+             * would set, so nothing is recomputed here and a stepper at
+             * the end of its range is already disabled. */
+            hit.kind = INVENTORY_HIT_TAX;
             hit.on   = w->value;
             break;
         default: hit.kind = INVENTORY_HIT_NONE; break;

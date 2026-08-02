@@ -84,7 +84,19 @@ typedef struct {
     uint32_t escrow_nonce;       /* island_escrow_nonce() (UI_PLAN M5) */
     int32_t  capacity;           /* per-resource storage cap           */
 
-    int32_t  residents;          /* island total                       */
+    int32_t  residents;          /* island total, housed only          */
+
+    /* ---- the reserve and the treasury (LIFE_PLAN Phase 7) ----
+     * What the vitals strip and the tax control read. All derived from
+     * the sim each frame; the UI never reaches into GameState for them,
+     * which is the whole point of this struct. */
+    int32_t  reserve;            /* people with no roof                */
+    int32_t  founder_allowance;  /* households still importable        */
+    int32_t  homes_empty;        /* roofs with nobody under them       */
+    int32_t  left_last_month;    /* people who gave up waiting         */
+    int32_t  tax_rate_permille;
+    int32_t  compliance_permille;
+    int32_t  tax_last_month;
 
     UiBuilding buildings[MAX_BUILDINGS];
     int32_t    building_count;

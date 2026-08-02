@@ -36,6 +36,24 @@ static void snapshot_island(UiIsland *out, const Island *isl,
     out->escrow_nonce    = island_escrow_nonce(isl);
     out->residents       = pop_total(isl->pop_data, isl->building_count);
 
+    /* Phase 7. The reserve is counted here rather than stored on the
+     * island: it is a property of who has a roof, and one loop over the
+     * residents is cheaper than a field that could disagree. */
+    out->reserve             = residents_reserve_count(isl->residents,
+                                                       isl->resident_count);
+    out->founder_allowance   = isl->founder_allowance;
+    out->left_last_month     = isl->left_last_month;
+    out->tax_rate_permille   = isl->tax_rate_permille;
+    out->compliance_permille = isl->compliance_permille;
+    out->tax_last_month      = isl->tax_last_month;
+    {
+        int b;
+        out->homes_empty = 0;
+        for (b = 0; b < isl->building_count; b++)
+            if (isl->pop_data[b].active && isl->pop_data[b].residents == 0)
+                out->homes_empty++;
+    }
+
     /* Whether what follows is knowledge or absence (UI_PLAN N1). The
      * test is ownership because that is exactly what redact_for() keys
      * on: your own islands come through whole, everybody else's come

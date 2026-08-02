@@ -44,8 +44,16 @@
 #include "pirate.h"
 #include "intent.h"
 
-/* Gold a new game's starting island begins with. */
-#define STARTING_GOLD 1000
+/* Gold a new game's starting island begins with.
+ *
+ * Ten thousand since LIFE_PLAN Phase 6b, and the reason is demographic
+ * rather than economic. A house now arrives with a COUPLE in it rather
+ * than five grown strangers, and everybody after those two has to be
+ * born and then raised to eighteen. So an island's population is no
+ * longer something a player waits for — it is something they found, one
+ * household at a time, and they need enough capital in hand to lay down
+ * several roofs rather than one. */
+#define STARTING_GOLD 10000
 
 /* Player identity (MMO_PLAN Phase 5). PLAYER_NONE marks an unowned
  * island; real players count from 1. Single player is always player 1;
@@ -352,6 +360,12 @@ typedef struct GameState {
      * F9 self-check (and, in Phase 1d, load) can rebuild the tick-0
      * world and replay the log against it. */
     uint32_t  world_seed;
+
+    /* Which island is currently ticking, so the migration hook every
+     * Island carries knows who is asking (LIFE_PLAN Phase 7). Derived
+     * scratch for the duration of one island's update — never hashed,
+     * never saved. */
+    int       migrate_from;
 
     /* ---- the scrubber (MMO_PLAN later phases) --------------
      * A world is (seed, ordered log), so any past tick is reachable by
@@ -875,6 +889,12 @@ int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
 /* Owner only: allow (1) or forbid (0) foreign ships transferring at
  * `island_idx`. A ship that can't dock can't deliver — blockade. */
 int game_set_docking(GameState *gs, int island_idx, int allow);
+
+/* Set what this island's treasury takes from wages and business profit,
+ * in per mille (LIFE_PLAN Phase 7). Queues a command like every other
+ * mutation; the rate is clamped to 0..TAX_RATE_MAX_PERMILLE when it
+ * applies. */
+int game_set_tax_rate(GameState *gs, int island_idx, int permille);
 
 /* Owner only: turn this harbour's standing marine policy on or off
  * (MARITIME_PLAN Phase 3c). While on, every shipment dispatched from

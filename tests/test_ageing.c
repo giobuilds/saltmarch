@@ -76,15 +76,23 @@ static void test_only_adults_work(void)
     r[4].age_months = 70 * MONTHS_PER_YEAR;   /* elder  */
     r[5].age_months = 19 * MONTHS_PER_YEAR;   /* adult  */
 
-    CHECK(residents_adults_at(r, 6, 0) == 3,
-          "three of six are of working age");
+    /* FOUR, NOT THREE, SINCE PHASE 7b: the fifteen-year-old works now.
+     * Twelve is where a youth starts earning and eighteen is where they
+     * may marry, and untangling those two ages is what doubled the
+     * island's working share. The five-year-old and the seventy-year-old
+     * still do not. */
+    CHECK(residents_adults_at(r, 6, 0) == 4,
+          "four of six are of working age — the youth among them");
     CHECK(residents_adults_at(r, 6, 1) == 0,
           "and none of them live next door");
 
     /* Rations: an adult a whole one, everybody else a half, rounded up
      * so a house of children is never fed for free. */
-    CHECK(residents_mouths_at(r, 6, 0) == 3 + 2,
-          "six people eat five rations — halves round up");
+    /* A whole ration for anyone who works, a half for those who do not.
+     * Four workers and two dependants is five, and the halves round up
+     * so nobody is fed for free. */
+    CHECK(residents_mouths_at(r, 6, 0) == 4 + 1,
+          "six people eat five rations — a worker's is whole");
 
     {
         Resident one[1];
@@ -230,9 +238,25 @@ static int adult_fraction_for(uint32_t seed, int *sustained, int *mean)
         {
             int i, pop = 0, ad = 0;
             for (i = 0; i < isl->resident_count; i++) {
-                if (!isl->residents[i].active) continue;
+                const Resident *r = &isl->residents[i];
+                if (!r->active) continue;
                 pop++;
-                if (resident_stage(&isl->residents[i]) == LIFE_ADULT) ad++;
+                /* WORKERS, NOT ADULTS (LIFE_PLAN Phase 7). The two
+                 * stopped being the same number when the reserve
+                 * arrived: somebody with no roof is grown and idle, and
+                 * a woman carrying a child is grown and not at work.
+                 * Neither staffs a supply chain, and this measurement
+                 * exists to tell test_closure how many hands an island
+                 * really has. */
+                if (r->home_idx == RESIDENT_HOMELESS) continue;
+                if (r->pregnancy > 0) continue;
+                /* A WORKER IS TWELVE OR OLDER (Phase 7b) — youths
+                 * included. Counting only LIFE_ADULT here is how the
+                 * first run after the split reported no improvement at
+                 * all: the model had changed and the measurement had
+                 * not. */
+                if (resident_stage(r) == LIFE_TEEN ||
+                    resident_stage(r) == LIFE_ADULT) ad++;
             }
             if (pop < 4 || n >= SAMPLE_CAP) continue;
             hist[n] = ad * 100 / pop;
@@ -273,18 +297,37 @@ static void test_the_adult_fraction(void)
     CHECK(measured >= 2, "at least two worlds ran long enough to measure");
     if (measured == 0) return;
 
-    /* THE NUMBER LIFE_PLAN GUESSED AT 55%. An island peopled by adult
-     * immigrants who then age in place sits far above it, which is why
-     * nothing in the economy needed rebalancing for this phase.
+    /* THE NUMBER LIFE_PLAN GUESSED AT 55%, and which Phase 5 measured
+     * at 48% when every resident arrived grown. Phase 6b makes an
+     * island raise its own people, and the floor fell to 33% — where it
+     * sits on every seed tried, because it is not really a statistic at
+     * all. It is the shape of a household: two parents and four
+     * children under one roof is a third of the house able to work, and
+     * every house that fills does it the same way.
      *
-     * The floor is asserted below where it was measured (48% across ten
-     * seeds), not at it: this is a statistic over a stochastic process
-     * and pinning the assertion to the observed value would make it
-     * fail the first time a seed came out slightly unluckier. */
-    CHECK(worst >= 45,
-          "through its worst five years, nearly half the island still works");
-    CHECK(mean_sum / measured >= 70,
-          "and four fifths of it does, most of the time");
+     * PHASE 7 TOOK IT FURTHER, to 12-14%, and the number changed
+     * MEANING as well as value: it counts WORKERS now, not adults.
+     * Somebody with no roof is grown and idle, and a woman carrying a
+     * child is grown and not at work — neither staffs a chain, and
+     * test_closure needs to know how many hands an island really has.
+     *
+     * Where it went: a household is two parents and about eight minors,
+     * she is pregnant a third of her fertile life, and the reserve eats
+     * without working.
+     *
+     * THAT TROUGH IS NOT A TROUGH ANY MORE — it is the steady state, and
+     * no tier closes at it. That is a design position (the marketplace
+     * is meant to cover the gap) and a known-unfunded one: see
+     * test_closure.c, which now measures the SIZE of the gap rather
+     * than asserting it away.
+     *
+     * Asserted a little below the measured value, not at it, so an
+     * unluckier seed does not fail a number that has not moved. */
+    CHECK(worst >= 20,
+          "through the years it is raising children, a quarter of the "
+          "island is at work");
+    CHECK(mean_sum / measured >= 35,
+          "and two fifths of it is, taken over a lifetime");
 }
 
 int main(void)

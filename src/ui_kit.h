@@ -127,7 +127,18 @@ typedef enum {
 
     /* The harbour's standing marine policy (UI_PLAN N8). The widget's
      * value is what the lever will set it to, not what it is. */
-    UI_ACTION_INSURE
+    UI_ACTION_INSURE,
+
+    /* What the treasury takes, in per mille (LIFE_PLAN Phase 7). A
+     * STEPPER, not a slider: this kit lays out and hit-tests widget
+     * lists and has no drag handling at all, so a continuous control
+     * would need a whole input mode nothing else here uses. The
+     * widget's value is the RATE THE BUTTON WOULD SET, resolved when it
+     * is built rather than as a delta applied at hit time — so a
+     * disabled step at the end of the range is disabled because the
+     * value it carries is out of range, which is one rule instead of
+     * two. */
+    UI_ACTION_TAX
 } UiAction;
 
 /* ---- the layout cursor ------------------------------------

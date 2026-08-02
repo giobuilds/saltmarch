@@ -255,13 +255,23 @@ int pop_is_house_type(BuildingType type)
 void pop_init(PopData *p)
 {
     p->active    = 1;
-    p->residents = 5;        /* start half-full so growth is visible */
+    /* ZERO. A house is LAID EMPTY and becomes a household when
+     * island_settle_house can find it one — a couple off a boat while
+     * the founder allowance lasts, and out of the reserve after that.
+     *
+     * It opened at five once, so growth would be visible within a
+     * minute; then at two, when a house became a family. Zero is the
+     * honest version of the same idea: a roof is a roof until somebody
+     * moves in, and whether anybody does is the question the whole
+     * phase is about. */
+    p->residents = 0;
     p->timer     = 0;
     /* Neutral, not zero: a house that has just been built is neither
      * delighted nor about to empty, and starting at 0 would mean the
      * first missed tick of its life cost a resident (NEEDS_PLAN Ph.2). */
     p->happiness   = HAPPINESS_NEUTRAL;
     p->origin_tier = BUILDING_NONE;
+    p->founded     = 0;
 }
 
 /* ---- pop_update ----------------------------------------
@@ -352,7 +362,7 @@ static int happiness_target(const TierDef *tier, const ResourceType *basic,
 void pop_update(PopData pop[], const Building buildings[], int count,
                Stockpile *s,
                int (*mouths_at)(const void *ctx, int house_idx),
-               const void *ctx)
+               const void *ctx, int tax_rungs)
 {
     int i;
 
@@ -386,6 +396,20 @@ void pop_update(PopData pop[], const Building buildings[], int count,
             int mouths = mouths_at ? mouths_at(ctx, i) : p->residents;
             if (mouths < 1) mouths = 1;
             target = happiness_target(tier, basic, mouths, s);
+
+            /* THE SECOND INDEPENDENT INPUT (LIFE_PLAN Phase 7). What
+             * the island charges in tax moves the target a rung or two,
+             * and it is INDEPENDENT OF THE HARVEST — which is the point
+             * LIFE_PLAN §6 makes about why one input must never be able
+             * to move them all. A bad fishing year and a greedy rate
+             * are different problems and a house can suffer one without
+             * the other.
+             *
+             * Capped at TAX_HAPPINESS_MAX rungs of ten, so tax can make
+             * a comfortable island uncomfortable but cannot on its own
+             * empty a fed house. */
+            target += tax_rungs;
+            if (target < 0) target = 0;
         }
 
         /* ONE STEP PER TICK, and that is the whole of the hysteresis.
@@ -399,16 +423,29 @@ void pop_update(PopData pop[], const Building buildings[], int count,
         if (p->happiness > HAPPINESS_MAX) p->happiness = HAPPINESS_MAX;
         if (p->happiness < 0)             p->happiness = 0;
 
-        /* Gold is the work these people do, so it follows being fed
-         * rather than being delighted. */
-        if (target >= HAPPINESS_NEUTRAL && p->residents > 0)
-            stockpile_add(s, RES_GOLD, GOLD_PER_RESIDENT * p->residents);
+        /* GOLD USED TO BE MINTED HERE (LIFE_PLAN Phase 7 removed it).
+         * A fed house paid `3 x residents` every needs tick, which made
+         * a household of children exactly as good an earner as a
+         * household of workers and made the player's income a
+         * population count wearing a currency's clothes.
+         *
+         * Gold now comes from WORK — a building earns what its output
+         * is worth, pays its crew, and the player taxes both halves in
+         * island_tick_buildings. Being fed is still what keeps a house
+         * on the ladder; it is no longer what pays for anything. */
 
-        if (p->happiness >= HAPPINESS_GROW && p->residents < HOUSE_CAPACITY) {
-            p->residents++;
-            sim_log("House %d: happy (%d/%d), %d residents",
-                    i, p->happiness, HAPPINESS_MAX, p->residents);
-        } else if (p->happiness == 0 && p->residents > 0) {
+        /* GROWTH USED TO LIVE HERE (LIFE_PLAN Phase 6b removed it). A
+         * happy house gained a resident every needs tick, and where
+         * that resident came from was never asked. Now a house grows
+         * only by birth — residents_breed owns the upward direction
+         * entirely — so happiness buys a household the room to raise
+         * children rather than conjuring grown strangers into a spare
+         * bed.
+         *
+         * Decline stays exactly where it was. The two are deliberately
+         * not symmetric: leaving is a decision about this month, being
+         * born takes nine of them. */
+        if (p->happiness == 0 && p->residents > 0) {
             const char *why = "no road to Warehouse";
             char        buf[48];
 

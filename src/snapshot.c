@@ -217,6 +217,9 @@ static void put_pop(W *w, const PopData *p)
     w_u32(w, p->timer);
     w_i32(w, (int32_t)p->happiness);
     w_i32(w, (int32_t)p->origin_tier);
+    /* Has this roof ever been settled — which is what stops the founder
+     * allowance being spent twice on the same house (Phase 7). */
+    w_u8(w,  (uint8_t)(p->founded ? 1 : 0));
 }
 
 static void get_pop(R *r, PopData *p)
@@ -226,6 +229,7 @@ static void get_pop(R *r, PopData *p)
     p->timer     = r_u32(r);
     p->happiness = (int)r_i32(r);
     p->origin_tier = (int)r_i32(r);
+    p->founded     = (int)r_u8(r);
 }
 
 /* Only path_len waypoints, not MAX_AGENT_PATH. This one decision is
@@ -291,6 +295,15 @@ static void put_resident(W *w, const Resident *p)
     w_i32(w, p->age_months);
     w_i32(w, p->spouse);
     w_u32(w, p->tenure_months);
+    /* Phase 6b. Sex is written rather than derived from the id, unlike
+     * the name: a founding pair is required to be one of each, so the
+     * answer is chosen at spawn and has to survive the round trip. */
+    w_i32(w, p->sex);
+    w_i32(w, p->pregnancy);
+    w_i32(w, p->birth_house);
+    w_i32(w, p->children);
+    w_i32(w, p->birth_cooldown);
+    w_i32(w, p->reserve_since);
 }
 
 static void get_resident(R *r, Resident *p)
@@ -302,6 +315,12 @@ static void get_resident(R *r, Resident *p)
     p->age_months    = r_i32(r);
     p->spouse        = r_i32(r);
     p->tenure_months = r_u32(r);
+    p->sex           = r_i32(r);
+    p->pregnancy     = r_i32(r);
+    p->birth_house    = r_i32(r);
+    p->children       = r_i32(r);
+    p->birth_cooldown = r_i32(r);
+    p->reserve_since  = r_i32(r);
 }
 
 static void put_ship(W *w, const Ship *s)
@@ -676,6 +695,11 @@ static void put_island(W *w, const Island *isl)
     w_i32(w, (int32_t)na);
     for (i = 0; i < na; i++) put_agent(w, &isl->agents[i]);
 
+    w_i32(w, isl->founder_allowance);
+    w_i32(w, isl->tax_rate_permille);
+    w_i32(w, isl->compliance_permille);
+    w_i32(w, isl->unhappy_streak);
+    w_i32(w, isl->tax_base);
     w_u32(w, isl->next_resident_id);
     w_i32(w, (int32_t)isl->resident_count);
     for (i = 0; i < isl->resident_count; i++)
@@ -739,7 +763,12 @@ static int get_island(R *r, Island *isl)
     /* Bounds-checked like every other count here: this buffer arrives
      * off a socket from an untrusted peer, and a count it chose is the
      * classic way to be asked to write past the end of an array. */
-    isl->next_resident_id = r_u32(r);
+    isl->founder_allowance   = r_i32(r);
+    isl->tax_rate_permille   = r_i32(r);
+    isl->compliance_permille = r_i32(r);
+    isl->unhappy_streak      = r_i32(r);
+    isl->tax_base            = r_i32(r);
+    isl->next_resident_id    = r_u32(r);
     nr = (int)r_i32(r);
     if (r->bad || nr < 0 || nr > MAX_RESIDENTS) return 0;
     isl->resident_count = nr;

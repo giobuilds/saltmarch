@@ -26,6 +26,7 @@
 #include "agent.h"
 #include "resident.h"
 #include "simclock.h"
+#include "faction.h"   /* faction_bid: what a good is worth (Phase 7) */
 
 /* Job assignment runs every AGENT_ASSIGN_INTERVAL seconds, expressed in
  * whole sim ticks (see agent.h and simclock.h). */
@@ -81,6 +82,13 @@
 #define CHARTER_UPKEEP_TICKS   1200   /* two minutes of world time     */
 #define CHARTER_GRACE_PAYMENTS    3   /* missed payments before lapse  */
 
+/* Houses an island may found by IMMIGRATION before it has to grow its
+ * own people (LIFE_PLAN Phase 6c, EXPERIMENT). A hundred is deliberately
+ * more than a player will lay early and far fewer than a mature island
+ * wants, so the allowance is invisible for the first hour and then
+ * becomes the thing the whole settlement runs on. */
+#define FOUNDER_ALLOWANCE 100
+
 typedef struct {
     Map        map;
     Camera     camera;          /* per-island, so returning to an island
@@ -103,6 +111,58 @@ typedef struct {
     Resident   residents[MAX_RESIDENTS];
     int        resident_count;
     uint32_t   next_resident_id;
+    /* How many more households may be founded by IMMIGRATION (LIFE_PLAN
+     * Phase 6c, EXPERIMENT). Every house laid while this is positive
+     * arrives with a couple off a boat and spends one; after that a
+     * house is filled from the reserve or stands empty until the
+     * reserve can fill it. World state: hashed, saved, snapshotted. */
+    int        founder_allowance;
+
+    /* Where somebody goes when this island cannot roof them.
+     *
+     * A FUNCTION POINTER THE WORLD INSTALLS, not a direct call, for the
+     * same reason GameState.net_submit is one: an island cannot see
+     * another island, and island.c must not learn what a world is.
+     * game.c sets these so a departing resident is offered the player's
+     * OTHER islands first and another player's second; left unset — as
+     * in every unit test — nobody is relocated and they simply leave.
+     *
+     * Derived wiring, not world state: never hashed, never saved. */
+    int      (*emigrate)(void *ctx, int resident_idx);
+    void      *emigrate_ctx;
+
+    /* How many left last month. Read by the vitals strip so "people are
+     * leaving" is a fact rather than an inference. Derived. */
+    int        left_last_month;
+
+    /* ---- the treasury (LIFE_PLAN Phase 7) -----------------
+     * What the player takes from wages and from business profit, in
+     * per mille, set through CMD_SET_TAX_RATE and clamped to
+     * TAX_RATE_MAX_PERMILLE.
+     *
+     * `compliance_permille` is how much of it is actually paid.
+     * Sustained unhappiness erodes it and contentment restores it, with
+     * a floor and a patience period so the loop
+     * docs/new-happiness-design.md warns about cannot run away. Both are
+     * world state: hashed, saved, snapshotted. */
+    int32_t    tax_rate_permille;
+    int32_t    compliance_permille;
+    /* Consecutive needs ticks the island has been unhappy. The
+     * hysteresis: compliance does not move until this passes
+     * COMPLIANCE_PATIENCE_TICKS, so one bad quarter costs nothing. */
+    int32_t    unhappy_streak;
+    /* Wages plus profit earned since the last levy. World state: it is
+     * carried across a save and it decides what the next levy is worth.
+     *
+     * TAX IS LEVIED MONTHLY, NOT PER TICK, and the reason is integer
+     * arithmetic rather than flavour. A single production cycle is a
+     * few coins; a few coins times a tenth, in integers, is zero. An
+     * island of ten Fisher's Huts collected NOTHING until the base was
+     * accumulated over a month and divided once — which is what the
+     * first two runs of this model measured. */
+    int32_t    tax_base;
+    /* What the last levy brought in, for the UI to show. Derived. */
+    int32_t    tax_last_month;
 
     int        settled;         /* 0 = generated but not colonised     */
     MapProfile profile;
@@ -257,7 +317,43 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  * is a pure function of (world_seed, id) rather than stored bytes, so
  * the island needs the seed at the moment somebody is born. It is the
  * only thing here that reaches outside the island. */
-void island_update(Island *isl, uint32_t world_seed, uint64_t tick);
+/* `market` prices what this island's businesses produce, so wages and
+ * profit can be taxed (LIFE_PLAN Phase 7). It is the WORLD's faction —
+ * an island has no market of its own — and is passed in rather than
+ * reached for, because island.c must not learn what a world is. NULL is
+ * accepted and means nothing is earned, which is what the unit tests
+ * that build an Island by hand rely on. */
+void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
+                   const Faction *market);
+
+/* Tries to put a household into the empty house at `idx` — a founding
+ * couple while the allowance lasts, a pair out of the reserve after
+ * that. Returns how many moved in (0 or 2); 0 leaves the house empty
+ * and it is asked again next month. */
+int island_settle_house(Island *isl, int idx, uint32_t world_seed);
+
+/* Moves compliance one step toward what this island's mood deserves,
+ * once a month (LIFE_PLAN Phase 7).
+ *
+ * THE THREE DAMPING RULES docs/new-happiness-design.md demands, in one
+ * function so they cannot drift apart:
+ *   - nothing happens at all until the island has been unhappy for
+ *     COMPLIANCE_PATIENCE_TICKS consecutive months (hysteresis);
+ *   - recovery climbs at twice the rate decline falls;
+ *   - it never drops below COMPLIANCE_MIN_PERMILLE (the floor).
+ *
+ * Exposed rather than static so tests/test_tax.c can drive an island
+ * into sustained unhappiness and assert recovery is reachable, which is
+ * the test that document asks for by name. */
+void island_update_compliance(Island *isl);
+
+/* How many rungs of happiness this island's tax rate is worth: 0 at a
+ * modest rate, falling to -TAX_HAPPINESS_MAX at the maximum.
+ *
+ * Capped on purpose. It is ONE input among several and must never be
+ * able to move a house's mood on its own, or a funding shortfall
+ * cascades across every other factor at once — mitigation three. */
+int  island_tax_happiness(const Island *isl);
 
 /* Recompute this island's per-resource storage cap from the number of
  * active Warehouses ON THIS ISLAND. Per-island by necessity: otherwise

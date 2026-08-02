@@ -70,7 +70,9 @@ static void stock_luxuries(World *w, int n)
 static void needs_tick(World *w)
 {
     w->p[0].timer = NEEDS_INTERVAL_TICKS - 1;
-    pop_update(w->p, w->b, 1, &w->s, NULL, NULL);
+    /* Zero tax rungs: these tests are about the larder, and the tax
+     * input is exercised in test_tax.c where it belongs. */
+    pop_update(w->p, w->b, 1, &w->s, NULL, NULL, 0);
 }
 
 /* ---- 1. a full larder climbs, and the house grows ---------- */
@@ -91,8 +93,21 @@ static void test_plenty(void)
 
     CHECK(w.p[0].happiness == HAPPINESS_MAX,
           "everything supplied reaches the top of the ladder");
-    CHECK(w.p[0].residents > start, "and people move in");
-    CHECK(w.s.amount[RES_GOLD] > 0, "a fed house pays its way");
+    /* AND NOBODY MOVES IN (LIFE_PLAN Phase 6b). Happiness used to add a
+     * resident every needs tick, out of nowhere in particular. A house
+     * grows only by birth now — residents_breed owns the upward
+     * direction, and pop_update cannot fill a bed however delighted the
+     * household is. What plenty buys is the room and the will to raise
+     * children, which is a different function's business entirely. */
+    CHECK(w.p[0].residents == start,
+          "and nobody moves in — a house grows by birth or not at all");
+    /* AND IT PAYS NOTHING (LIFE_PLAN Phase 7). Housing used to mint
+     * gold — `3 x residents` every needs tick — which made a household
+     * of children exactly as good an earner as a household of workers.
+     * Gold comes from taxed wages now, so being fed is what keeps a
+     * house on the ladder and no longer what funds anything. */
+    CHECK(w.s.amount[RES_GOLD] == 0,
+          "and pays nothing — a house is not a mint");
 
     /* It climbed rather than jumping: five steps from neutral. */
     world_init(&w, 3);
@@ -295,7 +310,12 @@ static void test_consumption_scales(void)
     CHECK(w.p[0].happiness < HAPPINESS_NEUTRAL,
           "and feeding four of six people is not feeding the house");
 
-    /* And the ceiling moved. */
+    /* And the ceiling is no longer something pop_update walks up to.
+     * Forty ticks of everything a house could want used to fill it from
+     * one to six; since Phase 6b it leaves the house exactly as it
+     * found it, because feeding people is not the same as making them.
+     * The capacity is still the ceiling — residents_breed checks it —
+     * but nothing here can reach it. */
     {
         int i;
         world_init(&w, 1);
@@ -304,9 +324,12 @@ static void test_consumption_scales(void)
             stock_luxuries(&w, 50);
             needs_tick(&w);
         }
-        CHECK(w.p[0].residents == HOUSE_CAPACITY,
-              "a thriving house fills to capacity and stops");
-        CHECK(HOUSE_CAPACITY == 6, "which is six now, not ten");
+        CHECK(w.p[0].residents == 1,
+              "forty fat months do not add one person to a house");
+        /* Ten since Phase 7: a family of two parents and their minor
+         * children needs the room, and a per-house cost spread over ten
+         * people is what pulled the upper tiers back under the wall. */
+        CHECK(HOUSE_CAPACITY == 10, "the ceiling is ten");
     }
 }
 

@@ -142,7 +142,26 @@ typedef struct NetSession NetSession;
  *    protocol change for the same reason a resource-vocabulary change
  *    is — an older peer would decode the pop records one field short
  *    and every house after the first would be wrong. */
-#define NET_PROTO_VERSION     24u
+/* 25: marriage and birth (LIFE_PLAN Phase 6). NOTHING ON THE WIRE
+ *    CHANGED — the snapshot lays out exactly as it did at 24, because
+ *    `spouse` was already a field and Phase 6 only started writing to
+ *    it. The bump is about the SIM, not the format: peers step the
+ *    same commands through their own copy of the world, so two peers
+ *    disagreeing about who is married and who was born diverge on the
+ *    next hash while decoding each other's frames perfectly. A
+ *    lockstep protocol version has to cover the rules as well as the
+ *    bytes, which is why Phase 5's ageing should have moved it too. */
+/* 26: a resident carries a sex, a pregnancy and the house they were
+ *    born in (LIFE_PLAN Phase 6b). This one IS a format change as well
+ *    as a rule change — three int32s per resident — so an older peer
+ *    would decode every resident after the first at the wrong offset. */
+/* 27: households, the reserve and the treasury (LIFE_PLAN Phase 7).
+ *    Both a format change and a rule change — four more int32s per
+ *    island, two per resident and a byte per house, and gold that now
+ *    enters the world through tax rather than through housing. A peer
+ *    on 26 would misread every resident after the first AND disagree
+ *    about how much money the island has. */
+#define NET_PROTO_VERSION     27u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

@@ -72,6 +72,20 @@ typedef struct {
     int32_t      research_boats;
     uint8_t      insured;         /* the standing policy is on         */
     uint8_t      yours;           /* you may throw the lever at all    */
+
+    /* ---- the treasury (LIFE_PLAN Phase 7) -----------------
+     * Where gold comes from now. Shown beside the harbour because it is
+     * the same kind of fact: a standing property of the island rather
+     * than of any one transaction.
+     *
+     * All three together, deliberately. The rate alone is a number
+     * without a consequence; the rate WITH what it collected and how
+     * much of it people are actually paying is the whole feedback loop
+     * on one line, which is what lets a player see that raising it
+     * further is costing them. */
+    int32_t      tax_rate_permille;
+    int32_t      tax_last_month;
+    int32_t      compliance_permille;
 } InventoryView;
 
 /* Build from one island's snapshot. Ship cargo is counted per good
@@ -92,6 +106,9 @@ void inventory_view_build(InventoryView *out, const UiSnapshot *snap,
 /* The harbour block: four capacity lines and the policy lever, between
  * the goods and the pager (UI_PLAN N8). */
 #define INVENTORY_HARBOUR_H 76.0f
+/* The treasury line: the rate with its two steppers, what it brought in
+ * and what share is being paid. */
+#define INVENTORY_TAX_H     34.0f
 #define INVENTORY_MAX_H    820.0f
 
 typedef enum {
@@ -112,7 +129,8 @@ typedef enum {
     INVENTORY_HIT_OUTSIDE,
     INVENTORY_HIT_CLOSE,
     INVENTORY_HIT_PAGE,
-    INVENTORY_HIT_INSURANCE   /* `on` is what to set it to (N8)       */
+    INVENTORY_HIT_INSURANCE,  /* `on` is what to set it to (N8)       */
+    INVENTORY_HIT_TAX         /* `on` is the rate to set, per mille   */
 } InventoryHitKind;
 
 typedef struct {

@@ -175,7 +175,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return cli_result;
 
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING,    "Saltmarch");
-    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.3.0");
+    /* Keep this in step with the release tag. It had drifted three
+     * releases behind — 0.3.0 against a v0.5.0-alpha tag — because the
+     * tag is the thing anybody looks at and this string is the thing
+     * nothing reads back. */
+    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.6.0");
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING,    "game");
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -921,6 +925,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 /* The standing policy: every shipment this harbour
                  * dispatches, insured at its ROUTE's premium (N8). */
                 game_set_insurance(gs, gs->current_island, ihit.on);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ihit.rect));
+            }
+            else if (ihit.kind == INVENTORY_HIT_TAX) {
+                /* What the treasury takes (LIFE_PLAN Phase 7). The hit
+                 * carries the rate the stepper would set, so this is a
+                 * submission and not a calculation. */
+                game_set_tax_rate(gs, gs->current_island, ihit.on);
                 fx_reject_expect(&app->fx, gs->cmd_seq_last,
                                  fx_anchor_rect(ihit.rect));
             }

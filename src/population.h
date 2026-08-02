@@ -43,26 +43,80 @@
 
 /* Residents per house.
  *
- * Ten until NEEDS_PLAN Phase 3, when consumption started scaling with
- * population and a full house became something an island has to earn
- * rather than something it drifts into. Six is a decision about the
- * feel of a marsh village rather than an economic one — and it is worth
- * recording that it costs headroom rather than buying any: per-resident
- * costs do not change with capacity, while per-house costs are
- * amortised over fewer people, so the base tier's worker-per-resident
- * ratio goes 0.59 at ten to 0.68 at six. See docs/NEEDS_PLAN.md. */
-#define HOUSE_CAPACITY       6
+ * Ten until NEEDS_PLAN Phase 3, six until LIFE_PLAN Phase 7, and ten
+ * again now — for a reason the round trip makes clearer than either
+ * number does alone.
+ *
+ * Per-resident costs do not change with capacity; per-HOUSE costs are
+ * amortised over however many live there. So a larger house makes
+ * refined goods cheaper per head and a smaller one makes them dearer,
+ * which is why cutting this to six cost the base tier headroom and why
+ * restoring it buys some back.
+ *
+ * What decides it now is the household rather than the economy. Two
+ * parents raising children with twelve months between births have about
+ * eight minors at home at any time, so ten is what a family actually
+ * needs. CAPACITY IS NOT ENFORCED AGAINST CHILDREN — a house may exceed
+ * it while its own children are young (residents_breed) — only against
+ * people ARRIVING from somewhere else. */
+#define HOUSE_CAPACITY       10
 #define NEEDS_INTERVAL      30.0f  /* seconds between needs checks  */
 /* The needs check fires every NEEDS_INTERVAL seconds, counted in whole
  * sim ticks so the F9 hash never reads an accumulating float. */
 #define NEEDS_INTERVAL_TICKS \
     ((uint32_t)(NEEDS_INTERVAL * SIM_TICKS_PER_SEC))
-/* Two until Phase 3. Raised with the capacity cut, and not to keep the
- * old number: income is `this x residents`, so it never depended on
- * capacity at all — what changed is that feeding a resident now costs
- * an island several times what it did, and the people doing the work
- * should be worth more for it. */
-#define GOLD_PER_RESIDENT    3
+/* ---- wages and the treasury (LIFE_PLAN Phase 7) ------------
+ * GOLD_PER_RESIDENT IS GONE. Housing used to mint gold — a house paid
+ * `3 x residents` every needs tick and where it came from was never
+ * asked — which meant a household of children was as good an earner as
+ * a household of workers, and the player's income was really a
+ * population count wearing a currency's clothes.
+ *
+ * Gold now enters the world through WORK. A building earns what its
+ * output is worth, pays its crew, and the player taxes both halves.
+ * See island_tick_buildings (island.c) for the arithmetic and
+ * docs/new-happiness-design.md for the model it comes from.
+ *
+ * The consequence is deliberate and is the point of the phase: a child
+ * costs rations and returns nothing until it is eighteen, so a
+ * generation being raised is a genuine fiscal event rather than a free
+ * one. */
+
+/* What one worker is paid per production cycle they complete. */
+#define WAGE_PER_WORKER      2
+
+/* Where the tax rate starts, in per mille, and how far the player may
+ * push it. Ten percent is meant to be comfortable; fifty is meant to
+ * hurt. */
+#define TAX_RATE_DEFAULT_PERMILLE  100
+#define TAX_RATE_MAX_PERMILLE      500
+#define TAX_RATE_STEP_PERMILLE      25
+
+/* ---- compliance, and why it has a floor --------------------
+ * docs/new-happiness-design.md: "Businesses and residents are taxed.
+ * Sustained unhappiness reduces tax compliance. THIS CLOSES A POSITIVE
+ * FEEDBACK LOOP AND WILL DEATH-SPIRAL WITHOUT DAMPING." Unhappy means
+ * less tax, which means less funding, which means unhappier.
+ *
+ * Three of the four mitigations it prescribes live here:
+ *
+ *   FLOOR      — compliance never falls below COMPLIANCE_MIN_PERMILLE,
+ *                so revenue cannot reach zero however bad things get.
+ *   HYSTERESIS — unhappiness must persist COMPLIANCE_PATIENCE_TICKS
+ *                before compliance falls at all, and recovery climbs
+ *                twice as fast as decline. A bad quarter costs nothing;
+ *                a bad decade costs.
+ *   NOT DOMINANT — the tax rate moves happiness by at most
+ *                TAX_HAPPINESS_MAX rungs of ten, so a funding shortfall
+ *                cannot cascade across every other input at once.
+ *
+ * The fourth, a treasury that may go negative rather than hard-stop at
+ * zero, is TREASURY_FLOOR_GOLD in game.h. */
+#define COMPLIANCE_FULL_PERMILLE   1000
+#define COMPLIANCE_MIN_PERMILLE     300
+#define COMPLIANCE_STEP_PERMILLE     20
+#define COMPLIANCE_PATIENCE_TICKS    10
+#define TAX_HAPPINESS_MAX             2
 
 /* ---- happiness (NEEDS_PLAN Phase 2) ------------------------
  * 0 is "not at all happy" and 10 is "completely happy". Every basic
@@ -277,6 +331,16 @@ typedef struct {
      * eventually is not written. World state: hashed, saved,
      * snapshotted. */
     int      origin_tier;
+
+    /* Has this house EVER been settled? (LIFE_PLAN Phase 7.)
+     *
+     * The founder allowance is spent per HOUSE, once. Without this a
+     * house that starves to empty is re-founded from the allowance the
+     * next month, and a village that keeps failing quietly burns the
+     * island's whole immigration quota — which is exactly what the
+     * prototype did, turning 100 places into 63 houses. A re-settled
+     * house draws from the reserve or stands empty. */
+    int      founded;
 } PopData;
 
 /* Initialise a PopData block for a newly placed house.
@@ -299,10 +363,15 @@ void pop_init(PopData *p);
  *
  * Pass NULL and every resident eats a full ration, which is the
  * pre-Phase-5 behaviour the tests written before ages rely on. */
+/* `tax_rungs` is what the island's tax rate is worth on the happiness
+ * ladder — zero or negative, and already capped by
+ * island_tax_happiness(). Passed in rather than read, because
+ * population.c has no island to ask and should not learn about one.
+ * Zero is the pre-Phase-7 behaviour every older test relies on. */
 void pop_update(PopData pop[], const Building buildings[], int count,
                Stockpile *s,
                int (*mouths_at)(const void *ctx, int house_idx),
-               const void *ctx);
+               const void *ctx, int tax_rungs);
 
 /* Return the total population across all active houses. */
 int pop_total(const PopData pop[], int count);

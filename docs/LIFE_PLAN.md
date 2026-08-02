@@ -1,6 +1,8 @@
 # Residents, lives and labour — the design
 
-> Status: **Phases 1-5 done; Phase 6 next.** The calendar is settled — see
+> Status: **Phases 1-7 done; Phase 8 next.** Phase 7 leaves a known
+> economic gap — the island does not fund its own imports; see its
+> entry. The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -592,20 +594,323 @@ year.
 it would have people in different streets getting older at different
 rates. That alignment is what Phase 4 was for.
 
-**6 — marriage, households and birth.** Pairing derived from identity in
-a fixed order, and the births that follow from it. Feeds social support,
-and gives the ghost feed something worth saying.
+**6 — marriage, households and birth. DONE.** Adults who share a house
+pair off on a monthly draw, and a house with a young couple fills its
+next vacancy with a child instead of an immigrant. Save v34, protocol
+25. Fixture hash `bb7e381ae6ab6c0d` → `e07bd51fd2d9ba87`.
 
-*Watch the adult fraction here.* Phase 5 measured 81% typical because
-every resident arrives an adult. Children will push it down, and the
-closure projection is asserted against the worst measured year — so this
-is the phase where that assertion starts doing real work.
+*A HOUSE IS THE HOUSEHOLD.* Pairing is between people who already share
+an address, which is what lets marriage cost nothing in bookkeeping:
+nobody's `home_idx` ever changes, so no house's `pop_data.residents` has
+to move between slots in the same tick `residents_sync` is reconciling
+against it. Island-wide pairing with a spouse moving in was the
+alternative, and it buys a nicer story for a reconciliation bug that
+would be very hard to see.
 
-**7 — status modifies productivity.** Slept, ate, married, employed →
+*Phase 6 ADDS NO SOURCE OF POPULATION.* This is the decision the whole
+phase rests on. Growth stays exactly where Phase 5 left it — count-
+driven, decided by `pop_update` from happiness — and birth decides only
+**who arrives** to fill the slot it opened. So there was no rebalance,
+no second growth path to reconcile against the first, and "deaths are
+resident-driven, growth is count-driven" survives intact. A birth is a
+composition change, not an addition.
+
+*Marriage is a monthly draw, not an immediate fact*, for the same reason
+ages are jittered at spawn. If every eligible pair married the first
+month they were eligible, every couple would start having children in
+the same month and the island would be raising cohorts again — the exact
+defect the age spread exists to prevent.
+
+*The one structural hazard was `spouse` being an INDEX*, into an array
+whose slots are reused. A marriage that outlives its partner's slot is a
+widow married to whoever moves in next: no crash, no hash failure, just
+quiet nonsense. Both removal paths — death and despawn — now widow the
+partner before clearing the slot, every read is bounds- and reciprocity-
+checked, and `test_marriage.c` re-checks mutuality every month of sixty
+years rather than once at the end.
+
+*The adult fraction moved, but less than expected:* 81% typical → ~74%,
+with the worst five-year mean holding around 48%. So `test_closure`'s
+`ADULT_FRACTION` of 0.48 needed no change, and the assertion the plan
+predicted would "start doing real work" is doing it — it is simply not
+yet under strain.
+
+*And the measurement that matters is a composition:* across three seeds
+over sixty years, **28 of 134 arrivals were born on the island (20%)**;
+the rest sailed in. That is lower than it sounds like it should be, and
+the reason is structural rather than a bug — see below.
+
+**6b — a house is founded by a couple, and grows only by birth. DONE.**
+The answer to the open question below, taken in the other direction
+from the one it proposed. Save v35, snapshot v14, protocol 26. Fixture
+hash `e07bd51fd2d9ba87` → `f5844c21ba0c995f`.
+
+*What a player now does.* Ten thousand Gold rather than one thousand,
+because population is something you found rather than something you
+wait for. A house opens with **two residents, a woman and a man,
+married on arrival**; they work; she conceives on a monthly draw, stops
+working for the nine months she carries, and gives birth; the child
+eats a half ration and holds no job until eighteen, then joins the
+workforce. Watched end to end on seed 12345: a couple at year 0,
+expecting at year 1, four children by year 5, and twelve adults across
+two houses by year 23.
+
+*Immigration into an existing house is gone.* `pop_update` no longer
+grows a house at all — the happiness-driven `residents++` that used to
+conjure a grown stranger into a spare bed is deleted. Growth is
+`residents_breed` and nothing else. Decline stays exactly where it was,
+and the asymmetry is deliberate: leaving is a decision about this
+month, being born takes nine of them.
+
+*This inverts Phase 6's own rule, and that is the point.* Phase 6 kept
+growth count-driven and made birth a question of who filled the slot.
+6b makes both directions resident-driven, which is simpler than the
+split Phase 5 needed and is only possible because nobody immigrates any
+more.
+
+*A pregnancy costs labour, not rations.* `residents_adults_at` skips a
+woman who is carrying, so she loses her agent and her workplace by the
+same one-line route that keeps children out of work — and a two-person
+household that is expecting is a one-person household. She still eats a
+full ration.
+
+*Siblings do not marry*, which needed a new field. Phase 6 paired
+within a house on the reasoning that a house was six unrelated lodgers;
+6b makes a house a family, and the identical rule would have married a
+brother to his sister the month they both turned eighteen.
+`birth_house` is -1 for a founder and the house index for anybody born
+here, and two people who share a non-negative one are siblings.
+
+*Names split by sex*, because a table that answered "Bess" for a man
+would put the mistake on screen the moment anything displayed either.
+
+**The cost, measured: the adult fraction fell to 33%.** Not a
+statistic so much as the shape of a household — two parents and four
+children is a third of the house able to work, on every seed, for the
+eighteen years it takes the eldest to grow up. That is far too long for
+the happiness ladder to absorb, so the economy has to survive it.
+
+Marshfolk still close, at **0.89** against a wall of 1.00 — tight, and
+meant to be. **Wrights no longer close (1.44) and are now
+import-dependent by decision**, recorded in `test_closure.c` beside the
+identical decision already taken for Merchants. Their bill is entirely
+refined, a refined good is charged once per household, and the same
+bill now falls on two workers instead of six. Worth recording because
+it is the obvious wrong guess: **`HOUSE_CAPACITY` does not fix this.**
+The bill is per household either way and the household has two adults
+in it whether the ceiling is four or six, so the ratio does not move.
+The only levers are the tier's needs list and the demography.
+
+*Three fixtures were encoding the old world and had to be told.*
+`test_happiness` asserted that a well-fed house gains residents — it
+does not any more. `test_staffing` laid two houses and expected a
+dozen people, and got four. That one exposed an older bug worth the
+note: its village put the houses in the road's own row, so only the
+first of them ever touched pavement, and the fixture had been measuring
+one connected house all along. It passed regardless while that house
+held five people. With a couple to a house it stopped passing, which is
+the good kind of test failure.
+
+*What is still not built.* Children have nobody to marry: pairing is
+within a house, and everybody in a house is either their parent or
+their sibling. So a household is one generation deep — the founders'
+children grow up, work, and die unmarried, and the island depends on
+the player laying new houses to bring new couples. Cross-house
+marriage, with a spouse moving in, is the next piece and is what
+`birth_house` was really added for.
+
+---
+
+**The open question Phase 6 left: housing caps people, not adults.**
+*Answered at 6b, in the other direction:* housing still caps people,
+and the population it caps is now grown at home rather than shipped in.
+`HOUSE_CAPACITY` is 6 and `pop_init` seeds a house at 5, so a house is
+full within one needs tick and stays full. The only demographic event
+after that is a death opening a bed — and a house whose members are
+dying is a house of old people, whose couple is usually past
+`AGE_FERTILE_MAX_YEARS`. Hence 20%.
+
+This document's own arithmetic assumes the *other* model. "Residents are
+world state now" says the `MAX_AGENTS` ceiling "stops being a ceiling on
+population and becomes one on the working population — roughly 930
+residents at a 55% adult fraction, against 512 today." That sentence
+only holds if children are **additional to** the capped household rather
+than competing with adults for the same six beds.
+
+Making that true means `HOUSE_CAPACITY` bounding ADULTS, with children
+extra. It is a real change and not a small one: more mouths per house at
+unchanged worker count, `GOLD_PER_RESIDENT` needing to stop paying
+children, and `test_closure`'s tables re-derived against a population
+half again as large. **It is deliberately not built here**, because it is
+an economy-scale decision rather than a consequence of marriage, and
+because Phase 6 is coherent and green without it.
+
+*What was NOT built.* The ghost feed says nothing about weddings or
+births yet — `feed.c` is client-side and the phase's sim work stands on
+its own. Kinship is not modelled at all: nobody has recorded parents, so
+nobody can marry a relative and nobody can inherit anything.
+
+**7 — households, wages and the treasury. DONE, WITH ONE KNOWN GAP.**
+Households of ten, fertility bounded by biology, a reserve of people
+with no roof, and gold that enters the world as taxed wages instead of
+being minted by housing. Save v36, snapshot v15, protocol 27. Fixture
+hash `e07bd51fd2d9ba87` → `86899f082c03924e`.
+
+*Built as one phase against advice.* Landing the economy first and the
+demography second would have kept the game playable throughout; a
+combined phase was chosen instead, and the cost was real — the suite
+went red in six places at once and two genuine bugs (below) hid inside
+that noise for a while.
+
+**The demography.** A house holds ten and is laid EMPTY, settled by
+`island_settle_house` from a hundred-place founder allowance and, after
+that, out of the reserve. Menopause at 60 and twelve months between
+births replace the child cap an earlier draft used: a quota answers
+"how many" with a number nobody can defend, a recovery period answers
+it with a rate. Children never leave home for want of a bed — a
+household may exceed its capacity while its own children are young —
+and an adult leaves when they marry, or when the house is over capacity
+and they are the oldest unmarried child.
+
+*The reserve is young couples with nowhere to live*, not homeless
+infants. It is FIFO on `reserve_since`, which never resets — not when a
+house is laid for somebody else and not when a migration carries them
+to another island. Somebody may take a roof ALONE and wait for a
+spouse, which is why settling returns 1 as legitimately as 2.
+
+*Emigration is the only bound on population.* Without it, eighteen
+children a woman with each daughter doing the same is roughly ninefold
+growth per generation and `MAX_RESIDENTS` is reached in two or three
+generations whatever the player does. After twenty-four months
+unhoused, somebody leaves — to another island of the player's first, to
+another player's second, and out of the world last.
+
+**The money.** `GOLD_PER_RESIDENT` is gone. A building earns its output
+valued at `faction_bid()`, pays `WAGE_PER_WORKER` a head, and the player
+taxes wages and profit at a rate set through `CMD_SET_TAX_RATE`. The
+treasury is the island's existing `RES_GOLD`, so trade income is
+untouched and only the SOURCE of gold changed.
+
+*Tax is levied monthly on an accumulated base, and that is correctness
+rather than flavour.* A single production cycle is a few coins, and a
+few coins times a tenth in integers is zero — an island of ten Fisher's
+Huts collected NOTHING until the base was summed over a month and
+divided once. Two earlier versions of this measured exactly zero
+revenue before the cause was found.
+
+*All four of `new-happiness-design.md`'s damping rules are built* and
+`tests/test_tax.c` asserts each one separately, including the one that
+document asks for by name: an island run into sustained unhappiness at
+the maximum rate recovers to full compliance in eighteen months.
+
+**THE KNOWN GAP: the island does not fund itself.** Measured against
+the faction's own ask prices, a village of twenty-four spends about
+2,950 gold a year on imports and collects about 430 in tax — a sevenfold
+shortfall that bankrupts a ten-thousand-gold treasury in four years, on
+every seed.
+
+The cause is not the tax rule; it is the labour supply. The working
+share is **13%** — two adults in a household of ten, less the third of
+her fertile life a mother spends pregnant, against an island that also
+feeds its reserve. At 13% nothing closes: Marshfolk project at 1.69
+against a wall of 1.00. `tests/test_closure.c` no longer asserts that
+the base tier feeds itself, because it does not; it now measures the
+SIZE of the gap and fails if it grows, which is a watchdog on a known
+imbalance rather than a guarantee.
+
+*The levers, in the order I would try them:* `WAGE_PER_WORKER` (2 is a
+guess and the wage base is what tax multiplies), the faction's bid/ask
+spread (an island importing most of its needs bleeds by construction),
+and `CONCEIVE_PERMILLE_PER_MONTH` (fewer, later children raise the
+working share directly). Letting the reserve work is explicitly NOT on
+the list — it was considered and rejected: it would make homelessness
+free, and it needs an island-wide unhappiness term that feeds the very
+loop §6 warns about.
+
+*Two bugs worth recording.* `island_settle_house` ASSIGNED `live + got`
+back over `pop_data.residents` instead of adding, which silently wrote a
+house of forty down to zero the first month it ran — the counts and the
+residents array are normally in step, and code that assumes they always
+are will one day meet a snapshot where they are not. And
+`residents_marry` kept a short form for tests with no `PopData` to
+offer, which quietly sent every cross-household couple to the reserve
+because with no counts there was never room anywhere; it was deleted
+rather than documented.
+
+*One good surprise.* Raising `HOUSE_CAPACITY` to ten spread every
+per-household bill over two-thirds more people, and the Wrights tier —
+declared import-dependent at Phase 6b — came back under the wall at
+0.86 on today's numbers. The tier that was rescued by a decision got
+rescued by arithmetic instead.
+
+**7b — work at twelve, and the house stays in the family. DONE.**
+Three changes, measured on the same seeds as Phase 7. No save, snapshot
+or protocol change: no field moved, only the ages and the rules that
+read them.
+
+*The eviction rule is gone, and it should never have been there.* Phase
+7's approved plan had adults leaving home ONLY on marriage. During the
+build a house on a two-house island reached twenty people against a
+capacity of ten — nobody could marry, because everyone under both roofs
+was a parent or a sibling — and `residents_leave_home` was added to
+push out the eldest unmarried child of an overfull house. That was a
+rule change made mid-implementation and recorded in a commit message
+rather than agreed. It is reverted.
+
+*Inheritance is what the overflow actually wanted.* A house's ELDERS are
+whoever was not born in it — the founding pair and any spouse who
+married in. While one lives the house is theirs and the children marry
+out. When the last is gone the eldest adult child born there inherits:
+they keep the house and bring a spouse INTO it, and capacity does not
+apply to that spouse. Without that exception a full family home could
+never take anybody's husband or wife, the heir would have to move out,
+and the line would end in the one house it was meant to continue.
+
+*Work at twelve, adulthood at eighteen.* `AGE_TEEN_YEARS` moved 13 → 12
+and the labour gate accepts `LIFE_TEEN`; marriage and fertility go on
+asking for `LIFE_ADULT`. Tying both to one constant was the single
+biggest thing holding the working share down — a household was two
+workers and eight dependants because nobody under eighteen could do
+anything. A worker eats a whole ration, which gives back part of the
+gain and is the honest arithmetic rather than the flattering one.
+
+**Measured, same seeds:**
+
+| | Phase 7 | Phase 7b |
+|---|---|---|
+| worker share, worst five years | 12-14% | **23-25%** |
+| worker share, lifetime | 17-19% | **39-44%** |
+| Marshfolk projected | 1.69 (over) | **0.98 (under)** |
+| Wrights projected | 2.19 | 1.19 |
+
+**The base tier feeds itself again**, at 0.98 against a wall of 1.00 —
+close, and meant to be: a founding village should spend nearly
+everything it has on staying alive. `test_closure` asserts a real
+guarantee once more instead of measuring the size of a gap.
+
+*What is still NOT measured: whether a built island funds itself.* The
+affordability probe builds a deliberately import-dependent village —
+three Fisher's Huts buying all its grain and both luxuries — and it
+still bankrupts in four years. That is expected of such an island at any
+working share, and it is the wrong fixture for the question. What
+changed is that self-sufficiency is now POSSIBLE where at Phase 7 it was
+arithmetically not, so an island that builds its chains need not import
+food at all. Proving it needs a fixture that lays the whole Marshfolk
+chain, which does not exist yet.
+
+*And the determinism fixture proves nothing about any of this.* It runs
+**2000 ticks — six and a half months**, so nobody in it ages out of
+infancy, marries, inherits or turns twelve. The hash did not move for
+Phase 7b at all, which is the same silent non-coverage this document
+records finding three times before. The fixture wants lengthening to at
+least a generation; that is its own change, because it moves the hash
+for a reason unrelated to whatever phase does it.
+
+**8 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent
 inputs, so no single shortage moves all of them.
 
-**8 — the wellbeing projection.** The six factors, per resident, floats,
+**9 — the wellbeing projection.** The six factors, per resident, floats,
 entirely above the sim — surfaced as a cast rather than a census.
 
 ## What this does not do
