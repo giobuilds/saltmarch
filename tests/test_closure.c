@@ -512,21 +512,22 @@ static void test_the_guard_bites(void)
  * for exactly this — so the year is the wrong statistic and the
  * five-year mean is the right one. Closure has to hold through a bad
  * decade, because a bad decade is when an island actually fails. */
-/* 0.13 SINCE LIFE_PLAN Phase 7, and it is now a WORKER fraction rather
+/* 0.24 SINCE LIFE_PLAN Phase 7b, and it is a WORKER fraction rather
  * than an adult one — the two stopped being the same number when the
- * reserve arrived. tests/test_ageing.c counts only people who are
- * grown, housed and not carrying a child, because only those three
- * things together staff a supply chain.
+ * reserve arrived. tests/test_ageing.c counts only people who are of
+ * working age, housed and not carrying a child, because only those
+ * three things together staff a supply chain.
  *
- * Where it went: a household is two parents and about eight minors,
- * the mother is pregnant a third of her fertile life, and anybody with
- * no roof is idle. Two workers in a house of ten, less her pregnancies,
- * against an island that also feeds its reserve.
+ * IT WAS 0.13 AT PHASE 7 AND NOTHING CLOSED. Two things doubled it:
+ * work begins at twelve rather than eighteen, so a household's youths
+ * are hands instead of dependants; and grown children are no longer
+ * evicted from an overfull house, so a family home keeps its unmarried
+ * adults instead of pushing them into the reserve to idle.
  *
- * NO TIER CLOSES AT THIS NUMBER, and that is the finding rather than a
- * failure of the test — see the assertions below, which now measure the
- * SIZE of the gap the marketplace has to cover. */
-#define ADULT_FRACTION    0.13
+ * The base tier closes again at this number — barely, at 0.98 against a
+ * wall of 1.00, which is where a founding village ought to sit. The two
+ * tiers above it do not, and are import-dependent by decision. */
+#define ADULT_FRACTION    0.24
 #define NON_ADULT_RATION  0.50
 
 static double projected(const TierBill *b)
@@ -553,36 +554,30 @@ static void test_the_headroom_is_for_something(void)
                projected(&b) >= THE_WALL ? "   <-- OVER THE WALL" : "");
     }
 
-    /* NOTHING CLOSES ANY MORE, AND THIS IS WHAT THE TEST NOW GUARDS.
+    /* THE BASE TIER FEEDS ITSELF AGAIN, and this assertion is a real
+     * guarantee once more rather than a watchdog on a known imbalance.
      *
-     * Through Phase 6b the base tier had to feed itself from home and
-     * did, at 0.89 against a wall of 1.00. Phase 7 put eight children in
-     * every household and a reserve beside it, and the working share
-     * fell to 13% — Marshfolk project at 1.69. An island cannot staff
-     * its own cottages, full stop.
+     * It was 0.89 through Phase 6b, 1.69 at Phase 7 — over the wall,
+     * with the test reduced to measuring the size of the gap — and 0.98
+     * now. Lowering the working age to twelve and letting a family keep
+     * its grown children put the opening tier back inside its own
+     * means.
      *
-     * That is a DESIGN POSITION now rather than a defect: the
-     * marketplace is meant to cover what an island cannot make, and the
-     * treasury is meant to pay for it. So the assertion changed from
-     * "the base tier closes" to "we know how big the gap is" — because
-     * a number nobody is watching is how the last two phases each
-     * drifted a tier over the wall without noticing.
-     *
-     * THE GAP IS NOT CURRENTLY AFFORDABLE. Measured against the
-     * faction's own ask prices, an island of twenty-four bankrupts a
-     * ten-thousand-gold treasury in four years, at roughly eight times
-     * the tax it collects. This bound is therefore a WATCHDOG on a
-     * known-broken balance, set just above what was measured so that
-     * any change which makes it worse fails loudly. */
+     * 0.98 IS CLOSE AND IS MEANT TO BE. A founding village should spend
+     * almost everything it has on staying alive; the margin is what
+     * pays for warehouses, roads and the first boat, and there should
+     * not be much of it. But it is under the line, which means an
+     * island that builds its chains need not import food at all — and
+     * that is the difference between a hard game and an impossible
+     * one. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
         char     msg[200];
 
         snprintf(msg, sizeof(msg),
-                 "Marshfolk need %.2f workers per worker they have — the "
-                 "marketplace covers the rest, by decision",
-                 projected(&m));
-        CHECK(projected(&m) >= THE_WALL && projected(&m) < 2.0, msg);
+                 "Marshfolk feed themselves through the worst stretch "
+                 "(%.2f, wall %.2f)", projected(&m), THE_WALL);
+        CHECK(projected(&m) < THE_WALL, msg);
     }
 
     /* WRIGHTS BECAME IMPORT-DEPENDENT AT PHASE 6b, BY DECISION — the

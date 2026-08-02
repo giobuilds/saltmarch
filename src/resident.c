@@ -223,13 +223,20 @@ static void despawn_one_for_home(Resident r[], int count, int home_idx)
         }
 }
 
+/* Twelve or older and not yet retired. */
+static int of_working_age(const Resident *r)
+{
+    int stage = resident_stage(r);
+    return stage == LIFE_TEEN || stage == LIFE_ADULT;
+}
+
 int residents_adults_at(const Resident r[], int count, int home_idx)
 {
     int i, n = 0;
     for (i = 0; i < count; i++)
         if (r[i].active && r[i].home_idx == home_idx
             && r[i].pregnancy == 0                 /* carrying: not free */
-            && resident_stage(&r[i]) == LIFE_ADULT) n++;
+            && of_working_age(&r[i])) n++;
     return n;
 }
 
@@ -239,8 +246,13 @@ int residents_mouths_at(const Resident r[], int count, int home_idx)
 
     for (i = 0; i < count; i++) {
         if (!r[i].active || r[i].home_idx != home_idx) continue;
-        if (resident_stage(&r[i]) == LIFE_ADULT) adults++;
-        else                                     others++;
+        /* A WHOLE RATION FOR ANYONE WHO WORKS (Phase 7b), which now
+         * includes a twelve-year-old. You eat what you burn, and a
+         * youth doing a shift is not a half-ration dependant. This
+         * gives back part of what the lower working age wins, which is
+         * the honest arithmetic rather than the flattering one. */
+        if (of_working_age(&r[i])) adults++;
+        else                       others++;
     }
     /* Rounded up: half of three is two here, not one. A shortage should
      * cost the island, not be quietly forgiven by integer division. */
@@ -340,7 +352,41 @@ static int siblings(const Resident *a, const Resident *b)
  *
  * Returns the house they would share, or RESIDENT_HOMELESS when the
  * answer is the reserve. There is no longer a refusal. */
-static int where_they_would_live(const Resident r[], int a, int b,
+/* ---- inheritance (LIFE_PLAN Phase 7b) ----------------------
+ * A HOUSE IS A LINE, NOT A TENANCY. When the couple who founded a
+ * household are dead, the eldest of their children still living there
+ * keeps the house and brings a spouse INTO it; the younger ones marry
+ * out. That is what makes the hundred founder places buy a hundred
+ * lines rather than a hundred marriages, and it is why an unmarried
+ * sibling still under the roof is a member of a household rather than
+ * something the model has to dispose of.
+ *
+ * THE ELDERS ARE WHOEVER WAS NOT BORN HERE — the founding pair, and any
+ * spouse who married in. While one of them is alive the house is
+ * theirs and the children marry out as normal. Only when the last of
+ * them is gone does the eldest child born here become the heir.
+ *
+ * Returns that heir's index, or -1 while the house still has an elder
+ * in it, or has nobody born there. */
+int residents_heir_of(const Resident r[], int count, int home)
+{
+    int i, heir = -1;
+
+    if (home < 0) return -1;
+
+    for (i = 0; i < count; i++) {
+        if (!r[i].active || r[i].home_idx != home) continue;
+        if (r[i].birth_house != home) return -1;      /* an elder lives */
+    }
+    for (i = 0; i < count; i++) {
+        if (!r[i].active || r[i].home_idx != home) continue;
+        if (resident_stage(&r[i]) != LIFE_ADULT) continue;
+        if (heir < 0 || r[i].age_months > r[heir].age_months) heir = i;
+    }
+    return heir;
+}
+
+static int where_they_would_live(const Resident r[], int count, int a, int b,
                                  const PopData pop_data[], int building_count)
 {
     int ha = r[a].home_idx, hb = r[b].home_idx;
@@ -349,9 +395,28 @@ static int where_they_would_live(const Resident r[], int a, int b,
         return RESIDENT_HOMELESS;
     if (ha == hb) return ha;                      /* already housemates */
 
-    /* One of them has a roof with room in it. Prefer the house that
-     * has room; if both do, the lower index, so the choice does not
-     * depend on which of the pair the scan reached first. */
+    /* THE HEIR KEEPS THE HOUSE, AND CAPACITY DOES NOT APPLY TO THEIR
+     * SPOUSE. This is the one exception to "capacity is enforced
+     * against arrivals", and without it inheritance does not work: a
+     * family home with a dozen people in it could never take anybody's
+     * husband or wife, so the heir would have to move out and the line
+     * would end in the one house it was supposed to continue in.
+     *
+     * Both checked; the lower index wins if both are heirs, so the
+     * outcome does not depend on which of the pair the scan reached
+     * first. */
+    {
+        int ah = residents_heir_of(r, count, ha);
+        int bh = residents_heir_of(r, count, hb);
+
+        if (ah == a && bh == b) return ha < hb ? ha : hb;
+        if (ah == a) return ha;
+        if (bh == b) return hb;
+    }
+
+    /* Otherwise: one of them has a roof with room in it. Prefer the
+     * house that has room; if both do, the lower index, so the choice
+     * does not depend on which of the pair the scan reached first. */
     if (hb >= 0 && hb < building_count && pop_data[hb].active
         && pop_data[hb].residents < HOUSE_CAPACITY
         && (ha == RESIDENT_HOMELESS || hb < ha))
@@ -404,7 +469,8 @@ void residents_marry(Resident r[], int count, PopData pop_data[],
             if (siblings(&r[i], &r[j])) continue;
             if (pass == 0 && r[j].home_idx == r[i].home_idx) continue;
 
-            home = where_they_would_live(r, i, j, pop_data, building_count);
+            home = where_they_would_live(r, count, i, j, pop_data,
+                                         building_count);
 
             /* Salted with BOTH ids and the tick. Both, so the question
              * is about this pair rather than about whoever happens to
@@ -550,39 +616,6 @@ int residents_settle_house(Resident r[], int count, int home_idx)
         housed = 2;
     }
     return housed;
-}
-
-void residents_leave_home(Resident r[], int count, PopData pop_data[],
-                          int building_count, uint64_t tick)
-{
-    int h;
-
-    for (h = 0; h < building_count; h++) {
-        if (!pop_data[h].active) continue;
-
-        /* One a month at most. Emptying a crowded house in a single
-         * tick would put a whole generation into the reserve on the
-         * same clock, and they would then all emigrate together — the
-         * cohort failure this model spends so much effort avoiding. */
-        while (pop_data[h].residents > HOUSE_CAPACITY) {
-            int i, oldest = -1;
-
-            for (i = 0; i < count; i++) {
-                if (!r[i].active || r[i].home_idx != h) continue;
-                if (r[i].spouse >= 0) continue;              /* a household */
-                if (resident_stage(&r[i]) != LIFE_ADULT) continue;
-                if (r[i].pregnancy > 0) continue;            /* not now */
-                if (oldest < 0 || r[i].age_months > r[oldest].age_months)
-                    oldest = i;
-            }
-            if (oldest < 0) break;      /* nobody who may be asked to go */
-
-            r[oldest].home_idx      = RESIDENT_HOMELESS;
-            r[oldest].reserve_since = (int32_t)tick;
-            pop_data[h].residents--;
-            break;
-        }
-    }
 }
 
 int residents_emigrate(Resident r[], int count, uint64_t tick,

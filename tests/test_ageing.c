@@ -76,15 +76,23 @@ static void test_only_adults_work(void)
     r[4].age_months = 70 * MONTHS_PER_YEAR;   /* elder  */
     r[5].age_months = 19 * MONTHS_PER_YEAR;   /* adult  */
 
-    CHECK(residents_adults_at(r, 6, 0) == 3,
-          "three of six are of working age");
+    /* FOUR, NOT THREE, SINCE PHASE 7b: the fifteen-year-old works now.
+     * Twelve is where a youth starts earning and eighteen is where they
+     * may marry, and untangling those two ages is what doubled the
+     * island's working share. The five-year-old and the seventy-year-old
+     * still do not. */
+    CHECK(residents_adults_at(r, 6, 0) == 4,
+          "four of six are of working age — the youth among them");
     CHECK(residents_adults_at(r, 6, 1) == 0,
           "and none of them live next door");
 
     /* Rations: an adult a whole one, everybody else a half, rounded up
      * so a house of children is never fed for free. */
-    CHECK(residents_mouths_at(r, 6, 0) == 3 + 2,
-          "six people eat five rations — halves round up");
+    /* A whole ration for anyone who works, a half for those who do not.
+     * Four workers and two dependants is five, and the halves round up
+     * so nobody is fed for free. */
+    CHECK(residents_mouths_at(r, 6, 0) == 4 + 1,
+          "six people eat five rations — a worker's is whole");
 
     {
         Resident one[1];
@@ -242,7 +250,13 @@ static int adult_fraction_for(uint32_t seed, int *sustained, int *mean)
                  * really has. */
                 if (r->home_idx == RESIDENT_HOMELESS) continue;
                 if (r->pregnancy > 0) continue;
-                if (resident_stage(r) == LIFE_ADULT) ad++;
+                /* A WORKER IS TWELVE OR OLDER (Phase 7b) — youths
+                 * included. Counting only LIFE_ADULT here is how the
+                 * first run after the split reported no improvement at
+                 * all: the model had changed and the measurement had
+                 * not. */
+                if (resident_stage(r) == LIFE_TEEN ||
+                    resident_stage(r) == LIFE_ADULT) ad++;
             }
             if (pop < 4 || n >= SAMPLE_CAP) continue;
             hist[n] = ad * 100 / pop;
@@ -309,11 +323,11 @@ static void test_the_adult_fraction(void)
      *
      * Asserted a little below the measured value, not at it, so an
      * unluckier seed does not fail a number that has not moved. */
-    CHECK(worst >= 10,
-          "through the years it is raising children, roughly an eighth "
-          "of the island is at work");
-    CHECK(mean_sum / measured >= 15,
-          "and a sixth of it is, taken over a lifetime");
+    CHECK(worst >= 20,
+          "through the years it is raising children, a quarter of the "
+          "island is at work");
+    CHECK(mean_sum / measured >= 35,
+          "and two fifths of it is, taken over a lifetime");
 }
 
 int main(void)

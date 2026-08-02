@@ -370,15 +370,6 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
             }
         }
 
-        /* ---- and the grown children of a crowded house go -----
-         * After marriage, so somebody who found a roof of their own
-         * this month is not also asked to leave. This is what makes
-         * HOUSE_CAPACITY mean anything: children are never turned away
-         * for want of a bed, so without it a house on an island with
-         * nobody to marry just kept filling. */
-        residents_leave_home(isl->residents, isl->resident_count,
-                             isl->pop_data, isl->building_count, tick);
-
         /* ---- roofs with room are offered the reserve -------
          * Every month, not only when a house is laid: a house that
          * stood empty for want of settlers fills as the island grows

@@ -843,6 +843,69 @@ declared import-dependent at Phase 6b — came back under the wall at
 0.86 on today's numbers. The tier that was rescued by a decision got
 rescued by arithmetic instead.
 
+**7b — work at twelve, and the house stays in the family. DONE.**
+Three changes, measured on the same seeds as Phase 7. No save, snapshot
+or protocol change: no field moved, only the ages and the rules that
+read them.
+
+*The eviction rule is gone, and it should never have been there.* Phase
+7's approved plan had adults leaving home ONLY on marriage. During the
+build a house on a two-house island reached twenty people against a
+capacity of ten — nobody could marry, because everyone under both roofs
+was a parent or a sibling — and `residents_leave_home` was added to
+push out the eldest unmarried child of an overfull house. That was a
+rule change made mid-implementation and recorded in a commit message
+rather than agreed. It is reverted.
+
+*Inheritance is what the overflow actually wanted.* A house's ELDERS are
+whoever was not born in it — the founding pair and any spouse who
+married in. While one lives the house is theirs and the children marry
+out. When the last is gone the eldest adult child born there inherits:
+they keep the house and bring a spouse INTO it, and capacity does not
+apply to that spouse. Without that exception a full family home could
+never take anybody's husband or wife, the heir would have to move out,
+and the line would end in the one house it was meant to continue.
+
+*Work at twelve, adulthood at eighteen.* `AGE_TEEN_YEARS` moved 13 → 12
+and the labour gate accepts `LIFE_TEEN`; marriage and fertility go on
+asking for `LIFE_ADULT`. Tying both to one constant was the single
+biggest thing holding the working share down — a household was two
+workers and eight dependants because nobody under eighteen could do
+anything. A worker eats a whole ration, which gives back part of the
+gain and is the honest arithmetic rather than the flattering one.
+
+**Measured, same seeds:**
+
+| | Phase 7 | Phase 7b |
+|---|---|---|
+| worker share, worst five years | 12-14% | **23-25%** |
+| worker share, lifetime | 17-19% | **39-44%** |
+| Marshfolk projected | 1.69 (over) | **0.98 (under)** |
+| Wrights projected | 2.19 | 1.19 |
+
+**The base tier feeds itself again**, at 0.98 against a wall of 1.00 —
+close, and meant to be: a founding village should spend nearly
+everything it has on staying alive. `test_closure` asserts a real
+guarantee once more instead of measuring the size of a gap.
+
+*What is still NOT measured: whether a built island funds itself.* The
+affordability probe builds a deliberately import-dependent village —
+three Fisher's Huts buying all its grain and both luxuries — and it
+still bankrupts in four years. That is expected of such an island at any
+working share, and it is the wrong fixture for the question. What
+changed is that self-sufficiency is now POSSIBLE where at Phase 7 it was
+arithmetically not, so an island that builds its chains need not import
+food at all. Proving it needs a fixture that lays the whole Marshfolk
+chain, which does not exist yet.
+
+*And the determinism fixture proves nothing about any of this.* It runs
+**2000 ticks — six and a half months**, so nobody in it ages out of
+infancy, marries, inherits or turns twelve. The hash did not move for
+Phase 7b at all, which is the same silent non-coverage this document
+records finding three times before. The fixture wants lengthening to at
+least a generation; that is its own change, because it moves the hash
+for a reason unrelated to whatever phase does it.
+
 **8 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent
 inputs, so no single shortage moves all of them.

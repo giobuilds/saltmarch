@@ -62,8 +62,23 @@ typedef enum {
     LIFE_STAGE_COUNT
 } LifeStage;
 
-#define AGE_TEEN_YEARS     13
-#define AGE_ADULT_YEARS    18
+/* ---- when a life turns (LIFE_PLAN Phase 7b) ----------------
+ * WORKING AND ADULTHOOD ARE TWO DIFFERENT AGES, and tying them to one
+ * constant was the single biggest thing holding the working share down.
+ * A household was two workers and eight dependants because nobody under
+ * eighteen could do anything at all.
+ *
+ * Twelve is where a youth starts earning — old enough to haul, mend and
+ * tend, which is what a marsh village actually asked of its children —
+ * and eighteen stays what it was for everything that makes somebody an
+ * adult: marriage, and bearing children. A twelve-year-old works. They
+ * do not marry, and they do not become a parent.
+ *
+ * So LIFE_TEEN is the WORKING YOUTH stage now rather than a stage
+ * nothing read, and the labour gate accepts it while marriage and
+ * fertility go on asking for LIFE_ADULT. */
+#define AGE_TEEN_YEARS     12   /* starts work                        */
+#define AGE_ADULT_YEARS    18   /* may marry, may bear children        */
 #define AGE_RETIRED_YEARS  65
 
 /* Which half of a couple somebody is. Stored rather than derived from
@@ -240,9 +255,13 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
 /* How many residents of `home_idx` are old enough to work AND free to.
  *
  * THIS IS WHAT GATES LABOUR, and it does so by the simplest available
- * route: agents_sync spawns one agent per ADULT rather than per
- * resident, so a child has no agent, therefore no job, therefore no
- * shift. Nothing in agent.c or island.c had to learn what an age is.
+ * route: agents_sync spawns one agent per WORKER rather than per
+ * resident, so a small child has no agent, therefore no job, therefore
+ * no shift. Nothing in agent.c or island.c had to learn what an age is.
+ *
+ * A WORKER IS TWELVE OR OLDER AND NOT YET RETIRED (Phase 7b) — youths
+ * included. The name is kept for the callers' sake; what it counts is
+ * hands, not adulthood.
  *
  * A WOMAN CARRYING A CHILD IS NOT COUNTED (Phase 6b), by the same
  * route and for the same reason: she loses her agent, so she keeps no
@@ -323,25 +342,20 @@ int residents_reserve_ration(const Resident residents[], int count);
  * roof; they are simply not yet a household. */
 int residents_settle_house(Resident residents[], int count, int home_idx);
 
-/* Grown children move out of a house that is over capacity.
+/* Who inherits `home`, or -1 (LIFE_PLAN Phase 7b).
  *
- * WITHOUT THIS, CAPACITY MEANS NOTHING. Children are never turned away
- * for want of a bed and only leave home when they marry — so on an
- * island with few houses, where there is nobody unrelated to marry,
- * they simply accumulate. Measured before this existed: two houses
- * holding twenty people each against a capacity of ten.
+ * A HOUSE IS A LINE, NOT A TENANCY. The elders of a house are whoever
+ * was NOT born in it — the founding pair, and any spouse who married
+ * in. While one of them lives the house is theirs and the children
+ * marry out as normal. When the last is gone, the eldest adult child
+ * born there inherits: they keep the house and bring a spouse INTO it,
+ * and their younger siblings marry out.
  *
- * The rule is the narrowest one that fixes it. Only UNMARRIED ADULTS
- * leave, oldest first, and only from a house that is over capacity. A
- * minor is never evicted, and neither is a parent — the household
- * stands; it is the grown children who go and look for a roof.
- *
- * They enter the reserve with `tick` as their `reserve_since`, so the
- * clock they will eventually emigrate on starts the month they leave
- * home rather than the month they were born. */
-void residents_leave_home(Resident residents[], int count,
-                          PopData pop_data[], int building_count,
-                          uint64_t tick);
+ * That is what makes a hundred founder places buy a hundred LINES
+ * rather than a hundred marriages, and it is why an unmarried sibling
+ * still under the roof is part of a household rather than something the
+ * model has to dispose of. */
+int residents_heir_of(const Resident residents[], int count, int home);
 
 /* Everybody who has waited longer than RESERVE_TOLERANCE_MONTHS leaves.
  *

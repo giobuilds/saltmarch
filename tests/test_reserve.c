@@ -258,41 +258,39 @@ static void test_the_allowance_is_per_house(void)
     game_free(gs);
 }
 
-/* ---- 5. capacity is enforced against grown children -------- */
-static void test_grown_children_move_out(void)
+/* ---- 5. the family home stays in the family ---------------- */
+static void test_inheritance(void)
 {
-    Resident r[16];
+    Resident r[6];
     PopData  pop[2];
-    int      i, n = HOUSE_CAPACITY + 3;
+    int      i;
 
-    printf("\n=== and a crowded house sends its grown children out ===\n");
+    printf("\n=== and the house passes to the eldest ===\n");
 
     memset(pop, 0, sizeof(pop));
-    pop[0].active = 1; pop[0].residents = n;
+    pop[0].active = 1; pop[0].residents = 4;
 
-    /* Two married parents and a crowd of grown, unmarried children. */
-    for (i = 0; i < n; i++) {
+    /* A founding couple and two grown children born under this roof. */
+    for (i = 0; i < 4; i++) {
         waiting(&r[i], (uint32_t)(i + 1), i % 2, 0, 0);
-        r[i].home_idx      = 0;
+        r[i].home_idx = 0;
         r[i].reserve_since = 0;
-        r[i].age_months    = (int32_t)((20 + i) * MONTHS_PER_YEAR);
     }
-    r[0].spouse = 1; r[1].spouse = 0;      /* the parents */
-    r[0].birth_house = -1; r[1].birth_house = -1;
+    r[0].birth_house = -1; r[1].birth_house = -1;   /* the parents  */
+    r[0].spouse = 1; r[1].spouse = 0;
+    r[2].age_months = 30 * MONTHS_PER_YEAR;         /* the elder    */
+    r[3].age_months = 22 * MONTHS_PER_YEAR;
 
-    residents_leave_home(r, n, pop, 1, 9000);
-    CHECK(pop[0].residents == n - 1,
-          "one grown child leaves — one a month, not a whole generation");
-    CHECK(r[0].home_idx == 0 && r[1].home_idx == 0,
-          "and never a parent: the household stands");
+    CHECK(residents_heir_of(r, 4, 0) < 0,
+          "while a parent lives there is no heir — the house is theirs");
 
-    /* Run it until the house is back within capacity. */
-    for (i = 0; i < 20 && pop[0].residents > HOUSE_CAPACITY; i++)
-        residents_leave_home(r, n, pop, 1, (uint64_t)(9000 + i * 300));
-    CHECK(pop[0].residents == HOUSE_CAPACITY,
-          "and it stops exactly at capacity");
-    CHECK(residents_reserve_count(r, n) == 3,
-          "the three who left are waiting for a roof");
+    /* Both parents die. */
+    r[0].active = 0; r[1].active = 0;
+    CHECK(residents_heir_of(r, 4, 0) == 2,
+          "and when they are gone the eldest child born here inherits");
+
+    /* A younger sibling does not. */
+    CHECK(residents_heir_of(r, 4, 0) != 3, "not a younger one");
 }
 
 int main(void)
@@ -307,7 +305,7 @@ int main(void)
     test_emigration();
     test_relocation_still_vacates();
     test_the_allowance_is_per_house();
-    test_grown_children_move_out();
+    test_inheritance();
 
     printf("\n%s\n", failures ? "FAILED" : "PASSED");
     return failures ? 1 : 0;
