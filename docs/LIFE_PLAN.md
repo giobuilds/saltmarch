@@ -1,6 +1,6 @@
 # Residents, lives and labour — the design
 
-> Status: **Phases 1-3 done; Phase 4 next.** The calendar is settled — see
+> Status: **Phases 1-4 done; Phase 5 next (and blocked — see §4).** The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -499,11 +499,33 @@ island has no buildings at all. That is the same silent non-coverage
 found three times in `replay.c`'s fixture, and it took the same fix: lay
 a village, and fail rather than shrug if it cannot be laid.
 
-**4 — the calendar.** The needs tick becomes the month; season, year and
-the cosmetic day are multiples of it. Read-only to begin with: a date on
-screen and seasons as flavour. **The shift retune (60+15 → 24+6) lands
-here**, so one work cycle is one month before anything depends on the
-alignment.
+**4 — the calendar. DONE.** `calendar.c` turns a tick into a date and
+**stores nothing** — a date is a pure function of `sim_tick_no`, so the
+calendar added no hashed state, no snapshot field and no version of its
+own. Save v35 moved for the shift retune alone.
+
+*One clock, and now it really is one.* `CALENDAR_MONTH_TICKS` is written
+in terms of the needs interval rather than as 300, so the two cannot
+drift apart. The shift durations went 60+15 → **24+6**, which is 30
+seconds, which is one month, which is one needs tick: a resident works
+one shift and rests once per month. That wart predated this whole
+document and was why an island's real output sat at about four fifths of
+its headcount. `tests/test_calendar.c` asserts the alignment against the
+constants the sim actually uses, not against 300.
+
+*Twelve months, four seasons, six-minute years,* and the day is
+decoration that nothing is ever decided on. A 70-year life is seven
+hours of play — people outlive sessions, which is the point.
+
+*Looked at, and the first version was wrong.* The date box was placed
+under the population readout at y=38..60 — straight through the vitals
+strip, which starts at y=44 against the same right edge. Both boxes drew
+correctly; the composition did not, and no assertion would ever have
+caught it. It sits beside `Pop:` on the same row now. What the
+screenshot could NOT show is the date advancing: a screenshot run burns
+under a second of wall clock, so only ten ticks pass. Advancement is
+covered by assertion — every tick of a month and a full year — not by
+the picture.
 
 **5 — ageing, birth and death.** Stages gate work. **Blocked on §4's
 third lever**: as measured at Phase 2, Merchants project exactly onto

@@ -10,6 +10,7 @@
  */
 
 #include "render.h"
+#include "calendar.h"
 #include "game.h"
 #include "building.h"
 #include "fonts.h"
@@ -515,6 +516,53 @@ void render_population(SDL_Renderer *renderer,
     SDL_RenderRect(renderer, &bg);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     font_draw_text(renderer, FONT_NORMAL, buf, screen_w-105, 13, col);
+}
+
+/* ---- render_date -----------------------------------------
+ * The date, BESIDE the population box on the same row.
+ *
+ * It was under it in the first version, which put it at y=38..60 —
+ * straight through the vitals strip, which starts at y=44 and is 300
+ * wide against the same right edge. Found by taking a screenshot and
+ * looking at it, which is the only way that class of defect is ever
+ * found: both boxes drew correctly and the composition did not.
+ *
+ * A pure function of the sim tick — see calendar.h. Nothing is stored,
+ * nothing is hashed, and the tick is the one the frame's snapshot was
+ * drawn from, so the date on screen cannot disagree with the world the
+ * rest of the frame is showing.
+ *
+ * The season is drawn beside the date rather than under it: it changes
+ * four times a year and a player wants it at a glance, but it is not
+ * worth a row of its own on a screen this crowded. */
+void render_date(SDL_Renderer *renderer, uint64_t tick, int screen_w)
+{
+    Calendar  c;
+    char      buf[48];
+    SDL_Color col = { 220, 210, 180, 255 };
+    /* Pop sits at screen_w-110, 100 wide, y=10, h=24. This shares that
+     * row and leaves an 8px gap, so the two read as one readout. */
+    SDL_FRect bg  = { (float)(screen_w - 298), 10.0f, 180.0f, 24.0f };
+
+    calendar_from_tick(tick, &c);
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 20, 16, 10, 200);
+    SDL_RenderFillRect(renderer, &bg);
+    SDL_SetRenderDrawColor(renderer, 90, 75, 45, 180);
+    SDL_RenderRect(renderer, &bg);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    SDL_snprintf(buf, sizeof(buf), "%s %d, Yr %d",
+                 calendar_month_name(c.month), c.day, c.year);
+    font_draw_text(renderer, FONT_SMALL, buf, screen_w - 293, 15, col);
+
+    {
+        /* Dimmer than the date: it is context, not the reading. */
+        SDL_Color scol = { 150, 165, 140, 255 };
+        font_draw_text(renderer, FONT_SMALL, calendar_season_name(c.season),
+                       screen_w - 172, 15, scol);
+    }
 }
 
 /* ---- render_agents ---------------------------------------

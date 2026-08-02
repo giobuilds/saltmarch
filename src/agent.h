@@ -46,8 +46,19 @@
 
 #define AGENT_SPEED_ROAD     3.0f   /* tiles/sec while on a road waypoint */
 #define AGENT_SPEED_OFFROAD  1.0f   /* tiles/sec for the home/work "last mile" */
-#define AGENT_SHIFT_DURATION 60.0f  /* seconds spent AGENT_WORKING per shift */
-#define AGENT_REST_DURATION  15.0f  /* seconds spent AGENT_IDLE_HOME before recommuting */
+/* ---- one work cycle is one month (LIFE_PLAN Phase 4) ------
+ * These were 60 and 15, which is a 75-second cycle beating against a
+ * 30-second needs tick for no reason anybody chose — two unrelated
+ * periods drifting past each other, a wart that predates the calendar.
+ * It is also why an island's real output was about four fifths of its
+ * headcount: shifts and rest did not divide into the interval that
+ * decides whether anyone ate.
+ *
+ * 24 + 6 is 30 seconds, which is CALENDAR_MONTH_TICKS, which is one
+ * needs tick. A resident now works one shift and rests once per month,
+ * and every clock in the game is the same clock. */
+#define AGENT_SHIFT_DURATION 24.0f  /* seconds spent AGENT_WORKING per shift */
+#define AGENT_REST_DURATION   6.0f  /* seconds spent AGENT_IDLE_HOME before recommuting */
 #define AGENT_ASSIGN_INTERVAL 3.0f  /* seconds between job-assignment passes */
 
 typedef enum {

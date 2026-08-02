@@ -126,6 +126,7 @@ set(SALTMARCH_SIM_SOURCES
     src/resource.c
     src/population.c
     src/resident.c
+    src/calendar.c
     src/connectivity.c
     src/agent.c
     src/island.c

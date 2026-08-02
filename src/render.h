@@ -42,6 +42,11 @@ void render_resources(SDL_Renderer *renderer,
                       const Stockpile *s);
 
 /* Phase 5: population counter top-right */
+/* The date, drawn under the population box (LIFE_PLAN Phase 4).
+ * `tick` is the sim tick the frame's snapshot was taken at, so the date
+ * cannot disagree with the world drawn around it. */
+void render_date(SDL_Renderer *renderer, uint64_t tick, int screen_w);
+
 void render_population(SDL_Renderer *renderer,
                        int total_pop,
                        int screen_w);

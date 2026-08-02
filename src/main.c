@@ -1201,6 +1201,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                       pop_total(isl->pop_data, isl->building_count),
                       SCREEN_W);
 
+    /* LIFE_PLAN Phase 4: the date, from the tick and nothing else. */
+    render_date(app->r, gs->sim_tick_no, SCREEN_W);
+
     ui_draw(app->r, &app->hud_list, &app->hud,
             gs->input.logical_x, gs->input.logical_y);
 

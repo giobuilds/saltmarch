@@ -34,6 +34,7 @@
 #include "population.h"
 #include "building.h"
 #include "agent.h"   /* MAX_AGENTS: one agent per resident, see below */
+#include "calendar.h" /* MONTHS_PER_YEAR: an age is in months */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -45,11 +46,10 @@
  * now"). */
 #define MAX_RESIDENTS MAX_AGENTS
 
-/* Months, because a month is the needs tick and the needs tick is what
- * everything in this economy already runs on (LIFE_PLAN, "The
- * calendar"). Phase 4 makes that official; storing months now means the
- * save format does not move again when it does. */
-#define MONTHS_PER_YEAR 12
+/* Ages are in MONTHS, and a month is one needs tick — see calendar.h,
+ * which owns that definition since Phase 4 made it official. Phase 3
+ * stored months in advance precisely so this format would not move
+ * again when the calendar arrived, and it did not. */
 
 /* The four stages. DERIVED from age rather than stored: one number
  * cannot disagree with itself, and a stage field would be a second
