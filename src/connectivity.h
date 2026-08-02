@@ -21,7 +21,12 @@ typedef struct { int r, c; } Pt;
 /* Recomputes Building.connected for every active building in
  * `buildings[0..count)`. Called once per frame from game_update(),
  * before anything reads the field. */
-void connectivity_update(Building buildings[], int count);
+/* `sig` caches a signature of the inputs; when nothing that decides
+ * reachability has changed, the flood fill is skipped and every
+ * `connected` keeps the value it already had. Derived from the
+ * buildings themselves, so it cannot go stale the way an invalidation
+ * flag can. Pass a zeroed uint32_t to force the first pass. */
+void connectivity_update(Building buildings[], int count, uint32_t *sig);
 
 /* ---- Phase 5: point-to-point pathfinding ----------------
  * Reuses the same road_grid connectivity_update() just built. A

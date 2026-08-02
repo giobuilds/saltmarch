@@ -6,14 +6,15 @@
 
 /* ---- Sync: keep agents[] matching pop_data[].residents -------- */
 
-static int count_live_agents_for_home(const Agent agents[], int agent_count,
-                                      int home_idx)
+void agents_tally(const Agent agents[], int agent_count, int building_count,
+                  int out[])
 {
-    int i, n = 0;
+    int i;
+    for (i = 0; i < building_count; i++) out[i] = 0;
     for (i = 0; i < agent_count; i++)
-        if (agents[i].active && agents[i].home_idx == home_idx)
-            n++;
-    return n;
+        if (agents[i].active && agents[i].home_idx >= 0
+            && agents[i].home_idx < building_count)
+            out[agents[i].home_idx]++;
 }
 
 static int find_free_agent_slot(Agent agents[], int *agent_count)
@@ -80,9 +81,8 @@ static void despawn_one_agent_for_home(Agent agents[], int agent_count,
 
 void agents_sync(Agent agents[], int *agent_count,
                  const Building buildings[], const PopData pop_data[],
-                 int building_count,
-                 int (*adults_at)(const void *ctx, int house_idx),
-                 const void *ctx)
+                 int building_count, const int workers[],
+                 int live_agents[])
 {
     int i;
 
@@ -95,13 +95,13 @@ void agents_sync(Agent agents[], int *agent_count,
         if (!buildings[i].active || !pop_is_house_type(buildings[i].type)) continue;
         if (!pop_data[i].active) continue;
 
-        live   = count_live_agents_for_home(agents, *agent_count, i);
+        live   = live_agents[i];
 
         /* ONE AGENT PER ADULT, not per resident (LIFE_PLAN Phase 5).
          * A child has no agent, so it never claims a workplace and
          * never takes a shift — the labour gate is this line, and
          * nothing else in this file needed to know why. */
-        target = adults_at ? adults_at(ctx, i) : pop_data[i].residents;
+        target = workers ? workers[i] : pop_data[i].residents;
 
         for (k = live; k < target; k++)
             spawn_agent(agents, agent_count, i, buildings);

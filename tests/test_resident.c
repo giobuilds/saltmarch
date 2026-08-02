@@ -279,7 +279,8 @@ static void test_sync_tracks_the_houses(void)
      *
      * The first call therefore creates NOBODY, which is the assertion:
      * an empty house with a count on it stays empty. */
-    residents_sync(r, &count, &next, b, p, 1, 12345u);
+    { int lv[2]; residents_tally(r, count, 1, NULL, lv, NULL, NULL);
+      residents_sync(r, &count, &next, b, p, 1, 12345u, lv); }
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
     CHECK(live == 0, "a count alone conjures nobody");
@@ -297,13 +298,15 @@ static void test_sync_tracks_the_houses(void)
     count = 4;
 
     p[0].residents = 6;
-    residents_sync(r, &count, &next, b, p, 1, 12345u);
+    { int lv[2]; residents_tally(r, count, 1, NULL, lv, NULL, NULL);
+      residents_sync(r, &count, &next, b, p, 1, 12345u, lv); }
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
     CHECK(live == 4, "a house short of its count gains nobody");
 
     p[0].residents = 1;
-    residents_sync(r, &count, &next, b, p, 1, 12345u);
+    { int lv[2]; residents_tally(r, count, 1, NULL, lv, NULL, NULL);
+      residents_sync(r, &count, &next, b, p, 1, 12345u, lv); }
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
     CHECK(live == 1, "but a house over its count loses three");
@@ -311,7 +314,8 @@ static void test_sync_tracks_the_houses(void)
     /* A building that is not a house houses nobody. */
     b[1].active = 1; b[1].type = BUILDING_WAREHOUSE;
     p[1].active = 1; p[1].residents = 5;
-    residents_sync(r, &count, &next, b, p, 2, 12345u);
+    { int lv[2]; residents_tally(r, count, 2, NULL, lv, NULL, NULL);
+      residents_sync(r, &count, &next, b, p, 2, 12345u, lv); }
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active && r[i].home_idx == 1) live++;
     CHECK(live == 0, "and nobody lives in the Warehouse");

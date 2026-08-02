@@ -135,6 +135,11 @@ typedef struct {
      * leaving" is a fact rather than an inference. Derived. */
     int        left_last_month;
 
+    /* Cached signature of the building layout, so connectivity is
+     * recomputed only when something that decides it has moved.
+     * Derived: never hashed, never saved. */
+    uint32_t   conn_sig;
+
     /* ---- the treasury (LIFE_PLAN Phase 7) -----------------
      * What the player takes from wages and from business profit, in
      * per mille, set through CMD_SET_TAX_RATE and clamped to
