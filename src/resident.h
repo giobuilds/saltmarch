@@ -250,7 +250,8 @@ void resident_name(const Resident *r, uint32_t world_seed,
  * ships would be an economy-breaking change. */
 void residents_sync(Resident residents[], int *count, uint32_t *next_id,
                     const Building buildings[], const PopData pop_data[],
-                    int building_count, uint32_t world_seed);
+                    int building_count, uint32_t world_seed,
+                    const int live[]);
 
 /* How many residents of `home_idx` are old enough to work AND free to.
  *
@@ -270,6 +271,15 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
  * meant to be felt — a two-person household that is expecting is a
  * one-person household until the child arrives. */
 int residents_adults_at(const Resident residents[], int count, int home_idx);
+
+/* Tallies every house in one pass: `live[h]` how many residents name h
+ * as home, `workers[h]` how many of those can work, `prod[h]` their mean
+ * productivity (PRODUCTIVITY_BASE where nobody works there). Any may be
+ * NULL. `happiness[h]` feeds the productivity term; NULL scores every
+ * house at HAPPINESS_NEUTRAL. */
+void residents_tally(const Resident residents[], int count,
+                     int building_count, const int happiness[],
+                     int live[], int workers[], int prod[]);
 
 /* Effective mouths at `home_idx` for the needs tick: an adult eats a
  * whole ration and everybody else a half, rounded UP so a house of

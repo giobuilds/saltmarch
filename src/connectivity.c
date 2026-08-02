@@ -129,9 +129,33 @@ static int footprint_adjacent_to_reached(int row, int col, int fw, int fh)
     return 0;
 }
 
-void connectivity_update(Building buildings[], int count)
+/* FNV-1a over everything that decides reachability. */
+static uint32_t layout_signature(const Building buildings[], int count)
+{
+    uint32_t h = 2166136261u;
+    int      i;
+
+    h ^= (uint32_t)count; h *= 16777619u;
+    for (i = 0; i < count; i++) {
+        const Building *b = &buildings[i];
+        uint32_t v = (uint32_t)(b->active ? 1 : 0)
+                   | ((uint32_t)b->type << 1)
+                   | ((uint32_t)b->row  << 10)
+                   | ((uint32_t)b->col  << 18);
+        h ^= v; h *= 16777619u;
+    }
+    return h ? h : 1u;          /* 0 means "no cache" */
+}
+
+void connectivity_update(Building buildings[], int count, uint32_t *sig)
 {
     int i;
+
+    if (sig) {
+        uint32_t now = layout_signature(buildings, count);
+        if (*sig == now) return;
+        *sig = now;
+    }
 
     mark_road_tiles(buildings, count);
     bfs_from_warehouses(buildings, count);

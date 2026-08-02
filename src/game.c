@@ -3793,6 +3793,10 @@ static void book_match(GameState *gs)
 {
     OrderBook *b = &gs->book;
     int        kind, id, guard;
+    /* Widest id space either kind uses. */
+#define BOOK_MAX_TRADE_IDS ((int)RES_COUNT > SEA_MAX_ROUTES \
+                            ? (int)RES_COUNT : SEA_MAX_ROUTES)
+    unsigned char present[TRADE_KIND_COUNT * BOOK_MAX_TRADE_IDS];
 
     pirate_update(&gs->pirates, &gs->sea, gs->sim_tick_no, gs->world_seed);
     book_raid_check(gs);
@@ -3800,6 +3804,26 @@ static void book_match(GameState *gs)
     sea_rotation_update(gs);
     surveys_update(gs);
     faction_quote_refresh(gs);
+
+    /* Which (kind, id) pairs the book actually holds an order for.
+     * Without it the loop below asks the matcher about every resource
+     * and every route every tick -- around 245 scans of the whole book
+     * for a book that is usually empty. Built in one pass; the loop
+     * order is unchanged, so which trades cross and in what order is
+     * exactly what it was. */
+    {
+        unsigned char *seen = present;
+        int            n;
+
+        memset(present, 0, sizeof(present));
+        for (n = 0; n < b->order_count; n++) {
+            const Order *o = &b->order[n];
+            if (!o->active) continue;
+            if (o->what.kind >= TRADE_KIND_COUNT) continue;
+            if (o->what.id >= BOOK_MAX_TRADE_IDS) continue;
+            seen[o->what.kind * BOOK_MAX_TRADE_IDS + o->what.id] = 1;
+        }
+    }
 
     /* Both kinds, each over its own id space: resources over
      * RES_COUNT, charts over the routes that exist. The matcher itself
@@ -3811,6 +3835,7 @@ static void book_match(GameState *gs)
       for (id = 0; id < id_count; id++) {
         TradeId what;
 
+        if (!present[kind * BOOK_MAX_TRADE_IDS + id]) continue;
         if (kind == TRADE_RESOURCE && id == RES_GOLD) continue;
         if (kind == TRADE_ROUTE_CHART && !gs->sea.route[id].is_private)
             continue;

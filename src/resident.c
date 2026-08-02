@@ -128,14 +128,6 @@ void resident_name(const Resident *r, uint32_t world_seed,
  * house-by-house reconciliation, so the two cannot drift apart in how
  * they decide a house has gained or lost somebody. */
 
-static int count_live_for_home(const Resident r[], int count, int home_idx)
-{
-    int i, n = 0;
-    for (i = 0; i < count; i++)
-        if (r[i].active && r[i].home_idx == home_idx) n++;
-    return n;
-}
-
 /* Severs `idx`'s marriage from the OTHER side, so no live resident is
  * ever left pointing at a slot that has been cleared or reused.
  *
@@ -238,6 +230,38 @@ int residents_adults_at(const Resident r[], int count, int home_idx)
             && r[i].pregnancy == 0                 /* carrying: not free */
             && of_working_age(&r[i])) n++;
     return n;
+}
+
+void residents_tally(const Resident r[], int count, int building_count,
+                     const int happiness[], int live[], int workers[],
+                     int prod[])
+{
+    int i;
+    int sum[MAX_BUILDINGS], n[MAX_BUILDINGS];
+
+    for (i = 0; i < building_count; i++) {
+        if (live)    live[i]    = 0;
+        if (workers) workers[i] = 0;
+        if (prod)    { prod[i] = PRODUCTIVITY_BASE; sum[i] = 0; n[i] = 0; }
+    }
+
+    for (i = 0; i < count; i++) {
+        int h = r[i].home_idx;
+
+        if (!r[i].active || h < 0 || h >= building_count) continue;
+        if (live) live[h]++;
+        if (r[i].pregnancy > 0 || !of_working_age(&r[i])) continue;
+        if (workers) workers[h]++;
+        if (prod) {
+            sum[h] += resident_productivity(&r[i],
+                          happiness ? happiness[h] : HAPPINESS_NEUTRAL);
+            n[h]++;
+        }
+    }
+
+    if (prod)
+        for (i = 0; i < building_count; i++)
+            if (n[i] > 0) prod[i] = sum[i] / n[i];
 }
 
 int residents_mouths_at(const Resident r[], int count, int home_idx)
@@ -856,12 +880,15 @@ int residents_fertile_couple_at(const Resident r[], int count, int home_idx)
 
 void residents_sync(Resident residents[], int *count, uint32_t *next_id,
                     const Building buildings[], const PopData pop_data[],
-                    int building_count, uint32_t world_seed)
+                    int building_count, uint32_t world_seed,
+                    const int live[])
 {
     int i;
 
+    const int *live_counts = live;
+
     for (i = 0; i < building_count; i++) {
-        int live, target, k;
+        int have, target, k;
 
         /* Any residential tier, not just BUILDING_HOUSE. agents_sync
          * once tested the concrete type here and silently stopped
@@ -871,7 +898,7 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
             continue;
         if (!pop_data[i].active) continue;
 
-        live   = count_live_for_home(residents, *count, i);
+        have   = live_counts[i];
         target = pop_data[i].residents;
 
         /* THE ONLY PEOPLE THIS FUNCTION STILL CREATES ARE FOUNDERS
@@ -895,7 +922,7 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
          * reconciliation: a house that starved has to lose the people
          * pop_update said it lost. */
         (void)next_id; (void)world_seed;
-        for (k = live; k > target; k--)
+        for (k = have; k > target; k--)
             despawn_one_for_home(residents, *count, i);
     }
 }

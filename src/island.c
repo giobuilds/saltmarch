@@ -71,7 +71,9 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  *
  * Buildings with nobody in them are left at PRODUCTIVITY_BASE; their
  * production is already gated on worker_count elsewhere. */
-static void island_crew_productivity(const Island *isl, int out[MAX_BUILDINGS])
+static void island_crew_productivity(const Island *isl,
+                                     const int house_prod[],
+                                     int out[MAX_BUILDINGS])
 {
     int sum[MAX_BUILDINGS], n[MAX_BUILDINGS];
     int i;
@@ -89,9 +91,7 @@ static void island_crew_productivity(const Island *isl, int out[MAX_BUILDINGS])
         h = a->home_idx;
         if (h < 0 || h >= isl->building_count)            continue;
 
-        sum[a->work_idx] += residents_house_productivity(
-                                isl->residents, isl->resident_count, h,
-                                isl->pop_data[h].happiness);
+        sum[a->work_idx] += house_prod[h];
         n[a->work_idx]++;
     }
 
@@ -99,7 +99,8 @@ static void island_crew_productivity(const Island *isl, int out[MAX_BUILDINGS])
         if (n[i] > 0) out[i] = sum[i] / n[i];
 }
 
-static void island_tick_buildings(Island *isl, const Faction *market)
+static void island_tick_buildings(Island *isl, const Faction *market,
+                                  const int house_prod[])
 {
     int i, j;
     int crew[MAX_BUILDINGS];
@@ -114,7 +115,7 @@ static void island_tick_buildings(Island *isl, const Faction *market)
      * survives the arithmetic. */
     int32_t base = 0;
 
-    island_crew_productivity(isl, crew);
+    island_crew_productivity(isl, house_prod, crew);
 
     for (i = 0; i < isl->building_count; i++) {
         Building          *b   = &isl->buildings[i];
@@ -260,14 +261,6 @@ static int count_live_at(const Island *isl, int idx)
     return n;
 }
 
-/* Adapts residents_adults_at() to the callback agents_sync takes, so
- * agent.c stays ignorant of what an age is. */
-static int island_adults_at(const void *ctx, int house_idx)
-{
-    const Island *isl = (const Island *)ctx;
-    return residents_adults_at(isl->residents, isl->resident_count, house_idx);
-}
-
 /* The same adapter for rations. */
 static int island_mouths_at(const void *ctx, int house_idx)
 {
@@ -376,17 +369,31 @@ void island_update_compliance(Island *isl)
 void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
                    const Faction *market)
 {
+    /* Per-house tallies, built in one pass over the residents and one
+     * over the agents rather than one scan per house. Rebuilt after
+     * the demography and the needs tick have moved people. */
+    int live[MAX_BUILDINGS], workers[MAX_BUILDINGS];
+    int house_prod[MAX_BUILDINGS], live_agents[MAX_BUILDINGS];
+    int happiness[MAX_BUILDINGS];
+    int b;
+
     if (!isl->settled) return;
+
+    for (b = 0; b < isl->building_count; b++)
+        happiness[b] = isl->pop_data[b].happiness;
+    residents_tally(isl->residents, isl->resident_count, isl->building_count,
+                    happiness, NULL, NULL, house_prod);
 
     /* Recompute road-network reachability before anything this tick
      * reads Building.connected. */
-    connectivity_update(isl->buildings, isl->building_count);
+    connectivity_update(isl->buildings, isl->building_count,
+                        &isl->conn_sig);
 
     /* island_tick_buildings() reads worker_count as of the END of last
      * tick's agents_update() call below — a harmless one-tick lag, the
      * same pattern already established for `connected` relative to a
      * newly-placed building. */
-    island_tick_buildings(isl, market);
+    island_tick_buildings(isl, market, house_prod);
 
     /* Population needs (uses this tick's `connected`). */
     /* A MONTH OLDER, ONCE A MONTH — and some of them die of it.
@@ -444,12 +451,9 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
          *
          * Before emigration, deliberately — somebody housed this month
          * is not then asked to leave for having waited too long. */
-        {
-            int b;
-            for (b = 0; b < isl->building_count; b++)
-                if (isl->pop_data[b].active)
-                    island_settle_house(isl, b, world_seed);
-        }
+        for (b = 0; b < isl->building_count; b++)
+            if (isl->pop_data[b].active)
+                island_settle_house(isl, b, world_seed);
 
         /* ---- and those nobody roofed in time leave ---------
          * The only bound on population. `emigrate` is installed by the
@@ -494,15 +498,21 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick,
      * have just changed, periodically assign jobs, then advance every
      * agent's state machine/position and retally worker_count for next
      * tick's island_tick_buildings(). */
+    for (b = 0; b < isl->building_count; b++)
+        happiness[b] = isl->pop_data[b].happiness;
+    residents_tally(isl->residents, isl->resident_count, isl->building_count,
+                    happiness, live, workers, NULL);
+    agents_tally(isl->agents, isl->agent_count, isl->building_count,
+                 live_agents);
+
     agents_sync(isl->agents, &isl->agent_count, isl->buildings,
-                isl->pop_data, isl->building_count,
-                island_adults_at, isl);
+                isl->pop_data, isl->building_count, workers, live_agents);
 
     /* The same reconciliation, over identity rather than motion. After
      * agents_sync so the two see the same pop_data in the same tick. */
     residents_sync(isl->residents, &isl->resident_count,
                    &isl->next_resident_id, isl->buildings, isl->pop_data,
-                   isl->building_count, world_seed);
+                   isl->building_count, world_seed, live);
 
     if (++isl->agent_assign_timer >= AGENT_ASSIGN_INTERVAL_TICKS) {
         isl->agent_assign_timer = 0;

@@ -97,11 +97,17 @@ typedef struct {
  * callback so agent.c never learns what an age is. Pass NULL and every
  * resident counts, which is the pre-Phase-5 behaviour and what the
  * headless tests that predate ages rely on. */
+/* `workers[h]` is how many agents house h should have; `live_agents[h]`
+ * how many it has. Both are per-house tallies the caller builds in one
+ * pass, rather than this scanning every resident and agent per house. */
 void agents_sync(Agent agents[], int *agent_count,
                  const Building buildings[], const PopData pop_data[],
-                 int building_count,
-                 int (*adults_at)(const void *ctx, int house_idx),
-                 const void *ctx);
+                 int building_count, const int workers[],
+                 int live_agents[]);
+
+/* Counts active agents per house into `out`, one pass. */
+void agents_tally(const Agent agents[], int agent_count,
+                  int building_count, int out[]);
 
 /* Periodic (see AGENT_ASSIGN_INTERVAL): assigns every unemployed,
  * AGENT_IDLE_HOME agent to the nearest still-open job (by road-network
