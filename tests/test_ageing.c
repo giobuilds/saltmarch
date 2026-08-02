@@ -1,19 +1,5 @@
-/*  test_ageing.c  --  people get older, and some of it kills them
- *                     (LIFE_PLAN Phase 5)
- *
- * Phase 3 gave residents ages and then ignored them. This is where the
- * ages start to matter: they advance, they gate who may work, they
- * decide how big a ration a house eats, and eventually they end.
- *
- * THE ASSERTION THAT MATTERS MOST is the last one. LIFE_PLAN's whole
- * Phase 5 blocker rested on an ADULT FRACTION of 0.55 — a number I made
- * up. Everything downstream of it (which tiers close, what the
- * productivity floor can be, whether Merchants are viable) was
- * arithmetic on a guess. So this test MEASURES it, from a real island
- * run for decades, and the closure projection uses what it finds.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_ageing.c  --  people get older, and some of it kills them
+ * (LIFE_PLAN Phase 5) */
 
 #include "game.h"
 #include "island.h"
@@ -76,11 +62,7 @@ static void test_only_adults_work(void)
     r[4].age_months = 70 * MONTHS_PER_YEAR;   /* elder  */
     r[5].age_months = 19 * MONTHS_PER_YEAR;   /* adult  */
 
-    /* FOUR, NOT THREE, SINCE PHASE 7b: the fifteen-year-old works now.
-     * Twelve is where a youth starts earning and eighteen is where they
-     * may marry, and untangling those two ages is what doubled the
-     * island's working share. The five-year-old and the seventy-year-old
-     * still do not. */
+    /* FOUR, NOT THREE, SINCE PHASE 7b: the fifteen-year-old works now. */
     CHECK(residents_adults_at(r, 6, 0) == 4,
           "four of six are of working age — the youth among them");
     CHECK(residents_adults_at(r, 6, 1) == 0,
@@ -151,11 +133,7 @@ static void test_death(void)
     }
 }
 
-/* ---- a village whose houses are actually on the road -------
- * Houses in a row below a row of road tiles, so EVERY house is
- * 4-adjacent to pavement. A row of houses beside a single road tile
- * connects exactly one of them, which is how the first version of this
- * measured a five-house village and got one. */
+/* ---- a village whose houses are actually on the road ------- */
 static int build_village(GameState *gs, int houses)
 {
     Island *isl = game_cur_island(gs);
@@ -186,24 +164,7 @@ static int build_village(GameState *gs, int houses)
 }
 
 /* ---- 4. THE HEADLINE: what the adult fraction really is ----
- * LIFE_PLAN assumed 0.55 and built five sections of arithmetic on it.
- * This measures it — and the first version of this test measured it
- * WRONG in a way worth recording, because the same trap is everywhere
- * in this suite:
- *
- *   game_init() seeds from the CLOCK. The test ran one randomly
- *   generated world, reported 50%, and CI ran a different world and
- *   reported 45%. A measurement that changes per run is not a
- *   measurement; it is a sample being quoted as a constant.
- *
- * So: fixed seeds, several of them, and the statistic that matters.
- *
- * THE STATISTIC IS THE WORST SUSTAINED STRETCH, not the worst year.
- * A single bad year is absorbed by the happiness ladder, which is ten
- * months of buffer and exists for exactly this. Five bad years in a row
- * is structural. Across ten seeds the worst year is 41% and the worst
- * five-year mean is 48%, which is why the closure projection uses the
- * latter. */
+ * LIFE_PLAN assumed 0.55 and built five sections of arithmetic on it. */
 #define SEEDS_TESTED  4
 #define YEARS_RUN     60
 #define SAMPLE_CAP    64
@@ -241,20 +202,10 @@ static int adult_fraction_for(uint32_t seed, int *sustained, int *mean)
                 const Resident *r = &isl->residents[i];
                 if (!r->active) continue;
                 pop++;
-                /* WORKERS, NOT ADULTS (LIFE_PLAN Phase 7). The two
-                 * stopped being the same number when the reserve
-                 * arrived: somebody with no roof is grown and idle, and
-                 * a woman carrying a child is grown and not at work.
-                 * Neither staffs a supply chain, and this measurement
-                 * exists to tell test_closure how many hands an island
-                 * really has. */
+                /* WORKERS, NOT ADULTS (LIFE_PLAN Phase 7). The two */
                 if (r->home_idx == RESIDENT_HOMELESS) continue;
                 if (r->pregnancy > 0) continue;
-                /* A WORKER IS TWELVE OR OLDER (Phase 7b) — youths
-                 * included. Counting only LIFE_ADULT here is how the
-                 * first run after the split reported no improvement at
-                 * all: the model had changed and the measurement had
-                 * not. */
+                /* A WORKER IS TWELVE OR OLDER (Phase 7b) — youths */
                 if (resident_stage(r) == LIFE_TEEN ||
                     resident_stage(r) == LIFE_ADULT) ad++;
             }
@@ -297,32 +248,7 @@ static void test_the_adult_fraction(void)
     CHECK(measured >= 2, "at least two worlds ran long enough to measure");
     if (measured == 0) return;
 
-    /* THE NUMBER LIFE_PLAN GUESSED AT 55%, and which Phase 5 measured
-     * at 48% when every resident arrived grown. Phase 6b makes an
-     * island raise its own people, and the floor fell to 33% — where it
-     * sits on every seed tried, because it is not really a statistic at
-     * all. It is the shape of a household: two parents and four
-     * children under one roof is a third of the house able to work, and
-     * every house that fills does it the same way.
-     *
-     * PHASE 7 TOOK IT FURTHER, to 12-14%, and the number changed
-     * MEANING as well as value: it counts WORKERS now, not adults.
-     * Somebody with no roof is grown and idle, and a woman carrying a
-     * child is grown and not at work — neither staffs a chain, and
-     * test_closure needs to know how many hands an island really has.
-     *
-     * Where it went: a household is two parents and about eight minors,
-     * she is pregnant a third of her fertile life, and the reserve eats
-     * without working.
-     *
-     * THAT TROUGH IS NOT A TROUGH ANY MORE — it is the steady state, and
-     * no tier closes at it. That is a design position (the marketplace
-     * is meant to cover the gap) and a known-unfunded one: see
-     * test_closure.c, which now measures the SIZE of the gap rather
-     * than asserting it away.
-     *
-     * Asserted a little below the measured value, not at it, so an
-     * unluckier seed does not fail a number that has not moved. */
+    /* THE NUMBER LIFE_PLAN GUESSED AT 55%, and which Phase 5 measured */
     CHECK(worst >= 20,
           "through the years it is raising children, a quarter of the "
           "island is at work");

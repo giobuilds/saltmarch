@@ -16,11 +16,7 @@
 #include <string.h>
 #include <time.h>
 
-/* A seed for "new world, no seed given". The sim owns no clock (see the
- * determinism doctrine in MMO_PLAN.md), so this is the one place it may
- * read one: choosing a world, not simulating it. time() alone repeats
- * within a second, hence the clock() mix — two new games started in the
- * same second must not be the same world. */
+/* A seed for "new world, no seed given". The sim owns no clock (see. */
 static uint32_t seed_from_clock(void)
 {
     return (uint32_t)time(NULL) * 2654435761u + (uint32_t)clock();
@@ -162,12 +158,7 @@ void game_scrub_to(GameState *gs, uint64_t tick)
 
     if (!gs->scrub_active) return;
     if (tick > gs->scrub_live_tick) tick = gs->scrub_live_tick;
-    /* Not below the floor. game_install_world rebuilds from the seed at
-     * tick 0 and replays forward; against a truncated log that would
-     * not fail, it would quietly construct a DIFFERENT world -- one
-     * where none of the discarded history ever happened -- and present
-     * it as the past. Clamping is the difference between "you cannot
-     * look further back" and a convincing lie. */
+    /* Not below the floor. game_install_world rebuilds from the seed at */
     if (tick < gs->history_floor_tick) tick = gs->history_floor_tick;
 
     /* The log is the world's history and must survive the trip. Copy it
@@ -228,15 +219,7 @@ int game_overlay_open(const GameState *gs)
     return game_topmost_overlay(gs) != UI_OVERLAY_NONE;
 }
 
-/* The archipelago's fixed make-up. Island 0 is always Saltford, the
- * temperate home island the player starts on; the rest each hold
- * something Saltford lacks, which is what turns colonisation from
- * optional into the way you get hops (and therefore Beer) at all.
- *
- * Names are place names; the MapProfile beside each is the TERRAIN it
- * sits on. The two are deliberately independent — Brinehold is a
- * settlement that happens to occupy highland, the way a real town name
- * says nothing about its geology. */
+/* The archipelago's fixed make-up. Island 0 is always Saltford. */
 /* Four northern, four southern (SUPPLY_CHAIN Phase 5). The order is
  * load-bearing: island 0 is always the starting island, and the
  * southern four sit at the end so an existing world's island indices
@@ -251,26 +234,14 @@ static const char *ISLAND_NAMES[MAX_ISLANDS] = {
 };
 
 /* ---- game_reset_world -----------------------------------
- * Regenerates the whole archipelago and clears all per-island state.
- * Shared by game_init() (on a freshly malloc'd GameState) and
- * game_new() (on a live one, for the "New Game" menu button) so the
- * two can't drift apart. Does not touch InputState or frame-timing
- * fields — those belong to the input device / clock, not the world.
- *
- * Only island 0 is settled: the rest exist and can be looked at, but
- * are not simulated and reject placement until colonised. */
+ * Regenerates the whole archipelago and clears all per-island state. */
 static void game_reset_world(GameState *gs, uint32_t seed)
 {
     int i;
 
     gs->world_seed = seed;
 
-    /* A world built from a seed has its whole history ahead of it, so
-     * any floor a previous life left behind is not merely stale, it
-     * belongs to a DIFFERENT world — and the scrubber would happily
-     * rebuild from that other world's snapshot. Cleared here rather
-     * than in the callers because this is the one place a world starts
-     * over. */
+    /* A world built from a seed has its whole history ahead of it. */
     game_clear_history_floor(gs);
 
     for (i = 0; i < MAX_ISLANDS; i++) {
@@ -281,11 +252,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
         island_reset(&gs->islands[i], isl_seed, ISLAND_PROFILES[i],
                      ISLAND_NAMES[i], i == 0);
 
-        /* Stagger the job-assignment phase across islands.
-         * agents_assign_jobs() runs a full BFS per unemployed agent,
-         * so leaving every island in phase would bunch all of that
-         * onto the same tick every AGENT_ASSIGN_INTERVAL and read as
-         * a periodic hitch. Integer ticks now (Phase 1b). */
+        /* Stagger the job-assignment phase across islands. */
         gs->islands[i].agent_assign_timer =
             i * AGENT_ASSIGN_INTERVAL_TICKS / MAX_ISLANDS;
     }
@@ -303,12 +270,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 
     stockpile_add(&cur(gs)->stockpile, RES_GOLD, STARTING_GOLD);
 
-    /* The world's first player is ALWAYS player 1, regardless of who
-     * created it: this function is also how load and the F9 verifier
-     * rebuild tick 0, so island 0's owner must be a pure function of
-     * the seed — never of which client happens to be reconstructing.
-     * (game_new/game_new_seeded make the local player id 1 to match;
-     * a co-op guest acquires its island via a logged CMD_GRANT_START.) */
+    /* The world's first player is ALWAYS player 1, regardless of who */
     gs->islands[0].owner = 1u;
 
     /* The market's home ports (MARITIME_PLAN Phase 2). Settled and
@@ -330,11 +292,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
     survey_init(&gs->surveys);
     pirate_init(&gs->pirates, &gs->sea, seed);
 
-    /* A fresh world is a fresh history: discard any previous command
-     * log and reset the world clock. The starting state above is a
-     * deterministic function of the seed, so replay reconstructs it by
-     * re-running this function, then replaying the (now empty) log.
-     * The allocation itself is kept for reuse. */
+    /* A fresh world is a fresh history: discard any previous command */
     gs->cmd_count   = 0;
     gs->cmd_applied = 0;
     gs->sim_tick_no = 0;
@@ -354,19 +312,7 @@ static void game_reset_world(GameState *gs, uint32_t seed)
 /* ---- game_init ----------------------------------------- */
 GameState *game_init(void)
 {
-    /* calloc, not malloc. The explicit initialisation below stays --
-     * it documents intent and sets the fields whose correct start is
-     * not zero -- but a field added to GameState and forgotten here
-     * must not be able to arrive as garbage.
-     *
-     * That is not hypothetical: history_floor_tick's `floor_snap`
-     * pointer was added without a line here, game_reset_world frees it
-     * before assigning, and free() on an uninitialised pointer is
-     * undefined. Linux and macOS hand out zeroed pages, so free(NULL)
-     * quietly did nothing and every test passed on both; MSVC's debug
-     * CRT fills fresh allocations with 0xCD, so the same code segfaulted
-     * at startup before it could log a single line. Zeroing first costs
-     * one memset at launch and removes the whole class. */
+    /* calloc, not malloc. The explicit initialisation below stays -- */
     GameState *gs = (GameState *)calloc(1, sizeof(GameState));
     if (!gs) return NULL;
 
@@ -421,12 +367,7 @@ void game_free(GameState *gs)
     free(gs);
 }
 
-/* ---- game_new --------------------------------------------
- * Starting a NEW world makes you its first player (game_reset_world
- * gives island 0 to player 1 unconditionally — see the note there), so
- * the local id snaps back to 1 even for an ex-guest. game_reset_world
- * itself must NOT touch local_player_id: load and the F9 verifier call
- * it to rebuild worlds this client doesn't own. */
+/* ---- game_new -------------------------------------------- */
 void game_new(GameState *gs)
 {
     gs->local_player_id = 1u;
@@ -440,43 +381,8 @@ void game_new_seeded(GameState *gs, uint32_t seed)
     game_reset_world(gs, seed);
 }
 
-/* ---- Save format v5: the world as (seed + command log) ----
- * MMO_PLAN Phase 1d. A save is no longer a snapshot of buildings,
- * population and stockpiles — it is the world seed, the tick the world
- * had reached, and the ordered command log. Loading reconstructs the
- * world by regenerating from the seed and replaying the log, so LOADING
- * IS THE F9 TEST: a save that loads to the same place it was saved from
- * is a save whose determinism just got proven end to end.
- *
- * This makes saves tiny (a few hundred commands, not four 64x64 worlds)
- * and is the exact shape a server checkpoint or a shared replay file
- * takes later. The .smlog files the --replay CLI consumes are simply
- * these save files.
- *
- * Pre-v5 full-state saves are intentionally NOT loadable: the game is
- * pre-release, and maintaining a second (now derivable) load path earns
- * nothing. A pre-v5 file is rejected with a clear message.
- * -------------------------------------------------------- */
-/* ---- Save format v10: optionally, state instead of history ----
- * SERVER.md, "Log truncation". A save may now carry a SNAPSHOT section
- * before its commands. When it does, loading restores the world
- * directly and applies only the commands that follow it; when it does
- * not, loading is exactly the v5 replay above.
- *
- * Both shapes exist on purpose. A world that has been running for
- * months cannot be joined or restarted by replaying every tick from
- * zero -- that cost is proportional to AGE and accrues whether or not
- * anyone played, which is the whole reason this section exists. But the
- * determinism gate (`--record` then `--replay`) proves what it proves
- * PRECISELY BECAUSE a fixture is (seed, full log) and replaying
- * re-derives the world; turn every save into a snapshot and "replay"
- * silently degrades into "load", and CI's central guarantee evaporates
- * while still reporting success.
- *
- * So: game_save writes history, and fixtures and the gate keep proving
- * determinism. game_save_checkpoint writes state, and the server keeps
- * a bounded file. One reader handles both.
- * -------------------------------------------------------- */
+/* ---- Save format v5: the world as (seed + command log) ---- */
+/* ---- Save format v10: optionally, state instead of history ---- */
 #define SAVE_FLAG_SNAPSHOT 1u
 
 typedef struct {
@@ -492,196 +398,10 @@ typedef struct {
 } SaveHeader;
 
 #define SAVE_MAGIC   0x53414C54u  /* "SALT" */
-/* v6 (Phase 5): commands carry a meaningful player_id and sim_apply
- * enforces ownership, so a v5 log (player_id 0 throughout) would replay
- * to a world of rejected commands. Same bytes, different meaning — the
- * version bump is the rejection.
- *
- * v7 (UI_PLAN M1): Command gained a client-local `seq`, so the struct
- * this file writes is a different size. The field is ignored by the
- * sim — a v6 log would replay to the same world — but the bytes no
- * longer line up, and silently misreading a log is exactly what a
- * version number is for.
- *
- * v8 (UI_PLAN M1): the file gained a second section — the recorded
- * intent stream, appended after the commands. A v7 log describes the
- * same world; it simply has no clicks recorded, so the UI harness has
- * nothing to replay.
- *
- * v9 (SUPPLY_CHAIN Phase 3): thirteen goods inserted before RES_GOLD,
- * which shifts its value and every resource index a command carries.
- * The bytes of a v8 log are unchanged but their MEANING is not — a
- * recorded "sell 5 of resource 6" was Gold and is now Bricks. Nothing
- * about the format changed; the vocabulary did, which is the harder
- * kind of incompatibility to notice and the reason the plan's ground
- * rule 5 says every content phase bumps this.
- *
- * v10 (SERVER.md, "Log truncation"): the header gained flags and a
- * snapshot length, and a save may now carry state instead of history.
- * A real format change, unlike v9's.
- *
- * v11 (SUPPLY_CHAIN Phase 4): sixteen more goods before RES_GOLD, for
- * iron, glass, preserves and sewing machines. Same shape as v9 and the
- * same hazard — a v10 log's bytes parse, but its "resource 20" was
- * Gold and now means Charcoal.
- *
- * v12 (SUPPLY_CHAIN Phase 5): four more goods, and MAX_ISLANDS 4 -> 8.
- * The second half is the one that matters — a v11 log describes a
- * FOUR-island world, so its island indices, its grants and its
- * voyages all mean something different in an eight-island one.
- *
- * v13 (SUPPLY_CHAIN Phase 6): nine more goods for the Engineers line.
- *
- * v14 (SUPPLY_CHAIN Phase 7): twenty-five more goods, and
- * MAX_TIER_GOODS 5 -> 6. TierDef is not saved, but the resource
- * vocabulary shifts again.
- *
- * v15 (SUPPLY_CHAIN Phase 8): four more goods, and CMD_UPGRADE_HOUSE
- * gained a meaning for `c` — a v14 log's upgrades all carry c = 0,
- * which happens to be the branch they meant, but the field is no
- * longer ignorable.
- *
- * v16 (MARITIME_PLAN Phase 2): the order book. Two new command kinds,
- * and — the part that makes old logs unreplayable rather than merely
- * incomplete — the book matches at every tick boundary, so a v15 log
- * replayed under these rules would still produce a v15 world only by
- * accident. It is also the first hashed state that is not attached to
- * an island or a ship.
- *
- * v17 (MARITIME_PLAN Phase 2, merchants): a booking now holds a
- * merchant and a hull from the selling island for the round trip, and
- * the matcher skips an ask whose island has neither free. A v16 log
- * replays a world where every crossing was possible, so its fills are
- * not this world's fills.
- *
- * v18 (MARITIME_PLAN Phase 2, the market maker): the faction holds the
- * last two islands as home ports from tick 0 and posts standing orders
- * there every FACTION_QUOTE_INTERVAL_TICKS. A v17 log describes a world
- * with two more colonisable islands and no NPC orders in the book, so
- * its colonisations and its fills are both about somewhere else.
- *
- * v19 (MARITIME_PLAN Phase 3): three routes per island pair, and
- * SEA_UNITS_PER_TICK re-fitted from 21 to 26 to hold the pace. The Sea
- * is regenerated rather than saved, which is exactly why this is a log
- * break and not merely a format one: a v18 log replayed against this
- * generator has every voyage arriving on a different tick.
- *
- * v20 and v21 WERE NEVER ISSUED. Phase 3b (route knowledge and charts)
- * and Phase 3c (per-route insurance and shipment raids) both changed
- * what a log means and both should have bumped this; the edits went
- * astray and only NET_PROTO_VERSION and SNAPSHOT_VERSION moved. The
- * numbers are burned rather than reused so that anything that recorded
- * a version in between is not silently reinterpreted, and so the gap
- * stays legible instead of looking like a miscount.
- *
- * v22 (MARITIME_PLAN Phase 3b, 3c and 3d together): charts route a
- * cargo down water a v19 log had no concept of, raided shipments now
- * fail to arrive at all, and the survey mission adds two command kinds
- * with expeditions, research boats and scholars behind them. A v19 log
- * replayed under any of this describes a different world.
- *
- * v23 (MARITIME_PLAN Phase 3e): private passages rotate. Each pair now
- * generates a pool and keeps two in play, and which two changes as the
- * world runs — so a v22 log's cargoes sail water this world is not
- * using.
- *
- * v24 (MARITIME_PLAN Phase 5): ships have a class, guns and a hull, an
- * interception is decided by those rather than a flat coin flip, and
- * CMD_BUILD_SHIP's `b` now names which hull to lay down where it used
- * to be an ignored index. A v23 log's shipyards would build nothing.
- *
- * v25 (MARITIME_PLAN Phase 5b): pirates are entities. A raid now
- * happens because a fleet was in the water a cargo passed through,
- * rather than because a hash of the shipment said so at dispatch — so
- * a v24 log loses different cargoes, at different times, to something
- * that is now somewhere.
- *
- * v26 (UI_PLAN N3): IntentUiState carries the order book's page and the
- * draft order on it, so the intent section's records are a different
- * size. Like v7, this changes nothing about the world a log replays to
- * — intents are cosmetic to the sim — but the bytes no longer line up,
- * and a misread intent stream would hit-test recorded clicks against
- * the wrong screen, which is exactly the failure the format exists to
- * make impossible.
- *
- * v27 (UI_PLAN N4): IntentUiState gains the passages overlay's page,
- * for the same reason and at the same cost as v26 — which page a click
- * landed on decides which rows were under the cursor.
- *
- * v28 (UI_PLAN N6): and the shipyard's, on the same argument.
- *
- * v29 (NEEDS_PLAN Phase 1): PopData records the house type it was
- * upgraded from, because a Scholar's House needs the basics of
- * wherever its people came from. World state — hashed, and written
- * into the checkpoint beside the residents it belongs to.
- *
- * v30 (NEEDS_PLAN Phase 2): the happiness flag became a 0..10 ladder,
- * so the byte that held it is an int now. The ladder is also the
- * buffer that stops one missed tick costing a resident, which is why
- * it had to be a number rather than a bit.
- *
- * v31 (NEEDS_PLAN Phase 3): no field changed shape — HOUSE_CAPACITY
- * did. A world saved at ten residents a house would load into a game
- * whose ceiling is six and quietly shed people until it fit, which is
- * a different world from the one that was saved. Refusing it is
- * cheaper to explain than repairing it.
- *
- * v32 (LIFE_PLAN Phase 1): no field changed shape here either — a
- * workplace holds a crew now, and production advances by the headcount
- * rather than by one. A save is a seed plus an ordered command log, so
- * a world recorded when one agent could claim a whole Fisher's Hut
- * replays into a different world under a rule where five can. The
- * bytes would load; the island they described would not come back.
- *
- * v33 (LIFE_PLAN Phase 2): a full crew is worth more than the sum of
- * its hands — the production clock advances 2w-1 rather than w — so
- * every island in every recorded log produces at a different rate from
- * the one it was recorded at. Same reason as v32, larger effect.
- *
- * v34 (LIFE_PLAN Phase 6): marriage and birth. Growth that used to
- * arrive as an adult off a boat now arrives as somebody's child where a
- * couple lives, so a log replays into an island with a different age
- * structure, a different workforce and a different appetite.
- *
- * AND IT COVERS PHASES 4 AND 5 TOO, which is worth admitting rather
- * than quietly folding in. Phase 4 retuned the shift durations and
- * Phase 5 gave everybody an age and a death, both of which change what
- * a recorded log replays into, and neither bumped this number —
- * LIFE_PLAN's own phase notes claim a v34 and a v35 that were never
- * written. One bump cannot undo two missing ones: a v33 log recorded
- * under Phase 3's rules and a v33 log recorded under Phase 5's are
- * still indistinguishable to each other. What this fixes is the going-
- * forward case, and the lesson is that the version belongs in the same
- * commit as the rule it describes.
- *
- * v35 (LIFE_PLAN Phase 6b): a house is founded by a couple and grows
- * only by birth. Immigration into an existing house is gone, the
- * starting gold is ten thousand rather than one, and a house opens at
- * two residents rather than five — so a recorded log replays into an
- * island with a different population, a different workforce and a
- * different amount of money to have spent.
- *
- * v36 (LIFE_PLAN Phase 7): households of ten, fertility bounded by
- * biology rather than a quota, a reserve of people with no roof who
- * emigrate if none is built, and gold that enters the world as taxed
- * wages instead of being minted by housing. A log recorded under any
- * earlier rule replays into an island with a different population, a
- * different workforce and a different amount of money.
- *
- * v37 (LIFE_PLAN Phase 8): what a worker is worth. Production advances
- * by the crew's condition as well as its headcount, so every island in
- * every recorded log produces at a different rate from the one it was
- * recorded at. Building.timer also changed SCALE — both it and the
- * production period are multiplied by PRODUCTIVITY_BASE so the
- * percentage never divides — so a v36 timer read as a v37 one is an
- * accumulator a hundredth of the way to where it should be. */
+/* v6 (Phase 5): commands carry a meaningful player_id and sim_apply */
 #define SAVE_VERSION 37u
 
-/* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
- * server's checkpoint format and the CI fixture format, so reading and
- * writing one must not require a client. "wb"/"rb" are load-bearing on
- * Windows — the log is raw Command structs, and text mode would mangle
- * every 0x0A byte in them. */
+/* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS. */
 /* The one writer. `snap` is NULL for a history save and a full-state
  * snapshot for a checkpoint; `cmds`/`n` are the commands that follow
  * it, which for a checkpoint is only the tail that has not been applied
@@ -701,12 +421,7 @@ static int save_write(const GameState *gs, const char *path,
         return 0;
     }
 
-    /* The header has trailing padding (cmd_count sits at offset 24 in a
-     * 32-byte, 8-aligned struct). Writing it uninitialised leaked four
-     * bytes of stack into every save and made two recordings of the same
-     * session differ byte-for-byte — harmless while a save was only ever
-     * a local file, not harmless now that this format is also the CI
-     * fixture and the server's checkpoint. */
+    /* The header has trailing padding (cmd_count sits at offset 24 in. */
     memset(&hdr, 0, sizeof(hdr));
 
     hdr.magic          = SAVE_MAGIC;
@@ -763,12 +478,7 @@ int game_save_checkpoint(const GameState *gs, const char *path)
         return 0;
     }
 
-    /* The tail is not optional. Commands are stamped
-     * NET_CMD_DELAY_TICKS into the future, so at any instant the log
-     * holds accepted, acknowledged commands that have not been applied
-     * yet. The snapshot describes the world BEFORE them; dropping them
-     * would silently un-accept work the players were already told had
-     * landed. */
+    /* The tail is not optional. Commands are stamped */
     first = gs->cmd_applied;
     if (first < 0) first = 0;
     if (first > gs->cmd_count) first = gs->cmd_count;
@@ -779,13 +489,7 @@ int game_save_checkpoint(const GameState *gs, const char *path)
     return ok;
 }
 
-/* ---- game_load --------------------------------------------
- * Reconstruct the world from a v5 save: regenerate from the seed, load
- * the command log, and replay it up to the saved tick. On success the
- * world equals what F9 would rebuild, so replay_valid stays 1 (unlike
- * the old full-state load) — the self-check works immediately after a
- * load. Validates the file fully before touching gs, so a truncated or
- * wrong-version file leaves the current world untouched. */
+/* ---- game_load -------------------------------------------- */
 int game_load(GameState *gs, const char *path)
 {
     FILE          *f = fopen(path, "rb");
@@ -859,11 +563,7 @@ int game_load(GameState *gs, const char *path)
     cmds = buf + sizeof(hdr) + snap_bytes;
 
     if (snap_bytes) {
-        /* A checkpoint: the world is restored, not re-derived. The
-         * commands that follow are the tail that had not been applied
-         * when it was taken, so they are installed as PENDING and the
-         * sim applies each at its own stamped tick, exactly as it would
-         * have if nothing had been written to disk. */
+        /* A checkpoint: the world is restored, not re-derived. */
         if (!snapshot_decode(gs, buf + sizeof(hdr), snap_bytes)) {
             sim_log("game_load: %s carries a snapshot this build "
                     "cannot use", path);
@@ -939,13 +639,7 @@ int game_load_commands(const char *path, Command **out_cmds, int *out_count)
     if (hdr.magic != SAVE_MAGIC || hdr.version != SAVE_VERSION ||
         hdr.cmd_count < 0) { fclose(f); return 0; }
 
-    /* A checkpoint is deliberately refused rather than skipped past.
-     * The caller wants a recorded SESSION -- somebody's actual play, to
-     * be re-addressed onto an NPC island -- and a checkpoint holds
-     * state plus the handful of commands that had not been applied
-     * when it was written. Reading those would hand back a four-command
-     * "session" and a ghost that does nothing, which is a far more
-     * confusing failure than saying so. */
+    /* A checkpoint is deliberately refused rather than skipped past. */
     if (hdr.flags & SAVE_FLAG_SNAPSHOT) {
         sim_log("game_load_commands: %s is a checkpoint (state, not "
                 "history) — a recorded session is needed here", path);
@@ -1004,23 +698,8 @@ int game_install_world(GameState *gs, uint32_t seed, uint64_t tick,
     return 1;
 }
 
-/* ---- interception (MMO_PLAN later phases) ------------------
- * The engagement, resolved from the log. Cargo is the stake: the winner
- * takes what the loser was carrying, up to its own hold's capacity, and
- * a failed attack costs the attacker the same way. Nothing is destroyed
- * that was not aboard, and no ship is ever sunk — losing a hold is a
- * setback, losing a ship would be an evening's work gone. */
-/* Take a hull to a pirate lair (MARITIME_PLAN Phase 5b).
- *
- * The same guns-and-hull rule as an interception, because a fight is a
- * fight and having two combat systems would mean having one of them be
- * wrong. What differs is the stake: a pirate has no cargo of its own
- * and everything it holds was taken from somebody, so winning is
- * recovery rather than robbery — often of goods that were never yours,
- * which makes clearing a lair a service to every trader on that water.
- *
- * This is also the only reason to own guns that is not aimed at another
- * player. Phase 5a gave hulls teeth and nothing but neighbours to bite. */
+/* ---- interception (MMO_PLAN later phases) ------------------ */
+/* Take a hull to a pirate lair (MARITIME_PLAN Phase 5b). */
 static RejectReason sim_attack_pirate(GameState *gs, int ship_idx,
                                       int pirate_idx, uint32_t player)
 {
@@ -1124,11 +803,7 @@ static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
      * something that no longer exists. */
     if (target->departure_tick != target_departure) return REJ_NO_TARGET;
 
-    /* The defence is the target's guns plus every escort sailing with
-     * them — same owner, same crossing, same tick out of harbour. An
-     * escort that has not left port, or left on a different voyage, is
-     * not there to help, which is what makes forming a convoy a
-     * decision rather than a label. */
+    /* The defence is the target's guns plus every escort sailing. */
     {
         int e;
         defence = ship_fighting_strength(target);
@@ -1165,16 +840,7 @@ static RejectReason sim_intercept(GameState *gs, int my_idx, int target_idx,
     }
 
     /* A fight costs the loser more than its cargo: guns wear a hull
-     * down, and a worn hull fights worse (see intercept_strength).
-     * That gives losing a consequence which outlasts the engagement
-     * without ever taking the ship — test_intercept has said since it
-     * was written that "a hold is a setback, a ship is an evening",
-     * and it is right. Sinking a hull somebody spent an evening on is
-     * a different game from this one, and PvP that can cost you the
-     * evening is PvP most people decline to be in.
-     *
-     * So the floor is 1 and the repair is a Shipyard: come home, refit,
-     * go out again. */
+     * down, and a worn hull fights worse (see intercept_strength). */
     loser->hull -= winner->guns > 0 ? winner->guns : 1;
     if (loser->hull < 1) loser->hull = 1;
 
@@ -1197,12 +863,7 @@ int game_intercept(GameState *gs, int my_ship, int target_ship,
     return command_submit(gs, &c);
 }
 
-/* ---- charters (MMO_PLAN later phases) ----------------------
- * One island's upkeep, once per tick. An island that cannot pay
- * accrues arrears; enough of them and the charter lapses, which
- * relists the island: unowned and dormant, buildings intact, ready for
- * the next charter. That is how a persistent world hands islands to
- * new players without anyone administering it. */
+/* ---- charters (MMO_PLAN later phases) ---------------------- */
 static void sim_charter_tick(GameState *gs, int island)
 {
     Island *isl = &gs->islands[island];
@@ -1241,25 +902,7 @@ static void sim_charter_tick(GameState *gs, int island)
     isl->charter_timer   = 0;
 }
 
-/* ---- migration between islands (LIFE_PLAN Phase 7) --------
- * Where somebody goes when the island they were born on could not roof
- * them in RESERVE_TOLERANCE_MONTHS. Installed on every Island as a
- * function pointer, because an island must not learn what a world is.
- *
- * The order is the player's own ports first, then anybody else's. That
- * makes colonising a population valve — surplus people flow to your
- * frontier instead of being lost — and makes losing them to a rival the
- * thing that happens only when you have no room anywhere.
- *
- * `reserve_since` is CARRIED ACROSS, deliberately. A resident moved to
- * another island arrives with the wait they have already served, so
- * nobody can be shuffled between a player's ports on a clock that keeps
- * restarting and be lost anyway; and somebody who arrives with 23 of
- * their 24 months served is at the front of the destination's queue,
- * which is where they belong.
- *
- * Returns 1 if they were taken. A destination house must have ROOM: the
- * capacity rule applies to arrivals, which is exactly what this is. */
+/* ---- migration between islands (LIFE_PLAN Phase 7) -------- */
 static int game_migrate_to(GameState *gs, Island *from, int idx,
                            uint32_t owner, int want_owner)
 {
@@ -1345,18 +988,7 @@ void sim_run_one_tick(GameState *gs)
         gs->cmd_applied++;
     }
 
-    /* A predicting client stops here with the rest of the world
-     * (SERVER_AUTHORITY.md Phase 2). Everything below that is not this
-     * player's own island belongs to the server: the market, other
-     * people's harbours, every ship, the charters. Guessing at them
-     * buys nothing — the next push overwrites it — and since Phase 3
-     * those islands arrive REDACTED, so a prediction would be running
-     * production on an empty harbour and drawing the answer.
-     *
-     * What is still predicted is exactly what makes the game feel
-     * responsive: a command you just issued, applied above, and the
-     * pipeline of the island you are looking at. Placement is the verb
-     * of a city builder and it cannot wait for a round trip. */
+    /* A predicting client stops here with the rest of the world */
     if (gs->predict_only != 0u) {
         for (i = 0; i < MAX_ISLANDS; i++)
             if (gs->islands[i].owner == gs->predict_only)
@@ -1366,18 +998,10 @@ void sim_run_one_tick(GameState *gs)
         return;
     }
 
-    /* 2. The order book: deliver what has arrived, then match what
-     * crosses. Before the islands tick, so goods delivered this tick
-     * are available to production this tick rather than next — a
-     * shipment that lands is stock, and stock is what a workshop
-     * consumes. */
+    /* 2. The order book: deliver what has arrived, then match what */
     book_match(gs);
 
-    /* 3. Every settled island's full pipeline, one tick, in order —
-     * see island_update()'s ordering constraint. Each is handed the
-     * world's migration hook first: an island cannot see another
-     * island, so where a departing resident goes is a question only
-     * this layer can answer (LIFE_PLAN Phase 7). */
+    /* 3. Every settled island's full pipeline, one tick, in order — */
     for (i = 0; i < MAX_ISLANDS; i++) {
         gs->migrate_from        = i;
         gs->islands[i].emigrate     = game_migrate_resident;
@@ -1471,10 +1095,7 @@ void sim_run_one_tick(GameState *gs)
 }
 
 /* ---- sim_hash -------------------------------------------
- * FNV-1a over exactly the state that defines the world (see game.h).
- * Byte-hashing struct fields individually — rather than memcmp-ing
- * whole structs — is what lets it skip padding and the derived/cosmetic
- * fields that would otherwise make the hash flap without a real desync. */
+ * FNV-1a over exactly the state that defines the world (see game.h). */
 static void fnv_bytes(uint64_t *h, const void *data, size_t n)
 {
     const unsigned char *p = (const unsigned char *)data;
@@ -1528,25 +1149,8 @@ uint64_t sim_hash(const GameState *gs)
         fnv_bytes(&h, &isl->research_boats_out, sizeof(isl->research_boats_out));
         fnv_bytes(&h, &isl->scholars_out, sizeof(isl->scholars_out));
 
-        /* Residents (LIFE_PLAN Phase 3). Hashed even though nothing
-         * reads them yet: state outside the hash is state the F9
-         * self-check and the cross-platform gate cannot see, and the
-         * whole point of landing this phase inert is to prove the
-         * serialisation before behaviour depends on it. next_resident_id
-         * goes in too — it decides what everybody is called, so two
-         * worlds that disagree about it are two different worlds.
-         *
-         * Field by field rather than a struct dump: Resident has
-         * padding, and hashing padding is hashing uninitialised bytes,
-         * which is stable within one run and different across machines
-         * (the exact failure ci/sanitize.sh's MSan pass exists for). */
-        /* The treasury and the allowance (LIFE_PLAN Phase 7). Every one
-         * of these decides what the island does NEXT — what it collects,
-         * whether a house can be founded, how much of the tax is paid —
-         * so all of them are world state and all of them are hashed.
-         * left_last_month and tax_last_month are not: they are what
-         * happened, kept for the UI to read, and nothing reads them
-         * back into the sim. */
+        /* Residents (LIFE_PLAN Phase 3). Hashed even though nothing */
+        /* The treasury and the allowance (LIFE_PLAN Phase 7). Every one */
         fnv_bytes(&h, &isl->founder_allowance, sizeof(isl->founder_allowance));
         fnv_bytes(&h, &isl->tax_rate_permille, sizeof(isl->tax_rate_permille));
         fnv_bytes(&h, &isl->compliance_permille,
@@ -1596,19 +1200,7 @@ uint64_t sim_hash(const GameState *gs)
 
     /* The order book is world state (MARITIME_PLAN Phase 2): two
      * clients whose books disagreed would fill different trades and
-     * diverge from there, so it is hashed like everything else.
-     *
-     * Live entries only, and — unlike ships above — the dead slots
-     * between them contribute NOTHING, not even their `active` flag.
-     * That is deliberate and it is what lets a checkpoint compact the
-     * book: an order is addressed by id, never by slot, so a book
-     * holding one live order in slot 5 is the same world as the same
-     * order in slot 0, and the hash has to agree. Hashing a dead slot's
-     * flag would make "how many orders have ever been cancelled here"
-     * part of the world, and a restore would desync on nothing.
-     *
-     * The live counts go in explicitly so the order and booking runs
-     * cannot be read as each other. */
+     * diverge from there, so it is hashed like everything else. */
     {
         int live = orderbook_open_live(&gs->book);
         fnv_bytes(&h, &live, sizeof(live));
@@ -1747,11 +1339,7 @@ uint64_t sim_hash(const GameState *gs)
     return h;
 }
 
-/* ---- game_verify_determinism ----------------------------
- * The F9 self-check. Rebuilds the tick-0 world from world_seed in a
- * scratch GameState, borrows the live command log (read-only during
- * replay — sim_apply never appends), replays it tick-for-tick up to the
- * live tick, and compares hashes. See game.h. */
+/* ---- game_verify_determinism ---------------------------- */
 int game_verify_determinism(GameState *gs)
 {
     GameState *scratch;
@@ -1800,13 +1388,7 @@ int game_verify_determinism(GameState *gs)
 }
 
 /* ---- commit_placement -----------------------------------
- * Shared by game_try_place_road() and game_place_building_confirmed():
- * the actual building_place() call plus its post-placement side
- * effects (House PopData, Warehouse storage capacity). Callers are
- * responsible for their own affordability check and payment
- * deduction beforehand — this only ever runs once placement is
- * already decided. Returns the new building's index, or -1 on
- * failure (full array, invalid tile, or an unsettled island). */
+ * Shared by game_try_place_road() and game_place_building_confirmed(): */
 static int commit_placement(GameState *gs, int island, BuildingType type,
                             int row, int col)
 {
@@ -1821,11 +1403,7 @@ static int commit_placement(GameState *gs, int island, BuildingType type,
                          &isl->map, type, row, col);
     if (idx < 0) return -1;
 
-    /* If a house was just placed, activate its PopData and try to put a
-     * household in it (LIFE_PLAN Phase 6c). It may not get one — the
-     * founder allowance runs out and the reserve may be empty — in
-     * which case the roof stands there and island_update asks again
-     * every month. */
+    /* If a house was just placed, activate its PopData and try to put. */
     if (pop_is_house_type(type)) {
         pop_init(&isl->pop_data[idx]);
         island_settle_house(isl, idx, gs->world_seed);
@@ -1840,14 +1418,7 @@ static int commit_placement(GameState *gs, int island, BuildingType type,
     return idx;
 }
 
-/* ---- game_try_place_road ----------------------------------
- * Roads are exempt from the build-confirmation popup: they're also
- * placeable by dragging (see game_update()'s per-frame drag check),
- * and a per-tile confirmation dialog would make that gesture
- * unusable. A single non-dragged click on Road goes through this
- * same function for consistency — one tile placed the same way
- * whether it came from a click or a drag. Roads are free, so there's
- * no resources-vs-gold choice to offer anyway. */
+/* ---- game_try_place_road ---------------------------------- */
 static RejectReason sim_place_road(GameState *gs, int island,
                                    int row, int col)
 {
@@ -1880,11 +1451,7 @@ int game_try_place_road(GameState *gs, int row, int col)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_place_building / game_place_building_confirmed ----
- * The sim body validates everything itself (type range, settled,
- * affordability) so it is safe to call from a replayed log where the
- * accompanying GameState fields no longer describe the moment of
- * submission. */
+/* ---- sim_place_building / game_place_building_confirmed ---- */
 static RejectReason sim_place_building(GameState *gs, int island,
                                        int row, int col,
                                        BuildingType type, int pay_with_gold)
@@ -2016,12 +1583,7 @@ void game_confirm_upgrade(GameState *gs, int building_idx)
     if (building_idx < 0 || building_idx >= isl->building_count) return;
     if (!isl->buildings[building_idx].active) return;
 
-    /* Any house type, not just a Marsh Cottage. This was
-     * `type != BUILDING_HOUSE` while Marsh Cottage was the only tier
-     * with anywhere to go; SUPPLY_CHAIN Phase 8 gives EVERY house a
-     * possible future through the Academy, so the question is whether
-     * this is a house at all — which pop_is_house_type answers, and
-     * which agents_sync once got wrong the same way. */
+    /* Any house type, not just a Marsh Cottage. This. */
     type = isl->buildings[building_idx].type;
     if (!pop_is_house_type(type)) return;
 
@@ -2111,13 +1673,7 @@ int game_find_building_at(const GameState *gs, int row, int col)
     return -1;
 }
 
-/* ---- sim_sell / game_sell_resource -------------------------
- * Sells the island's goods to the NPC faction at its current bid. The
- * faction pays out of its own finite gold and takes the goods into its
- * inventory (raising it, which lowers the next bid). Player gold rises
- * by exactly what the faction's falls — the conservation invariant. The
- * faction cannot pay for more than its gold covers, so qty is clamped to
- * that; a broke faction buys nothing (returns 0). */
+/* ---- sim_sell / game_sell_resource ------------------------- */
 static RejectReason sim_sell(GameState *gs, int island, ResourceType res,
                              int qty, int limit)
 {
@@ -2170,13 +1726,7 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty)
     game_sell_resource_limit(gs, res, qty, 0);
 }
 
-/* ---- sim_buy / game_buy_resource ----------------------------
- * Buys goods from the faction at its current ask. The faction can only
- * sell what it actually holds, so qty is clamped by its inventory as
- * well as by the player's storage headroom and Gold. qty < 0 means "buy
- * as much as all three allow", resolved here against live state so it
- * replays correctly. Player gold falls by exactly what the faction's
- * rises (conservation); the faction's inventory drops, lifting the ask. */
+/* ---- sim_buy / game_buy_resource ---------------------------- */
 static RejectReason sim_buy(GameState *gs, int island, ResourceType res,
                             int qty, int limit)
 {
@@ -2256,11 +1806,7 @@ static RejectReason sim_demolish(GameState *gs, int island, int idx)
         isl->pop_data[idx].residents = 0;
     }
 
-    /* Clean up any agents referencing this building — otherwise a
-     * demolished workplace leaves an agent stuck "employed" at a
-     * dead job forever (agent_assign_jobs only reassigns agents with
-     * work_idx == -1), and a demolished home leaves one with nowhere
-     * to be. */
+    /* Clean up any agents referencing this building — otherwise. */
     for (i = 0; i < isl->agent_count; i++) {
         Agent *a = &isl->agents[i];
         if (!a->active) continue;
@@ -2295,11 +1841,7 @@ void game_demolish_building(GameState *gs, int idx)
 }
 
 /* ---- sim_upgrade_house / game_upgrade_house ------------------ */
-/* Is an active, road-connected building of `type` standing on this
- * island? The prerequisite side of the upgrade rule — the one part
- * tier_upgrade_check() cannot answer for itself, because the sim looks
- * it up in Island and the UI looks it up in a snapshot. Connected, not
- * merely placed: an Academy nobody can reach teaches nobody. */
+/* Is an active, road-connected building of `type` standing on this */
 int island_has_building(const Island *isl, BuildingType type)
 {
     int i;
@@ -2336,17 +1878,9 @@ static RejectReason sim_upgrade_house(GameState *gs, int island, int idx,
                              &to);
     if (why != REJ_OK) return why;
 
-    /* Both branches cost the same: upgrade_gold belongs to the tier
-     * being LEFT, and tier_upgrade_check_def charges it. Deliberately
-     * not split per branch — the gate on Scholars is the Academy and
-     * four goods, not a bigger number, which is the rule this whole
-     * mechanic exists to teach. */
+    /* Both branches cost the same: upgrade_gold belongs to the tier */
     stockpile_add(&isl->stockpile, RES_GOLD, -tier->upgrade_gold);
-    /* Where these people came from, recorded on every upgrade rather
-     * than only on the one that reads it: a Scholar's House wants the
-     * basics of the house it grew out of, and a field written on one
-     * path and read on another is a field that eventually is not
-     * written (NEEDS_PLAN Phase 1). */
+    /* Where these people came from, recorded on every upgrade. */
     isl->pop_data[idx].origin_tier = (int)from;
     isl->buildings[idx].type = to;
     return REJ_OK;
@@ -2435,15 +1969,7 @@ int game_set_escort(GameState *gs, int ship_idx, int target_idx)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_ship_transfer / game_ship_transfer -----------------
- * Moves goods across a dock only, never across open water: the ship
- * must be docked at `island`. At the player's OWN island this is the
- * ordinary stockpile transfer. At a FOREIGN island (Phase 5) the only
- * permitted exchange is ship <-> harbor escrow, and only if the owner
- * allows docking and an active Harbor stands there — a ship that can't
- * dock can't deliver, which is where blockade comes from. Clamping is
- * deferred to ship_transfer_at / ship_transfer_escrow so the manual
- * path cannot disagree with what trade routes do. */
+/* ---- sim_ship_transfer / game_ship_transfer ----------------- */
 static int island_has_active_harbor(const Island *isl)
 {
     int i;
@@ -2544,15 +2070,7 @@ static RejectReason sim_ship_depart(GameState *gs, int ship_idx, int dest,
     sh->departure_tick = gs->sim_tick_no;    /* fixes the whole voyage */
     sh->progress       = 0.0f;
 
-    /* The convoy sails together (MARITIME_PLAN Phase 5). An escort
-     * that had to be ordered out separately would be an escort that
-     * arrives on a different tick and defends nobody — and it is the
-     * DEPARTURE TICK the intercept rule matches on, so "we left
-     * together" has to be true in the data and not merely in the
-     * player's intention.
-     *
-     * Escorts are not insured with their charge: a policy is bought
-     * per hull, and a warship carrying nothing has nothing to declare. */
+    /* The convoy sails together (MARITIME_PLAN Phase 5). An escort */
     {
         int e;
         for (e = 0; e < gs->ship_count; e++) {
@@ -2642,12 +2160,7 @@ static int sim_colonise(GameState *gs, int ship_idx, int island_idx,
     if (isl->owner != PLAYER_NONE && isl->owner != player) return 0;
     if (sh->cargo[RES_GOLD] < COLONY_FOUNDING_GOLD) return 0;
 
-    /* The founding gold leaves the hold and splits two ways: the
-     * charter bid goes to the faction (the plan's "a bid paid TO the
-     * faction" — and the economy's first real gold sink), the rest
-     * becomes the colony's treasury. Without that remainder the new
-     * island could not pay for so much as a road, since every cost is
-     * denominated in its own Gold. */
+    /* The founding gold leaves the hold and splits two ways:. */
     sh->cargo[RES_GOLD] -= COLONY_FOUNDING_GOLD;
     gs->faction.gold    += CHARTER_BID_GOLD;
 
@@ -2678,11 +2191,7 @@ int game_colonise(GameState *gs, int ship_idx, int island_idx)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_set_route_res / game_ship_set_route_res ------------
- * Cycle the resource carried on one leg of a ship's trade route through
- * every good and back to RES_COUNT ("carry nothing"), which is what
- * makes one-way runs expressible. `leg` 0 is the outbound A->B slot,
- * 1 the return B->A slot. */
+/* ---- sim_set_route_res / game_ship_set_route_res ------------ */
 static int sim_set_route_res(GameState *gs, int ship_idx, int leg)
 {
     Ship         *sh;
@@ -2707,11 +2216,7 @@ int game_ship_set_route_res(GameState *gs, int ship_idx, int leg)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_toggle_route / game_ship_toggle_route --------------
- * Turn a ship's route off if on; otherwise arm it to repeat the voyage
- * the ship last made (from_island -> to_island), so there is no
- * separate pick-two-islands mode to build. No-op if the ship has no
- * distinct last voyage to repeat. */
+/* ---- sim_toggle_route / game_ship_toggle_route -------------- */
 static int sim_toggle_route(GameState *gs, int ship_idx)
 {
     Ship *sh;
@@ -2743,11 +2248,7 @@ int game_ship_toggle_route(GameState *gs, int ship_idx)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_grant_start / game_grant_start ---------------------
- * The co-op join bootstrap: settle an untouched island as `player`'s
- * start, with the standard treasury. Validated so it can't be abused
- * as free expansion: the island must be virgin AND the player must own
- * nothing anywhere. Mirrors sim_colonise's settle block, minus a ship. */
+/* ---- sim_grant_start / game_grant_start --------------------- */
 static int sim_grant_start(GameState *gs, int island_idx, uint32_t player)
 {
     Island *isl;
@@ -2780,12 +2281,7 @@ int game_grant_start(GameState *gs, int island_idx)
     return command_submit(gs, &c);
 }
 
-/* ---- sim_escrow_put / take / sim_set_docking ----------------
- * The owner's side of the harbor airlock. PUT moves stockpile->escrow
- * (clamped to stock); TAKE moves escrow->stockpile (clamped to escrow
- * and, for goods, to storage headroom — the escrow holds overflow
- * rather than destroying it, same rule as unloading a ship). Ownership
- * is enforced centrally in sim_apply. */
+/* ---- sim_escrow_put / take / sim_set_docking ---------------- */
 static RejectReason sim_escrow_put(GameState *gs, int island,
                                    ResourceType res, int qty, uint32_t nonce)
 {
@@ -2838,16 +2334,7 @@ static RejectReason sim_set_docking(GameState *gs, int island, int allow)
     return REJ_OK;
 }
 
-/* What the treasury takes from wages and from business profit
- * (LIFE_PLAN Phase 7). CLAMPED RATHER THAN REFUSED: this arrives from a
- * stepped control that already knows the bounds, and a command that
- * came from somewhere else should land on a legal rate rather than
- * bounce — the same reasoning sim_set_docking uses in coercing to 0/1.
- *
- * Compliance is deliberately NOT reset here. A player who has taxed an
- * island into sullenness does not get its goodwill back by moving the
- * rate; they get it back by leaving the rate alone until the ladder
- * climbs, which is the hysteresis doing its job. */
+/* What the treasury takes from wages and from business profit */
 static RejectReason sim_set_tax_rate(GameState *gs, int island, int permille)
 {
     if (permille < 0)                      permille = 0;
@@ -2959,25 +2446,9 @@ int game_cancel_order(GameState *gs, uint32_t order_id)
 }
 
 
-/* ---- the order book (MARITIME_PLAN Phase 2) -----------------
- * Posting reserves: a sell takes the goods out of the stockpile, a buy
- * takes the gold. Both are held against the order and returned if it
- * is cancelled. Without that, one cargo could be posted into ten books
- * and fill all ten — the same double-spend the harbour escrow exists
- * to prevent between players. */
+/* ---- the order book (MARITIME_PLAN Phase 2) ----------------- */
 
-/* ---- whose purse a trade touches -------------------------
- * A player's goods and gold are in the island's stockpile. The
- * faction's are in the company's single inventory, behind whichever of
- * its harbours the order was posted at — see faction.h on why one stock
- * across several ports is safe: posting reserves. And a ROUTE CHART is
- * in neither: it belongs to the player, not to a harbour, because
- * losing a colony does not make you forget the sea (knowledge.h).
- *
- * Everything that moves value in the book goes through these two, so
- * the reserve, the refund and the settlement cannot end up disagreeing
- * about where a counterparty keeps its money — which is exactly the
- * kind of disagreement that mints or destroys goods. */
+/* ---- whose purse a trade touches ------------------------- */
 static int trade_balance(const GameState *gs, uint32_t owner, int island,
                          TradeId what)
 {
@@ -3050,11 +2521,7 @@ static RejectReason sim_place_order(GameState *gs, int island, int32_t packed,
         return REJ_UNAVAILABLE;
     }
 
-    /* The per-player cap does not apply to the market maker: it is what
-     * stops one trader crowding the book, and the faction's quoting is
-     * already bounded by construction (ports x goods x two sides, all
-     * tracked in quote_order[] and withdrawn before each refresh). The
-     * global ORDERBOOK_MAX_ORDERS still holds for everyone. */
+    /* The per-player cap does not apply to the market maker: it is what */
     if (player != PLAYER_FACTION &&
         orderbook_open_count(b, player) >= ORDERBOOK_MAX_PER_PLAYER)
         return REJ_UNAVAILABLE;
@@ -3122,11 +2589,7 @@ static RejectReason sim_cancel_order(GameState *gs, uint32_t order_id,
     return REJ_OK;
 }
 
-/* ---- expeditions (MARITIME_PLAN Phase 3d) -----------------
- * A survey commits a scholar, a research boat and a blank chart, and
- * comes back with a passage or with nothing. See survey.h for why the
- * blank chart is spent either way and why the crew is at risk.
- */
+/* ---- expeditions (MARITIME_PLAN Phase 3d) ----------------- */
 static RejectReason sim_build_research_boat(GameState *gs, int island)
 {
     Island *isl = &gs->islands[island];
@@ -3258,25 +2721,7 @@ static void scholar_lost(Island *isl)
     if (best >= 0) isl->pop_data[best].residents--;
 }
 
-/* ---- the sea changes shape (MARITIME_PLAN Phase 3e) -------
- * Charts expire. A private passage stays in play for
- * SEA_ROUTE_LIFETIME_TICKS and then goes out of use: the water silts
- * up, the reef shifts, the pilots who knew it die. A fresh passage from
- * the pair's pool comes in behind it, and every chart of the old one
- * becomes waste paper.
- *
- * This is what stops the map from ever being solved. Without it a
- * player who surveyed every crossing once would be permanently faster
- * than everyone who came later, and the Chart House would be a
- * building you use once.
- *
- * Pairs rotate on their OWN offsets rather than together, so the sea
- * shifts continuously instead of invalidating every chart in the world
- * on the same tick. The stagger itself lives in sea.c, because the
- * charts screen has to count down to the same instant this rotates on
- * (UI_PLAN N4) and two copies of a schedule is how a clock comes to
- * disagree with the event it is timing.
- */
+/* ---- the sea changes shape (MARITIME_PLAN Phase 3e) ------- */
 static void sea_rotation_update(GameState *gs)
 {
     int pairs = gs->sea.island_count * (gs->sea.island_count - 1) / 2;
@@ -3338,21 +2783,7 @@ static void surveys_update(GameState *gs)
     }
 }
 
-/* ---- choosing a passage (MARITIME_PLAN Phase 3b) ----------
- * A booking sails the fastest route its SELLER can actually use: one
- * they know exists and hold a chart for. The seller chooses because
- * the seller dispatches — the merchant, the hull and the cargo all
- * leave from their harbour, and a buyer cannot lend a map to a crew
- * they never meet.
- *
- * The public lane is always available and needs no chart, so this can
- * never fail to find a route. Ties go to the lower route id, which is
- * generation order and therefore the same on every client.
- *
- * The chart is RESERVED here rather than spent on arrival, the same
- * discipline as goods and gold: a map that were only spent at the end
- * of the voyage could send out ten cargoes on one chart.
- */
+/* ---- choosing a passage (MARITIME_PLAN Phase 3b) ---------- */
 static const Route *pick_route(GameState *gs, int from, int to,
                                uint32_t seller, int *out_id)
 {
@@ -3387,22 +2818,7 @@ static const Route *pick_route(GameState *gs, int from, int to,
     return best;
 }
 
-/* ---- the faction as market maker (MARITIME_PLAN Phase 2) ----
- * Every FACTION_QUOTE_INTERVAL_TICKS the market withdraws its standing
- * orders and posts fresh ones at its current bid and ask, at each of
- * its home ports. Its quotes therefore appear in the book as ordinary
- * orders: they reserve, they ship, they tie up its hulls, and a player
- * can trade inside its spread with someone else instead.
- *
- * It is a pure function of world state, so it needs no Command — the
- * same reasoning as faction_tick's mean reversion. A replay re-derives
- * every quote it ever posted.
- *
- * WHICH goods it quotes is economic rather than arbitrary: the ones it
- * is furthest from baseline on, which is where it most wants to trade.
- * It cannot quote everything (two sides x every good x every port would
- * exhaust the book by itself), and a market maker that leans against
- * its own imbalance is a better answer than a rotation. */
+/* ---- the faction as market maker (MARITIME_PLAN Phase 2) ---- */
 static void faction_quote_refresh(GameState *gs)
 {
     Faction *f = &gs->faction;
@@ -3450,11 +2866,7 @@ static void faction_quote_refresh(GameState *gs)
                 f->quote_order[p][i][s] = 0u;
             }
 
-    /* Chart offers, withdrawn and re-posted with the rest. They rotate
-     * through the private routes rather than offering all of them at
-     * once: the market has a few maps on the counter this week, not an
-     * atlas. The cursor advances every refresh, so every passage comes
-     * up eventually and no player is permanently locked out of one. */
+    /* Chart offers, withdrawn and re-posted with the rest. They rotate */
     for (i = 0; i < FACTION_CHART_ROUTES; i++) {
         Order *o;
         if (!f->chart_order[i]) continue;
@@ -3531,16 +2943,7 @@ static void faction_quote_refresh(GameState *gs)
     }
 }
 
-/* ---- matching -----------------------------------------------
- * Runs once per tick. Deterministic by construction: candidates are
- * chosen by best price, then earliest placed, then lowest id, and ids
- * are assigned in command-log order — so a replay fills exactly the
- * trades the original run filled, in the same sequence.
- *
- * A fill is not a transfer. The goods are already out of the seller's
- * stockpile and the gold out of the buyer's; what a match creates is a
- * Booking, and the goods arrive when the water between the two
- * harbours has been crossed. */
+/* ---- matching ----------------------------------------------- */
 static int better_order(const Order *cand, const Order *best, int side)
 {
     if (!best) return 1;
@@ -3554,37 +2957,14 @@ static int better_order(const Order *cand, const Order *best, int side)
     return cand->id < best->id;
 }
 
-/* Choose the pair to fill for one good, or return 0 if nothing can.
- *
- * A player may not trade with themselves — but refusing that pair is
- * not the same as refusing the good. If the top of book is one player
- * on both sides and the matcher simply stopped there, that player
- * could shut every other trader out of a resource for as long as they
- * cared to leave the pair standing, at no cost, by posting a bid and
- * an ask nobody would ever take. So a self-crossing top of book steps
- * aside rather than ending the pass.
- *
- * It steps aside in one move, not a search. With B the best bid and A
- * the best ask, both owned by p: any crossing pair with two different
- * owners has either a bid not owned by p — and then the best such bid
- * also crosses A, because A is the cheapest ask of all — or an ask not
- * owned by p, and then that ask's best case is B. Checking (B2, A) and
- * (B, A2) is therefore exhaustive, and the common path stays a single
- * linear pass.
- */
+/* Choose the pair to fill for one good, or return 0 if nothing can. */
 static int book_best_cross(const GameState *gs, OrderBook *b, TradeId what,
                            Order **out_bid, Order **out_ask)
 {
     Order *bid = NULL, *ask = NULL, *bid2 = NULL, *ask2 = NULL;
     int    i;
 
-    /* An ask whose island has no merchant or no hull free cannot carry
-     * a cargo this tick, so it is not in the book this tick. Skipping
-     * it rather than stalling on it is the same rule the self-crossing
-     * case above needs, and for the same reason: one seller at the top
-     * of the book, out of hulls, must not stop everyone else trading
-     * the good. It becomes eligible again when one of its merchants
-     * gets home. */
+    /* An ask whose island has no merchant or no hull free cannot carry */
 #define ASK_ELIGIBLE(o) island_can_dispatch(&gs->islands[(o)->island])
 
     for (i = 0; i < b->order_count; i++) {
@@ -3666,11 +3046,7 @@ static SeaPos booking_pos(const GameState *gs, const Booking *bk)
 
 /* Pirates take what passes them (MARITIME_PLAN Phase 5b). Checked every
  * tick against every shipment still outbound, so a raid happens at a
- * place and a time rather than being decided before the ship left.
- *
- * The fleet KEEPS what it takes. That is the whole reason this is worth
- * more than the boolean it replaces: the goods are somewhere, and going
- * to get them is a thing a player can decide to do. */
+ * place and a time rather than being decided before the ship left. */
 static void book_raid_check(GameState *gs)
 {
     OrderBook *b = &gs->book;
@@ -3686,15 +3062,7 @@ static void book_raid_check(GameState *gs)
         pi = pirate_at(&gs->pirates, &gs->sea, booking_pos(gs, bk));
         if (pi < 0) continue;
 
-        /* The lane is patrolled, and that is the whole of "public are
-         * slow but protected". Without this the property would have
-         * been lost with the chance constant it used to live in — and
-         * lost the wrong way round, because the lane threads a wider
-         * waypoint than any private passage and is therefore MORE
-         * exposed on geography alone.
-         *
-         * Derived, like everything else here, so a replay agrees about
-         * which convoys the escort happened to be with. */
+        /* The lane is patrolled, and that is the whole of "public. */
         if (bk->route_id >= 0 && !gs->sea.route[bk->route_id].is_private &&
             shipment_is_raided(gs->world_seed, bk->route_id,
                                bk->arrive_tick, bk->seller,
@@ -3735,12 +3103,7 @@ static void book_settle_arrivals(GameState *gs)
         to   = &gs->islands[bk->to_island];
         from = &gs->islands[bk->from_island];
 
-        /* Outbound. A raided shipment lands nothing: the goods are
-         * gone with the pirates, and the buyer — who paid at posting
-         * and did not choose the passage — gets their gold back. The
-         * seller dispatched and the seller bears it, which is what
-         * makes insurance worth buying and what makes choosing the
-         * fast passage a decision rather than a free upgrade. */
+        /* Outbound. A raided shipment lands nothing: the goods. */
         if (!bk->delivered && gs->sim_tick_no >= bk->arrive_tick &&
             bk->raided) {
             trade_credit(gs, bk->buyer, bk->to_island, trade_gold(),
@@ -3805,12 +3168,7 @@ static void book_match(GameState *gs)
     surveys_update(gs);
     faction_quote_refresh(gs);
 
-    /* Which (kind, id) pairs the book actually holds an order for.
-     * Without it the loop below asks the matcher about every resource
-     * and every route every tick -- around 245 scans of the whole book
-     * for a book that is usually empty. Built in one pass; the loop
-     * order is unchanged, so which trades cross and in what order is
-     * exactly what it was. */
+    /* Which (kind, id) pairs the book actually holds an order for. */
     {
         unsigned char *seen = present;
         int            n;
@@ -3897,26 +3255,13 @@ static void book_match(GameState *gs)
             gs->islands[ask->island].merchants_out++;
             gs->islands[ask->island].hulls_out++;
 
-            /* Whether pirates take it is no longer decided here
-             * (MARITIME_PLAN Phase 5b). It used to be a hash of the
-             * shipment's identity, fixed at dispatch; now a fleet
-             * either is or is not lying in the water the cargo will
-             * pass through, and book_raid_check finds out on the tick
-             * it happens. Your cargo is taken because of where it
-             * sailed, which is a thing a player can learn.
-             *
-             * The insurance below is still bought at dispatch, because
-             * an underwriter is paid before the voyage or not at all. */
+            /* Whether pirates take it is no longer decided here */
             {
                 Booking *bk    = &b->booking[slot];
                 Island  *from  = &gs->islands[ask->island];
                 int      value = qty * bk->price;
 
-                /* A standing policy insures at the route's premium, so
-                 * the fast passage costs more to cover than the lane —
-                 * which is the whole point of pricing risk per route
-                 * rather than per pair of islands. The premium is paid
-                 * at dispatch, out of the seller's own purse. */
+                /* A standing policy insures at the route's premium. */
                 if (from->insure_shipments && value > 0) {
                     int prem = faction_route_premium(&gs->faction,
                                                      bk->route_id);
@@ -3934,15 +3279,7 @@ static void book_match(GameState *gs)
             }
 
             /* The buyer reserved at their limit; a fill at the resting
-             * price can only be cheaper, and the difference goes back.
-             *
-             * The reserve therefore falls by the LIMIT, not by the
-             * price: the limit is what those units were holding, and
-             * the gap between the two has just been handed back below.
-             * Decrementing by the price instead leaves the difference
-             * sitting in the reserve as well as in the stockpile, and
-             * cancelling the remainder pays it out a second time —
-             * gold minted by part-filling an order and withdrawing. */
+             * price can only be cheaper, and the difference goes back. */
             bid->reserved_gold -= qty * bid->limit;
             if (bid->limit > b->booking[slot].price)
                 trade_credit(gs, bid->owner, bid->island, trade_gold(),
@@ -3959,11 +3296,7 @@ static void book_match(GameState *gs)
 
 /* ---- Ownership gates (Phase 5) ------------------------------
  * Checked centrally in sim_apply so no dispatch path can forget them:
- * you may only act on an island you own and command a ship you own.
- * This is the whole privacy model — two players cannot edit each
- * other's islands because the validation refuses, not because anything
- * is hidden. Bounds are checked here too, so the gates subsume the old
- * per-case range checks. */
+ * you may only act on an island you own and command a ship you own. */
 static int owns_island(const GameState *gs, int idx, uint32_t player)
 {
     return idx >= 0 && idx < MAX_ISLANDS &&
@@ -3976,20 +3309,10 @@ static int owns_ship(const GameState *gs, int idx, uint32_t player)
            player != PLAYER_NONE && gs->ships[idx].owner == player;
 }
 
-/* ---- sim_apply ----------------------------------------------
- * The single dispatch from a Command to the mutation that carries it
- * out. The ONLY caller of the sim_* bodies above, and the only place
- * world state changes. Never appends to the log (command_submit does
- * that, and replay calls sim_apply directly). Returns 1 if the command
- * mutated state, 0 if it was rejected — rejection is deterministic and
- * not an error. Payload decoding mirrors command.h. */
+/* ---- sim_apply ---------------------------------------------- */
 RejectReason sim_apply_reason(GameState *gs, const Command *c)
 {
-    /* Nobody commands the market (MARITIME_PLAN Phase 2). The faction
-     * acts inside the tick, never through the log, so a command
-     * claiming its identity did not come from the sim — it came from a
-     * peer that made one up. Refusing it here rather than in each
-     * handler means a kind added later cannot forget to. */
+    /* Nobody commands the market (MARITIME_PLAN Phase 2). The faction */
     if (c->player_id == PLAYER_FACTION) return REJ_NOT_OWNER;
 
     switch (c->kind) {

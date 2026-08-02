@@ -1,21 +1,5 @@
-/*  test_world.c  --  the archipelago map at eight islands
- *                    (SUPPLY_CHAIN Phase 5)
- *
- * Phase 5 doubled MAX_ISLANDS and hand-placed eight nodes on the world
- * overview. Hand-placed coordinates are exactly the kind of thing that
- * looks right in a diff and overlaps on screen, and the failure is
- * quiet: an island drawn underneath another is still THERE, still in
- * the array, still ticking — it just cannot be clicked, so a player
- * simply cannot reach one of their colonies.
- *
- * The assertion is therefore made through the real hit-test rather
- * than by eyeballing the table: sample the screen, and require every
- * island to own a region of it, all eight regions to be about the same
- * size (they are identical diamonds, so a small one means a covered
- * one), and no island to answer for a point another already claimed.
- *
- * Built and run by tests/run.sh.
- */
+/* test_world.c  --  the archipelago map at eight islands
+ * (SUPPLY_CHAIN Phase 5) */
 
 #include "game.h"
 #include "building.h"
@@ -131,24 +115,13 @@ int main(void)
 
     CHECK(empty == 0, "every island owns a clickable region of the map");
 
-    /* Every node is the same diamond at the same zoom, so the areas
-     * should match. A node materially smaller than its neighbours is
-     * one drawn partly underneath another — which is the overlap this
-     * test exists to catch, and which "they all have some area" alone
-     * would miss. */
+    /* Every node is the same diamond at the same zoom, so the areas */
     CHECK(smallest * 10 >= largest * 9,
           "and they are all the same size — none is partly covered");
 
     game_free(gs);
 
-    /* MARITIME_PLAN Phase 1 made island positions GENERATED rather than
-     * hand-placed, which changes what this test has to prove. Eight
-     * hand-placed dots were correct by inspection and correct forever;
-     * eight generated ones are correct only if the minimum separation
-     * clears the projection, and the projection is anisotropic — the
-     * sea is square and the screen is not, so a diagonal pair can fail
-     * to clear in either axis while looking well separated on the
-     * water. One seed cannot show that. These can. */
+    /* MARITIME_PLAN Phase 1 made island positions GENERATED rather. */
     {
         static const uint32_t SEEDS[] = {
             1u, 4242u, 777u, 12345u, 99991u, 31337u, 90210u, 4711u,

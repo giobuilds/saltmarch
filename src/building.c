@@ -1,68 +1,12 @@
-/*  building.c  --  Building definitions and placement logic
- *
- *  PLACEMENT VALIDATION STRATEGY
- *  ==============================
- *  building_can_place() works in three passes:
- *
- *  Pass 1 – Bounds check
- *    The entire footprint (tile_w × tile_h) must lie within
- *    the map.  A 2×2 building at (row=63, col=63) would hang
- *    off the edge — reject it.
- *
- *  Pass 2 – Per-tile checks
- *    Every tile in the footprint must be:
- *      a) buildable  (not water, not forest)
- *      b) not already occupied by another building
- *    If PLACE_NEEDS_FERTILE is set, every tile must also
- *    carry the right fertility flag.
- *
- *  Pass 3 – Adjacency checks (only if flags require it)
- *    PLACE_NEEDS_COAST  → at least one of the 4-connected
- *                         neighbours of ANY footprint tile
- *                         must be TILE_WATER.
- *    PLACE_NEEDS_FOREST → same but for TILE_FOREST.
- *    We scan all tiles in the footprint and check their
- *    four cardinal neighbours (N, S, E, W).
- * 
- * Building definition table  (Phase 4: production fields)
- *
- * Production design:
- *   Fisher's Hut  – produces FISH from nothing (the sea is free)
- *   Warehouse     – no production; it is a storage building
- *   Farm          – produces GRAIN from nothing (sun and soil)
- *   Lumberjack    – produces WOOD from nothing (the forest is free)
- *
- * In Phase 5 we will add consumption chains:
- *   e.g. Fisher's Hut will consume WOOD for boat fuel,
- *   Farm will consume tools, etc.
- * RES_COUNT is used as a sentinel meaning "no resource".
- *
- * tick_seconds controls how fast each building works:
- *   slower tick = rarer, more valuable output
- */
+/* building.c  --  Building definitions and placement logic */
 
 #include "building.h"
 #include <stdio.h>    /* snprintf */
 #include <stddef.h>   /* NULL     */
 
-/* =========================================================
- * Building definition table
- * ========================================================= */
-/* Every row is DESIGNATED by its enum value. This table was positional
- * until the Shipyard / Worker's House rows were found swapped relative
- * to the enum (BUILDING_DEFS[10] held the Shipyard def while type 10 is
- * BUILDING_HOUSE_WORKER) — the same silent-misalignment failure the
- * RES_COL table had. Designated rows make the compiler place each def
- * at its enum index no matter the order rows appear in, and
- * tests/test_defs.c asserts name<->enum agreement so a future row can't
- * regress this. */
-/* Fields inside each row are designated too (UI_PLAN Phase 2), not just
- * the row indices. The rows were positional until this phase needed to
- * add `category`: appending a field to BuildingDef would have been safe,
- * but inserting one anywhere else would have silently shifted every
- * value after it in all thirteen rows — the same class of failure as the
- * swapped Shipyard row, one edit away. Naming the fields makes that
- * impossible and costs nothing at runtime. */
+/* Building definition table */
+/* Every row is DESIGNATED by its enum value. This table was positional */
+/* Fields inside each row are designated too (UI_PLAN Phase 2), not just */
 const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     [BUILDING_FISHERS_HUT] = {
         .name = "Fisher's Hut",
@@ -130,9 +74,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     /* Phase 2: Road — no production; PLACE_ANY_LAND is sufficient
      * to keep it off water/forest, since building_can_place already
-     * requires tile->buildable, which those tile types never have.
-     * Free: a real road network needs many tiles, and charging per
-     * tile made drag-placing one needlessly punishing. */
+     * requires tile->buildable, which those tile types never have. */
     [BUILDING_ROAD] = {
         .name = "Road",
         .category = BCAT_INFRASTRUCTURE,
@@ -160,12 +102,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_WOOD] = 30, [RES_GOLD] = 200 },
         .hud_placeable = 1
     },
-    /* Production chains, Phase 1 (Beer). Hop Farm names FERTILE_HOP in
-     * needs_fertility (map.h) — it was the first building to want a
-     * specific crop and, until SUPPLY_CHAIN Phase 1, the reason there
-     * was a whole placement flag for that one crop. Malthouse is the
-     * multi-input building: both Grain and Hops must be in stock for it
-     * to tick at all (all-or-nothing, see game_tick_buildings, game.c). */
+    /* Production chains, Phase 1 (Beer). Hop Farm names FERTILE_HOP. */
     [BUILDING_HOP_FARM] = {
         .name = "Hop Farm",
         .category = BCAT_FARMING,
@@ -209,15 +146,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
      * PLACE_NEEDS_COAST for the obvious reason. */
     [BUILDING_SHIPYARD] = {
         .name = "Shipyard",
-        /* Sails since SUPPLY_CHAIN Phase 7, which is deliberately a
-         * soft gate rather than a hard one. Sails need Cloth, Cloth
-         * needs Cotton, and cotton grows only in the south -- which
-         * you need a ship to reach. The faction stocks every good, so
-         * a first Shipyard buys its canvas and every one after it can
-         * be fitted from a Sail Loft of your own. That is the
-         * gold-only escape hatch BUY_PRICE's comment describes, doing
-         * the most load-bearing job it has ever had: keep it stocked,
-         * or this becomes a deadlock rather than an expense. */
+        /* Sails since SUPPLY_CHAIN Phase 7, which is deliberately. */
         .category = BCAT_MARITIME,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_NEEDS_COAST,
@@ -228,16 +157,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .cost = { [RES_PLANKS] = 15, [RES_SAILS] = 4, [RES_GOLD] = 250 },
         .hud_placeable = 1
     },
-    /* Was Worker's House, reachable only by upgrading a Marsh Cottage.
-     * SUPPLY_CHAIN Phase 3 makes it the base of the SECOND house line
-     * and therefore something you build: hud_placeable is 1 and cost[]
-     * is now load-bearing where it used to be ignored.
-     *
-     * The visible cost of the three-line model is that the old
-     * Cottage -> Worker's House ladder is gone. Both are base tiers
-     * now; their upgrade targets are Artisans (Phase 4) and Engineers
-     * (Phase 6). Dearer than a cottage because Wrights want four goods
-     * a cottage does not. */
+    /* Was Worker's House, reachable only by upgrading a Marsh Cottage. */
     [BUILDING_HOUSE_WORKER] = {
         .name = "Wright's House",
         .category = BCAT_HOUSING,
@@ -266,19 +186,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .hud_placeable = 1
     },
 
-    /* ================================================================
-     * SUPPLY_CHAIN Phase 3 — the northern base economy
-     *
-     * Seven chains. Three start at terrain Phase 1 added and could not
-     * have been written before it: the Potato Field names a crop, the
-     * Clay Pit names a deposit, and the pastures name grazing.
-     *
-     * Costs scale with depth: a field is cheap, the workshop that
-     * consumes it is not. Tick rates run slower the further along a
-     * chain a building sits, so a single upstream producer feeds
-     * roughly one downstream consumer without the player having to
-     * count ratios on paper.
-     * ================================================================ */
+    /* ================================================================ */
 
     [BUILDING_SAWMILL] = {
         .name = "Sawmill",
@@ -369,12 +277,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_BRICKWORKS] = {
         .name = "Brickworks",
-        /* A furnace, not a bench: BCAT_FACTORY's own definition is
-         * "heavy industry: furnaces, machine shops", which this fits
-         * better than "one artisan's worth of processing". Moved in
-         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
-         * by exactly one slot -- but moved because it is more nearly
-         * true, not only because it fit. */
+        /* A furnace, not a bench: BCAT_FACTORY's own definition. */
         .category = BCAT_FACTORY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
@@ -468,28 +371,10 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .hud_placeable = 1
     },
 
-    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ----
-     *
-     * Deeper than anything before it. Phase 3's chains were two steps
-     * from a field; these run three and four, and the Bloomery is the
-     * first building whose inputs are BOTH themselves manufactured —
-     * ore from a mine and charcoal from a kiln — so an Artisans
-     * district is a district, not a building.
-     *
-     * Steel Beams are the phase's build material, the way Bricks were
-     * Phase 3's: nothing consumes them in a chain, they are what the
-     * heavy industry below is made of. That is also what keeps them off
-     * test_chains' orphan list, and it is deliberate rather than
-     * incidental — a good with no consumer is a chain someone forgot to
-     * finish. */
+    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ---- */
     [BUILDING_CHARCOAL_KILN] = {
         .name = "Charcoal Kiln",
-        /* A furnace, not a bench: BCAT_FACTORY's own definition is
-         * "heavy industry: furnaces, machine shops", which this fits
-         * better than "one artisan's worth of processing". Moved in
-         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
-         * by exactly one slot -- but moved because it is more nearly
-         * true, not only because it fit. */
+        /* A furnace, not a bench: BCAT_FACTORY's own definition. */
         .category = BCAT_FACTORY,
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
@@ -504,12 +389,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     [BUILDING_IRON_MINE] = {
         .name = "Iron Mine",
         .category = BCAT_EXTRACTION,
-        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit
-         * demands the seam under EVERY tile of the footprint, and the
-         * scatter pass lays deposits down one tile at a time. A 2x2
-         * mine would need four adjacent iron tiles and would therefore
-         * never place anywhere — which is exactly how test_chains
-         * caught it, as "nothing anywhere can produce Iron Ore". */
+        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit */
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
         .needs_deposit = DEPOSIT_IRON,
@@ -524,12 +404,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     [BUILDING_COAL_MINE] = {
         .name = "Coal Mine",
         .category = BCAT_EXTRACTION,
-        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit
-         * demands the seam under EVERY tile of the footprint, and the
-         * scatter pass lays deposits down one tile at a time. A 2x2
-         * mine would need four adjacent iron tiles and would therefore
-         * never place anywhere — which is exactly how test_chains
-         * caught it, as "nothing anywhere can produce Iron Ore". */
+        /* 1x1 like the Clay Pit, and for the same reason: needs_deposit */
         .tile_w = 1, .tile_h = 1,
         .placement_flags = PLACE_ANY_LAND,
         .needs_deposit = DEPOSIT_COAL,
@@ -584,12 +459,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
     },
     [BUILDING_GLASSWORKS] = {
         .name = "Glassworks",
-        /* A furnace, not a bench: BCAT_FACTORY's own definition is
-         * "heavy industry: furnaces, machine shops", which this fits
-         * better than "one artisan's worth of processing". Moved in
-         * SUPPLY_CHAIN Phase 6, when Workshops outgrew the build bar
-         * by exactly one slot -- but moved because it is more nearly
-         * true, not only because it fit. */
+        /* A furnace, not a bench: BCAT_FACTORY's own definition. */
         .category = BCAT_FACTORY,
         .tile_w = 2, .tile_h = 2,
         .placement_flags = PLACE_ANY_LAND,
@@ -802,17 +672,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .hud_placeable = 1
     },
 
-    /* ---- SUPPLY_CHAIN Phase 6: Engineers ----
-     *
-     * The tier that needs the whole archipelago. Gold ore is highland
-     * and nowhere else, lac is jungle and nowhere else, lobster wants
-     * any coast, and the glass and brass behind the rest are Phase 4's
-     * northern industry -- so an Engineers neighbourhood is an argument
-     * for holding one of everything.
-     *
-     * The Watchmaker's and the Gramophone Works are the first
-     * three-input buildings in real content, which is the limit Phase 2
-     * reserved and nothing until now has exercised. */
+    /* ---- SUPPLY_CHAIN Phase 6: Engineers ---- */
     [BUILDING_GOLD_MINE] = {
         .name = "Gold Mine",
         .category = BCAT_EXTRACTION,
@@ -954,24 +814,7 @@ const BuildingDef BUILDING_DEFS[BUILDING_TYPE_COUNT] = {
         .hud_placeable = 0
     },
 
-    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ----
-     *
-     * The third line, both halves. Every Merchants good begins in the
-     * south -- coffee and plantains in the jungle, cane, maize and
-     * alpaca on the plantations -- so the climate Phase 5 opened stops
-     * being a novelty and becomes what the top of the economy runs on.
-     *
-     * The Investors goods are the scarcity tier: grapes grow only on
-     * the highland, pearls lie only off an atoll, and Jewellery wants
-     * gold ore and pearls together, which is the two rarest deposits
-     * in the world in one building.
-     *
-     * Sails, Wool Cloaks and Plantain Fry are here because the plan
-     * listed their chains and no tier ever asked for them. A producer
-     * nothing consumes is a chain someone forgot to finish, so rather
-     * than leave three of those in the table, Sails became what a
-     * Shipyard is built from and the other two joined the Merchants
-     * list -- taking it to six needs, and MAX_TIER_GOODS with it. */
+    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ---- */
     [BUILDING_COFFEE_GROVE] = {
         .name = "Coffee Grove",
         .category = BCAT_FARMING,
@@ -1440,18 +1283,7 @@ const char *building_category_name(BuildingCategory c)
 
 /* ---- how many people a workplace holds (LIFE_PLAN Phase 1) ----
  * See building.h for why this is derived from the category rather than
- * written into ninety def rows.
- *
- * The numbers are a feel decision and NOTHING depends on them
- * economically: production scales linearly with headcount, so output per
- * worker is unchanged and tests/test_closure.c's workers-per-resident
- * ratio does not move whatever is written here. What they decide is how
- * many BUILDINGS an island needs for a given population — land and
- * capital, not labour. They are cheap to retune for that reason.
- *
- * A gang digs; a bench does not. The order below is the crew you would
- * expect to find on the site, and it follows the category comments in
- * building.h rather than being invented alongside them. */
+ * written into ninety def rows. */
 int building_worker_cap(const BuildingDef *def)
 {
     static const int CREW[BCAT_COUNT] = {
@@ -1475,17 +1307,7 @@ int building_worker_cap(const BuildingDef *def)
 }
 
 /* ---- what a full crew is worth (LIFE_PLAN Phase 2) ----------
- * See building.h for the overhead story the formula tells.
- *
- * Integer, and it has to be: this advances Building.timer, which is
- * hashed world state. A multiplier expressed as a rate per tick needs
- * no division and no float, so two machines cannot round it apart.
- *
- * Clamped to the crew size rather than trusted. worker_count is
- * retallied every tick from whoever is physically present, and a
- * demolition mid-reassignment is exactly the sort of thing that could
- * briefly put one more body in a building than it holds — which would
- * otherwise be a free production bonus for knocking a workplace down. */
+ * See building.h for the overhead story the formula tells. */
 int building_work_advance(const BuildingDef *def, int workers)
 {
     int cap = building_worker_cap(def);
@@ -1496,10 +1318,8 @@ int building_work_advance(const BuildingDef *def, int workers)
     return 2 * workers - 1;
 }
 
-/* =========================================================
- * Helper: is tile (r,c) occupied by any placed building?
- * We check every active building's footprint.
- * ========================================================= */
+/* Helper: is tile (r,c) occupied by any placed building?
+ * We check every active building's footprint. */
 static int tile_is_occupied(const Building buildings[], int count,
                              int r, int c)
 {
@@ -1515,15 +1335,7 @@ static int tile_is_occupied(const Building buildings[], int count,
     return 0;
 }
 
-/* =========================================================
- * Helper: does the footprint have an adjacent tile carrying `dep`?
- * Same cardinal-neighbour sweep as footprint_has_adjacent below, but
- * asking about what is IN the tile rather than what it is — for a
- * building that works a deposit it cannot stand on (pearl beds in
- * shallow water). Kept separate rather than generalised into one
- * predicate-taking sweep: two four-line loops read better than one
- * loop plus a callback, at this size.
- * ========================================================= */
+/* Helper: does the footprint have an adjacent tile carrying `dep`? */
 static int footprint_has_adjacent_deposit(const Map *map,
                                           int row, int col,
                                           int fw, int fh,
@@ -1543,10 +1355,8 @@ static int footprint_has_adjacent_deposit(const Map *map,
     return 0;
 }
 
-/* =========================================================
- * Helper: does the footprint have an adjacent tile of type t?
- * Checks all four cardinal neighbours of every footprint tile.
- * ========================================================= */
+/* Helper: does the footprint have an adjacent tile of type t?
+ * Checks all four cardinal neighbours of every footprint tile. */
 static int footprint_has_adjacent(const Map *map,
                                   int row, int col,
                                   int fw, int fh,
@@ -1569,9 +1379,7 @@ static int footprint_has_adjacent(const Map *map,
     return 0;
 }
 
-/* =========================================================
- * building_can_place
- * ========================================================= */
+/* building_can_place */
 RejectReason building_place_check(const Map *map,
                                   BuildingType type,
                                   int row, int col)
@@ -1644,11 +1452,7 @@ RejectReason building_place_check_def(const Map *map,
         }
     }
 
-    /* The deposit you work from beside rather than stand on. Same
-     * refusal as the under-footprint case: "nothing to work here" is
-     * the same sentence either way, and the player knows which
-     * building they are holding — the argument that collapsed fourteen
-     * crops into one REJ_NEEDS_CROP. */
+    /* The deposit you work from beside rather than stand on. Same */
     if (def->needs_adjacent_deposit != DEPOSIT_NONE) {
         if (!footprint_has_adjacent_deposit(map, row, col,
                                             def->tile_w, def->tile_h,
@@ -1665,9 +1469,7 @@ int building_can_place(const Map *map, BuildingType type, int row, int col)
     return building_place_check(map, type, row, col) == REJ_OK;
 }
 
-/* =========================================================
- * building_place
- * ========================================================= */
+/* building_place */
 int building_place(Building buildings[], int *count,
                    const Map *map,
                    BuildingType type, int row, int col)
@@ -1687,11 +1489,7 @@ int building_place(Building buildings[], int *count,
     if (!building_can_place(map, type, row, col))
         return -1;
 
-    /* Reuse a demolished building's slot before appending — without
-     * this, repeated build/destroy cycles on the same spot would
-     * burn through MAX_BUILDINGS even though the live count stays
-     * low. (The cap only applies when no free slot exists, so
-     * reusing one works even with *count already at MAX_BUILDINGS.) */
+    /* Reuse a demolished building's slot before appending — without */
     slot = -1;
     for (i = 0; i < *count; i++) {
         if (!buildings[i].active) { slot = i; break; }
@@ -1712,9 +1510,7 @@ int building_place(Building buildings[], int *count,
     return slot;
 }
 
-/* =========================================================
- * building_can_afford
- * ========================================================= */
+/* building_can_afford */
 int building_can_afford(const Stockpile *s, BuildingType type)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
@@ -1727,9 +1523,7 @@ int building_can_afford(const Stockpile *s, BuildingType type)
     return 1;
 }
 
-/* =========================================================
- * building_gold_equivalent_cost
- * ========================================================= */
+/* building_gold_equivalent_cost */
 int building_gold_equivalent_cost(BuildingType type, const Faction *f)
 {
     const BuildingDef *def = &BUILDING_DEFS[type];
@@ -1742,17 +1536,7 @@ int building_gold_equivalent_cost(BuildingType type, const Faction *f)
     return total;
 }
 
-/* ---- building_missing_input -------------------------------
- * All-or-nothing: a building only ticks when EVERY non-RES_COUNT slot
- * has enough stock, so nothing ever half-consumes one input while
- * short of another.
- *
- * Returns the first slot it cannot pay for, or -1 when it can run. A
- * slot index rather than a bool because the caller logs which input is
- * missing, and the alternative was that loop living in island.c where
- * a test could not reach it with a def of its own — the seam
- * building_place_check_def() opened for the same reason.
- */
+/* ---- building_missing_input ------------------------------- */
 int building_missing_input(const BuildingDef *def, const Stockpile *s)
 {
     int j;

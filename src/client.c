@@ -1,10 +1,4 @@
-/*  client.c  --  Per-frame client update (MMO_PLAN Phase 6)
- *
- *  Was game.c's game_update(). It moved out unchanged in behaviour when
- *  the sim became an SDL-free library: this function reads SDL's clock,
- *  asks the renderer to map window pixels to logical ones, and drives
- *  the tick pump — three things the headless sim must not do.
- */
+/* client.c  --  Per-frame client update (MMO_PLAN Phase 6) */
 
 #include "client.h"
 #include "net.h"        /* the lockstep tick gate */
@@ -42,13 +36,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
 
     /* Zoom toward cursor on mouse wheel scroll. Keeps the tile under
      * the cursor stationary while zooming — the same behaviour as
-     * Google Maps.
-     *
-     * Gated on no overlay being open (UI_PLAN Phase 4). Scrolling over
-     * an open modal used to zoom the world behind it, which is
-     * README's long-standing "mouse wheel is not overlay-aware" bug:
-     * the wheel handler simply never asked. game_topmost_overlay() is
-     * now the one place that question is answered. */
+     * Google Maps. */
     if (gs->input.scroll_y != 0.0f && !game_overlay_open(gs)) {
         float old_zoom = isl->camera.zoom;
         float new_zoom = old_zoom + gs->input.scroll_y * ZOOM_STEP;
@@ -84,12 +72,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
         gs->hovered_col = -1;
     }
 
-    /* Road drag-placement: while the button is held and Road is
-     * selected, place at each newly-hovered tile as the cursor
-     * crosses it (no confirm popup — see game_try_place_road()'s doc
-     * comment on why Road is exempt). Reset drag_last_row/col to -1
-     * whenever the button isn't held so the next drag's first tile
-     * is never skipped as "unchanged". */
+    /* Road drag-placement: while the button is held and Road. */
     if (!gs->input.left_down) {
         gs->drag_last_row = -1;
         gs->drag_last_col = -1;
@@ -103,11 +86,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
         gs->drag_last_col = gs->hovered_col;
     }
 
-    /* placement_valid reflects only "does this tile structurally
-     * work" plus "is this island even settled" — affordability is a
-     * per-payment-method question the build-confirmation popup
-     * resolves, so the player can always open it and see both options
-     * even sitting at 0 Gold. */
+    /* placement_valid reflects only "does this tile structurally */
     gs->placement_valid  = 0;
     gs->placement_reason = REJ_OK;
     if (isl->settled &&
@@ -123,29 +102,13 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
         gs->placement_reason = (int)REJ_NOT_OWNER;
     }
 
-    /* Fixed-timestep simulation. Everything above this point is
-     * cosmetic and per-frame (camera, hover, the drag-placement input);
-     * everything the sim owns advances only here, in whole ticks, so
-     * frame rate cannot change the world. Accumulate the real elapsed
-     * time and spend it one tick at a time.
-     *
-     * The accumulator is clamped so a long stall (a breakpoint, a
-     * dragged window) spends at most a bounded number of ticks catching
-     * up instead of freezing in a spiral; the world simply advances a
-     * little less during that stall, which is invisible in single
-     * player and is what the future server's continuous ticking exists
-     * to make authoritative anyway. */
+    /* Fixed-timestep simulation. Everything above this point. */
     /* Time does not pass in the past (MMO_PLAN's scrubber). The
      * accumulator is left alone rather than zeroed, so leaving scrub
      * mode does not spend a backlog of stored-up ticks in one frame. */
     if (game_scrubbing(gs)) return;
 
-    /* Who is computing the world (SERVER_AUTHORITY.md Phase 2). Set
-     * every frame rather than at connect, so losing the session puts
-     * the client straight back to simulating everything — which is
-     * what "disconnect degrades to single player" has always meant.
-     *
-     * Offline this is 0 and nothing below changes at all. */
+    /* Who is computing the world (SERVER_AUTHORITY.md Phase 2). Set */
     gs->predict_only = net_server_authoritative(gs->net)
                      ? gs->local_player_id : 0u;
 
@@ -153,13 +116,7 @@ void client_update(GameState *gs, SDL_Renderer *renderer)
     if (gs->sim_acc_ns > SIM_TICK_NS * 8)
         gs->sim_acc_ns = SIM_TICK_NS * 8;
     while (gs->sim_acc_ns >= SIM_TICK_NS) {
-        /* Lockstep gate (Phase 5): a co-op guest may only simulate
-         * ticks the host has authorised — an authorised tick is a
-         * complete tick (every command for it has arrived). When the
-         * gate closes, real time keeps accumulating (clamped above) and
-         * the sim catches up in a burst when authorisation arrives,
-         * staying in step rather than drifting. Hosts and offline play
-         * are never gated. */
+        /* Lockstep gate (Phase 5): a co-op guest may only simulate */
         if (gs->net && !net_tick_allowed(gs->net, gs->sim_tick_no))
             break;
         sim_run_one_tick(gs);

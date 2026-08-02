@@ -56,32 +56,17 @@ void render_agents(SDL_Renderer *renderer,
                    const Agent agents[], int count,
                    const Camera *cam);
 
-/* The flat-shaded isometric diamond every tile, building and ghost is
- * drawn with. Exposed (rather than kept static in render.c) so the
- * world-map overlay can draw island nodes with the same primitive
- * instead of carrying a second copy of the geometry. Size is
- * TILE_W x TILE_H scaled by `zoom`. */
+/* The flat-shaded isometric diamond every tile, building and ghost. */
 /* ---- pending and rejected (UI_PLAN M1) --------------------
  * Commands apply at tick boundaries, and several ticks later under
- * lockstep. Rather than hiding that, both halves are drawn:
- *
- *   render_pending_placements  — buildings that have been ordered but
- *       not yet applied, as translucent outlines that harden into real
- *       buildings when the tick lands. A stalled co-op session shows a
- *       growing pile of these instead of silently eating clicks.
- *   render_reject_flashes      — the short-lived "why not" messages
- *       fx_reject.c raised, at the tile or widget that emitted them. */
+ * lockstep. Rather than hiding that, both halves are drawn: */
 void render_pending_placements(SDL_Renderer *renderer, const Camera *cam,
                                const struct GameState *gs);
 
 void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
                            const FxReject *fx);
 
-/* A tiny price line in `area`: `n` samples, oldest first, scaled to
- * their own min/max. Shared by the trade screen and the F10 tuning
- * overlay (UI_PLAN M3) so the two cannot draw the same history
- * differently — the player's chart and the developer's chart are the
- * same chart. Draws nothing for fewer than two samples. */
+/* A tiny price line in `area`: `n` samples, oldest first, scaled. */
 void render_sparkline(SDL_Renderer *renderer, float x, float y,
                       float w, float h, const int16_t *vals, int n,
                       SDL_Color col);
@@ -95,13 +80,7 @@ void render_draw_diamond_outline(SDL_Renderer *renderer,
                                  unsigned char r, unsigned char g,
                                  unsigned char b, unsigned char a);
 
-/* CHANGED: returns float positions so zoomed tiles sit flush with no gaps.
- * Phase 5: row/col widened from int to float — every existing call
- * site passes integer tile coordinates, which convert implicitly and
- * losslessly (tile indices are 0-63), so this is source-compatible.
- * It's what lets render_agents() project an agent's fractional
- * position through the exact same isometric transform as everything
- * else, with no separate function needed. */
+/* CHANGED: returns float positions so zoomed tiles sit flush with no gaps. */
 void iso_to_screen(float row, float col, const Camera *cam,
                    float *out_x, float *out_y);
 

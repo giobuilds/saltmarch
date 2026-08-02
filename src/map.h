@@ -1,15 +1,7 @@
 #ifndef MAP_H
 #define MAP_H
 
-/* =========================================================
- * map.h  --  Tile map data structures  (Phase 2)
- *
- * Phase 2 changes vs Phase 1:
- *   - MAP_COLS/ROWS expanded to 64x64
- *   - Tile gains buildable and fertility fields
- *   - New Fertility bitmask enum
- *   - map_init() now takes a seed for the noise generator
- * ========================================================= */
+/* map.h  --  Tile map data structures  (Phase 2) */
 
 #include <stdint.h>   /* uint32_t for seed */
 
@@ -23,22 +15,7 @@
 
 /* ---- Fertility flags -----------------------------------
  * A tile can support multiple crop types simultaneously.
- * Stored as a bitmask so we can write e.g.:
- *   t->fertility = FERTILE_GRAIN | FERTILE_PASTURE;
- *
- * SUPPLY_CHAIN Phase 1 widened this from two bits to one bit per crop
- * the plan's chains start from. Two bits was enough only because there
- * was one crop-specific building; with a field on BuildingDef
- * (needs_fertility) any building can name the crop it wants, and
- * PLACE_NEEDS_HOP_FERTILE — a placement flag that existed purely
- * because there was no way to say "this crop specifically" — is gone.
- *
- * Bits are declared for crops no profile grows yet: the southern ones
- * (cotton, cane, cocoa, coffee, tobacco, maize, plantain, lac) arrive
- * with the southern island profiles in Phase 5. Declaring them now
- * costs nothing — fertility is regenerated from the map seed and never
- * saved — and keeps the enum in one piece rather than split across two
- * phases. */
+ * Stored as a bitmask so we can write e.g.: */
 typedef enum {
     FERTILE_NONE     = 0,
     FERTILE_GRAIN    = 1 << 0,   /* wheat fields, bakeries       */
@@ -68,16 +45,7 @@ typedef enum {
     FERTILE_LAC      = 1 << 13
 } Fertility;
 
-/* ---- Mineral deposits ----------------------------------
- * What can be dug out of a tile. A tile has at most one, so this is an
- * enum rather than a bitmask: two minerals under one tile would mean
- * two mines on the same square, which the footprint rules forbid
- * anyway.
- *
- * Unlike fertility (a property of soil that several buildings may read
- * without competing) a deposit is the thing a mine consumes the site
- * of, which is why scarcity of these is what makes an island worth
- * having. Scattered by map.c's deposit pass from the island seed. */
+/* ---- Mineral deposits ---------------------------------- */
 typedef enum {
     DEPOSIT_NONE = 0,
     DEPOSIT_IRON,
@@ -98,20 +66,7 @@ const char *deposit_name(Deposit d);
  * wants the noun and a label on the ground wants the phrase. */
 const char *deposit_label(Deposit d);
 
-/* ---- Island terrain profiles ----------------------------
- * Which flavour of island a Map represents. Stored in Map (and in
- * Island, and in the save file) from the island refactor onward so
- * that adding the per-profile generation behaviour later needs no
- * save-format change.
- *
- * Only PROFILE_TEMPERATE — today's exact generation — has distinct
- * behaviour so far; the others are declared now and become
- * meaningful when map_init() learns to vary its thresholds by
- * profile. Their eventual roles:
- *   HIGHLAND – hop-rich, grain-poor (the reason to colonise)
- *   WOODLAND – timber-rich, little fertile ground
- *   ATOLL    – almost all coast: fish and not much else
- * ========================================================= */
+/* ---- Island terrain profiles ---------------------------- */
 typedef enum {
     PROFILE_TEMPERATE = 0,
     PROFILE_HIGHLAND  = 1,
@@ -165,12 +120,7 @@ typedef struct {
 
 /* Generate a new island using value noise seeded by `seed`, shaped by
  * `profile` (thresholds and fertility rules — see PROFILE_PARAMS in
- * map.c). Every field in every tile is fully initialised.
- *
- * Retries with a derived seed until the result satisfies the
- * profile's minimum-resource requirements, so a Highland always
- * actually has hops and the starting island is always playable. The
- * requested seed is what gets stored in map->seed. */
+ * map.c). Every field in every tile is fully initialised. */
 void map_init(Map *map, uint32_t seed, MapProfile profile);
 
 /* Bounds-checked accessor.  Returns NULL if out of range. */

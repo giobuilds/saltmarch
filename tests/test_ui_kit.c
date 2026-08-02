@@ -1,28 +1,5 @@
-/*  test_ui_kit.c  --  the UI kit and the rejection vocabulary
- *                     (UI_PLAN Phase 0 and 0.5)
- *
- * Linked WITHOUT SDL — against libsaltmarch_ui and libsaltmarch_sim
- * only. That is the point of the exercise as much as the assertions
- * are: if a layout function ever reaches for a font metric or a
- * renderer, this test stops linking, and the plan's hard rule ("no
- * layout decision may consult text measurement") fails loudly instead
- * of quietly becoming untrue.
- *
- * What it checks:
- *   1. layout arithmetic — rows, splits, right-anchored clusters,
- *      measure-then-clamp, and how many rows actually fit;
- *   2. pagination, including the awkward cases (empty list, a page
- *      index left over from a longer list);
- *   3. widget ids carry identity and survive a round trip;
- *   4. hit-testing: topmost wins, disabled and header widgets are not
- *      clickable, abutting rects never both claim a point;
- *   5. every RejectReason has a distinct, non-empty string;
- *   6. building_place_check returns the RIGHT reason for each way a
- *      placement can fail — the assertion the old dead `char *reason`
- *      channel could never support.
- *
- * Built and run by tests/run.sh.
- */
+/* test_ui_kit.c  --  the UI kit and the rejection vocabulary
+ * (UI_PLAN Phase 0 and 0.5) */
 
 #include "ui_kit.h"
 #include "ui_snapshot.h"
@@ -172,11 +149,7 @@ static void test_list(void)
     w = ui_list_hit(&l, 500.0f, 500.0f);
     CHECK(w == NULL, "a click outside every widget hits nothing");
 
-    /* Disabled widgets are drawn but not clickable, and they carry the
-     * reason they are disabled. Note what "not clickable" means with a
-     * background panel present: the click falls through to the PANEL,
-     * not to the world behind the overlay — a greyed button still
-     * swallows the click, it just does not act. */
+    /* Disabled widgets are drawn but not clickable, and they carry. */
     ui_list_push(&l, ui_id(UI_GROUP_RESOURCE, 3),
                  (UiRect){ 10.0f, 40.0f, 50.0f, 20.0f }, "Buy", 1, 0);
     ui_list_disable_last(&l, REJ_CANT_AFFORD);

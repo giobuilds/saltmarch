@@ -1,28 +1,7 @@
 #ifndef WORLD_UI_H
 #define WORLD_UI_H
 
-/* =========================================================
- * world_ui.h  --  The archipelago overview overlay
- *
- * Because islands are separate Maps rather than landmasses on one
- * shared grid, there is no sea for the tile view to show — so the
- * relationship BETWEEN islands needs its own screen. This is that
- * screen: every island as a node, its profile and settled state
- * legible at a glance, click one to sail the camera there.
- *
- * Built as an overlay in the same shape as the other four
- * (*_ui.c pattern: sizing #defines, panel_rect()-derived helpers,
- * point_in(), fully independent draw/hit_test, a *Hit enum) rather
- * than as a separate render mode. An overlay slots into main.c's
- * existing click-priority cascade and right-click-closes-topmost
- * convention for free; a render mode would mean two mutually
- * exclusive paths through SDL_AppIterate for no benefit.
- *
- * Node positions are fixed rather than procedural — with a handful
- * of islands there is nothing to gain from laying them out
- * dynamically, and fixed points make hit-testing, and later the
- * ship lanes drawn between them, trivial and deterministic.
- * ========================================================= */
+/* ========================================================= */
 
 #include <SDL3/SDL.h>
 #include "island.h"
@@ -34,11 +13,7 @@
 
 #define WORLD_NODE_ZOOM   2.2f   /* island diamond size vs a map tile */
 
-/* How many ghost voyages the map will draw at once (UI_PLAN M4). The
- * ghost list is built from a file other people append to, so its length
- * is not this program's decision; past a couple of dozen the map stops
- * being readable and the frame starts paying for text it cannot show
- * usefully. The remainder is counted and stated on screen. */
+/* How many ghost voyages the map will draw at once (UI_PLAN M4). */
 #define WORLD_MAX_DRAWN_GHOSTS 24
 #define WORLD_TITLE_Y      40
 
@@ -59,11 +34,7 @@ typedef enum {
     WORLD_HIT_INSURE      =10   /* sail the selected ship, insured      */
 } WorldHit;
 
-/* Draw the overview. `islands` is the whole archipelago and
- * `current` the one being viewed (highlighted). `ghosts` are other
- * players' voyages from the shared feed, drawn muted and lerped by
- * wall time (`unix_ms`) — non-interactive: hovering one shows an info
- * tooltip, clicking does nothing (they never enter the hit-test). */
+/* Draw the overview. `islands` is the whole archipelago. */
 void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                    const Sea *sea, const Island islands[], int island_count, int current,
                    uint32_t local_player,

@@ -1,32 +1,4 @@
-/*  test_book.c  --  the order book screen (UI_PLAN N3)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui, so this drives the real
- * layout, the real retained-row fold and the real hit-test rather than
- * a copy of them.
- *
- * The headline assertion is the one the phase exists for: an order that
- * fills or is withdrawn while the panel is open STAYS on screen, in the
- * same place, struck through and unclickable. The order book is the
- * first screen another player changes mid-read, and a row that vanishes
- * between the frame that drew it and the click that hits it is the one
- * failure it must not have.
- *
- * Also checked:
- *   - the panel fits 1920x1080 at 0, 1, 24 and 40 rows;
- *   - rows are ordered by order id, not by the snapshot's array — the
- *     array reuses cancelled slots, which is exactly what would move a
- *     row under a cursor;
- *   - a cancel click carries the FULL 32-bit order id, not the 16 bits
- *     that fit in a widget identity;
- *   - the draft composer is a pure fold: a click sequence produces one
- *     exact (side, good, quantity, limit), and the limit follows the
- *     market until it is stepped;
- *   - Post is refused with the sim's own vocabulary — no stock, no
- *     gold, not your island, and the per-player cap;
- *   - the command a Post click implies is the command the sim accepts.
- *
- * Built and run by tests/run.sh.
- */
+/* test_book.c  --  the order book screen (UI_PLAN N3) */
 
 #include "book_view.h"
 #include "ui_kit.h"

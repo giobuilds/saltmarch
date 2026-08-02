@@ -1,26 +1,4 @@
-/*  test_fx_reject.c  --  the rejection channel (UI_PLAN M1)
- *
- * Commands apply a tick later — several ticks later through a co-op
- * host — so a rejected one used to be a click that did nothing. This is
- * the correlation that fixes it: submit stamps a sequence, the UI
- * remembers {seq, anchor}, and the result comes back to the tile or
- * widget it came from.
- *
- * The properties worth testing are the ones that are easy to get
- * subtly wrong:
- *
- *   - a REJECTED command flashes; a SUCCESSFUL one does not (the world
- *     changing is the feedback);
- *   - the flash carries the sim's reason, not a client-side guess;
- *   - a REPLAYED command raises nothing, so F9 and resync — which
- *     recompute hundreds of rejections — stay silent without any
- *     special case in the drain;
- *   - another player's command raises nothing, even if the sequence
- *     numbers collide, which they will;
- *   - the answer still lands after an arbitrary delay.
- *
- * Linked WITHOUT SDL.
- */
+/* test_fx_reject.c  --  the rejection channel (UI_PLAN M1) */
 
 #include "fx_reject.h"
 #include "game.h"

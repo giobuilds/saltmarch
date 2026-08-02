@@ -1,23 +1,4 @@
-/*  test_hud.c  --  the build bar in categories (UI_PLAN Phase 3)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui: this drives the real
- * layout and the real hit-test.
- *
- * The plan's verification is "synthetic 40-entry def table, per-tab
- * slot fit and hit-test" — the HUD's own capacity cliff. The real def
- * table has twelve placeable buildings, and the bar visibly runs into
- * the right-hand buttons somewhere past twenty; a test that only ever
- * saw twelve would not notice until a future phase added the thirteenth
- * through twenty-fifth.
- *
- * Also checked:
- *   - tabs are the categories that actually have buildings in them;
- *   - the sticky tab: what is shown follows UiState and nothing else;
- *   - greyed-not-hidden: an unaffordable building keeps its slot, keeps
- *     its position, stays clickable, and carries its reason;
- *   - the real def table produces a bar that fits, with every placeable
- *     building reachable from exactly one tab.
- */
+/* test_hud.c  --  the build bar in categories (UI_PLAN Phase 3) */
 
 #include "hud_view.h"
 #include "ui_kit.h"
@@ -50,14 +31,7 @@ static void synth(HudView *v, int n, int affordable_every)
         e->type       = (uint16_t)i;
         e->category   = (uint8_t)(BCAT_FARMING +
                                   (i % (BCAT_COUNT - BCAT_FARMING)));
-        /* Affordability counts WITHIN a category, not across the whole
-         * synthetic set. Spreading entries round-robin means a tab
-         * holds indices that are all multiples of the category count —
-         * so when SUPPLY_CHAIN Phase 7 took BCAT_COUNT to a multiple of
-         * this stride, every entry in the Farming tab came out
-         * affordable and the greyed-slot tests had nothing to look at.
-         * Dividing first makes the pattern independent of how many
-         * categories exist. */
+        /* Affordability counts WITHIN a category, not across the whole */
         e->affordable = (uint8_t)(affordable_every == 0 ||
                                   ((i / (BCAT_COUNT - BCAT_FARMING)) %
                                    affordable_every) == 0);
@@ -352,19 +326,7 @@ static void test_real_defs(void)
     CHECK(total == placeable,
           "the tabs between them show every building exactly once");
 
-    /* Why that can fail, and why it is worth a second, louder check.
-     * The bar draws `hud_slots_that_fit` slots per tab and marks the
-     * remainder with a "+N" badge — which tells a player that
-     * buildings exist without giving them any way to reach one. It is
-     * a dead end, not a scrollbar.
-     *
-     * SUPPLY_CHAIN Phase 6 hit it for the first time: Workshops
-     * reached 22 against 21 slots, so exactly one building became
-     * unbuildable. Three furnace-driven rows moved to Factories, where
-     * they always belonged. The next phase to overflow a tab will fail
-     * HERE, naming the category, rather than being discovered as a
-     * building somebody could not find. At that point the answer is
-     * paging in the bar, not another recategorisation. */
+    /* Why that can fail, and why it is worth a second, louder check. */
     {
         int cap = hud_slots_that_fit(SCR_W), cat_i, over = 0;
         for (cat_i = BCAT_NONE + 1; cat_i < BCAT_COUNT; cat_i++) {
@@ -384,12 +346,7 @@ static void test_real_defs(void)
                          "can show");
     }
 
-    /* The other half of that bargain. SUPPLY_CHAIN Phase 7 chose to
-     * split categories rather than page the bar, which trades a slot
-     * problem for a TAB problem: the tab strip grows rightwards from
-     * the left margin and the Islands/Demolish cluster grows leftwards
-     * from the right, and at ten tabs they meet. Splitting once more
-     * without checking would put a tab underneath a button. */
+    /* The other half of that bargain. SUPPLY_CHAIN Phase 7 chose. */
     {
         int    cat_i, tabs = 0;
         float  end, cluster;

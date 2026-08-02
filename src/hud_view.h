@@ -1,43 +1,14 @@
 #ifndef HUD_VIEW_H
 #define HUD_VIEW_H
 
-/* =========================================================
- * hud_view.h  --  The build bar, in categories (UI_PLAN Phase 3)
- *
- * The HUD used to be every placeable building in one row. That works at
- * twelve and stops working somewhere around twenty-two, which is the
- * count at which slots run into the right-hand buttons — the second of
- * the capacity cliffs UI_PLAN measured. Categories are the fix: one
- * tab per BuildingCategory (Phase 2's data), each holding its own row.
- *
- * Two rules the plan is firm about, both about not moving things under
- * the player's cursor:
- *
- *   - THE TAB IS STICKY. It changes when the player clicks a tab, and
- *     at no other time. Auto-switching to "the tab containing what you
- *     just built" would be helpful exactly once and disorienting after
- *     that.
- *   - UNAVAILABLE IS GREYED, NEVER HIDDEN. A building you cannot yet
- *     afford keeps its slot, with the reason attached. Hiding it would
- *     reshuffle every slot after it each time Gold crossed a threshold,
- *     and would answer "where is the Brewery?" with silence.
- *
- * Like the exchange screen, this is a value struct plus a pure builder,
- * so the layout can be driven headlessly at goods counts the game does
- * not have — the test builds a 40-entry def table and asserts the bar
- * still fits.
- * ========================================================= */
+/* hud_view.h  --  The build bar, in categories (UI_PLAN Phase 3) */
 
 #include <stdint.h>
 #include "building.h"
 #include "ui_kit.h"
 #include "ui_snapshot.h"
 
-/* Every placeable building, not every building that fits on screen:
- * hud_view_build fills this and hud_build then pages a tab's worth out
- * of it. SUPPLY_CHAIN Phase 7 took the table past 64 and silently
- * truncated the tail, which is how test_hud noticed. Sized with room
- * for Phase 8 rather than exactly. */
+/* Every placeable building, not every building that fits on screen: */
 #define HUD_MAX_ENTRIES  128
 #define HUD_ENTRY_NAME   24
 
@@ -70,15 +41,7 @@ typedef struct {
  * out entirely — they are not reachable from the bar by design. */
 void hud_view_build(HudView *out, const UiSnapshot *snap, int island);
 
-/* ---- geometry ---------------------------------------------
- * The bar's metrics live here rather than in ui.h because this file is
- * part of the SDL-free UI library and ui.h is not — and because the
- * layout that uses them is here. ui.h includes this header, so every
- * existing user of HUD_HEIGHT (client.c's hover cutoff, ui.c) keeps
- * working unchanged.
- *
- * The bar grew from 80px to 112 to make room for the tab strip:
- * 6 gap + 28 tabs + 8 gap + 64 slot + 6 bottom. */
+/* ---- geometry --------------------------------------------- */
 #define HUD_HEIGHT      112   /* pixels tall                  */
 #define HUD_SLOT_SIZE    64   /* width and height of one slot */
 #define HUD_SLOT_PAD     12   /* gap between slots            */

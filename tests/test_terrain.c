@@ -1,24 +1,4 @@
-/*  test_terrain.c  --  crops and deposits  (SUPPLY_CHAIN Phase 1)
- *
- * Phase 1 adds terrain and no content: the map learns to say "there is
- * clay here" and "this soil grows potatoes" before any building wants
- * either. So there is nothing to play yet, and these assertions are the
- * only thing standing between a quiet generation bug and forty
- * buildings placed on top of it in Phases 3-8.
- *
- * Two questions, asked separately:
- *
- *   1. Does every profile actually produce what its chains will start
- *      from? A Highland with no iron is a broken game rather than
- *      interesting scarcity, and it would not be noticed until someone
- *      tried to build the mine three phases from now.
- *   2. Do the new placement rules refuse and accept in the right
- *      places? Asked against defs written here rather than table rows,
- *      via building_place_check_def(), because Phase 1 deliberately
- *      ships no building that wants a deposit.
- *
- * SDL-free: sim library only.
- */
+/* test_terrain.c  --  crops and deposits  (SUPPLY_CHAIN Phase 1) */
 
 #include <stdio.h>
 #include <string.h>
@@ -123,12 +103,7 @@ static void test_profiles(void)
           count_deposit(&map, DEPOSIT_PEARLS) == 0,
           "the home island has no gold and no pearls");
 
-    /* SUPPLY_CHAIN Phase 5 gave the southern crops their profiles, so
-     * this flips from "nowhere yet" to "exactly there and nowhere
-     * else". The northern half of the assertion is the load-bearing
-     * one: the moment a northern island grows cotton, the southern
-     * colony stops being a prerequisite for Artisans and becomes
-     * optional scenery. */
+    /* SUPPLY_CHAIN Phase 5 gave the southern crops their profiles. */
     {
         static const uint32_t SOUTHERN =
             FERTILE_COTTON | FERTILE_CANE | FERTILE_COCOA | FERTILE_COFFEE |

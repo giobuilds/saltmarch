@@ -1,21 +1,8 @@
 #ifndef INVENTORY_VIEW_H
 #define INVENTORY_VIEW_H
 
-/* =========================================================
- * inventory_view.h  --  Everything this island holds
- *                       (UI_PLAN Phase 4)
- *
- * The corner panel shows every resource, which works at seven and is
- * the third capacity cliff v1 measured: it runs off the top of the
- * screen somewhere around forty-three. This overlay is where the full
- * list lives — paged, grouped by category, with the storage pressure
- * per good made visible rather than inferred from a number.
- *
- * The corner panel stays: it is the glance. This is the look.
- *
- * Same shape as the other Phase 0+ surfaces: a value view, a pure
- * builder, a drawer in the client.
- * ========================================================= */
+/* inventory_view.h  --  Everything this island holds
+ * (UI_PLAN Phase 4) */
 
 #include <stdint.h>
 #include "ui_kit.h"
@@ -42,30 +29,10 @@ typedef struct {
     int32_t      row_count;
     int32_t      residents;
 
-    /* Whether these numbers are knowledge or absence (UI_PLAN N2). The
-     * stores of an island you do not hold arrive as zeroes meaning "you
-     * were not told", and a warehouse list full of 0 is a much more
-     * confident lie than a single field: it reads as a surveyed, empty
-     * colony. The rows are still built — the drawer marks them — so
-     * that layout, scrolling and hit-testing do not acquire a second
-     * shape that only foreign islands ever take. */
+    /* Whether these numbers are knowledge or absence (UI_PLAN N2). */
     uint8_t      detail_known;
 
-    /* ---- what the harbour can put to sea (UI_PLAN N8) -----
-     * Goods are only half of what an island holds. Merchants, hulls,
-     * scholars and research boats are the other half — capital rather
-     * than stock — and until now the only way to discover that every
-     * merchant was committed was to watch an order sit unfilled.
-     *
-     * Committed AND capacity, always as a pair: one number alone
-     * ("2 merchants") cannot say whether that is comfortable or the
-     * whole of what you have, and which of those it is decides whether
-     * to post another order.
-     *
-     * The standing insurance policy sits with them because it is the
-     * same kind of fact — a property of the harbour rather than of any
-     * one voyage — and because the premium it pays is per ROUTE, so
-     * turning it on is a decision about everything this port sends. */
+    /* ---- what the harbour can put to sea (UI_PLAN N8) ----- */
     int32_t      merchants_out, merchant_capacity;
     int32_t      hulls_out, hull_capacity;
     int32_t      scholars_out, scholar_capacity;
@@ -73,16 +40,7 @@ typedef struct {
     uint8_t      insured;         /* the standing policy is on         */
     uint8_t      yours;           /* you may throw the lever at all    */
 
-    /* ---- the treasury (LIFE_PLAN Phase 7) -----------------
-     * Where gold comes from now. Shown beside the harbour because it is
-     * the same kind of fact: a standing property of the island rather
-     * than of any one transaction.
-     *
-     * All three together, deliberately. The rate alone is a number
-     * without a consequence; the rate WITH what it collected and how
-     * much of it people are actually paying is the whole feedback loop
-     * on one line, which is what lets a player see that raising it
-     * further is costing them. */
+    /* ---- the treasury (LIFE_PLAN Phase 7) ----------------- */
     int32_t      tax_rate_permille;
     int32_t      tax_last_month;
     int32_t      compliance_permille;

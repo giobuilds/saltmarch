@@ -1,20 +1,5 @@
-/*  command.c  --  The command funnel: log storage and submission
- *                 (MMO_PLAN Phase 1a)
- *
- * command_submit() stamps a command for the next tick and appends it to
- * the world's command log. It does NOT apply it: sim_run_one_tick()
- * (game.c) drains the pending tail of the log at each tick boundary, in
- * order. The dispatch itself (sim_apply) also lives in game.c beside the
- * mutators; this file owns only the log: its growth, its lifetime, and
- * the submit path.
- *
- * The tick-boundary deferral (Phase 1b) is what makes command latency a
- * fixed, frame-rate-independent quantity — the property multiplayer
- * lockstep later relies on. Submitting a command therefore no longer
- * reports whether it succeeded (that is not known until its tick runs);
- * command_submit returns 1 if the command was queued, 0 only if the log
- * could not grow.
- */
+/* command.c  --  The command funnel: log storage and submission
+ * (MMO_PLAN Phase 1a) */
 
 #include "game.h"
 #include "orderbook.h"
@@ -150,11 +135,7 @@ void command_describe(const Command *c, char *out, size_t n)
     }
 }
 
-/* Append one command to the log, growing by doubling. Returns 1 on
- * success, 0 if the log could not be grown (out of memory) — in which
- * case the caller must NOT apply the command, or the applied world
- * would diverge from the recorded log and the whole replay invariant
- * breaks. */
+/* Append one command to the log, growing by doubling. Returns 1. */
 static int cmd_log_push(GameState *gs, const Command *c)
 {
     if (gs->cmd_count == gs->cmd_cap) {
@@ -176,11 +157,7 @@ int command_submit(GameState *gs, const Command *c)
 {
     Command stamped = *c;
 
-    /* Nothing may be submitted while viewing the past (MMO_PLAN's
-     * scrubber). A command stamped for a tick the log has already
-     * passed would be inserted behind its own head, and "the world is
-     * the ordered log" would stop being true — which is the one
-     * invariant everything else in this architecture stands on. */
+    /* Nothing may be submitted while viewing the past (MMO_PLAN's */
     if (gs->scrub_active) return 0;
 
     /* Stamp the sequence before routing, so a command handed to a co-op
@@ -192,11 +169,7 @@ int command_submit(GameState *gs, const Command *c)
     }
     gs->cmd_seq_last = stamped.seq;
 
-    /* In a co-op session the submission is routed through the host's
-     * ordering authority instead of the local log (host: stamp + log +
-     * broadcast; guest: send upstream and wait for it to come back
-     * stamped). Offline, or if the session declines, fall through to
-     * local stamping. */
+    /* In a co-op session the submission is routed through the host's */
     if (gs->net && gs->net_submit && gs->net_submit(gs->net, gs, &stamped))
         return 1;
 

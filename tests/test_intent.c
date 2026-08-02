@@ -1,17 +1,4 @@
-/*  test_intent.c  --  the recorded input stream (UI_PLAN M1)
- *
- * The format decision this phase had to get right once: an intent
- * carries the sim tick its frame's snapshot was taken at. Without it a
- * replay rebuilds a different screen than the player saw and hit-tests
- * a click against prices, pages and row counts that never existed.
- *
- * So the tests here are mostly about that: the tick is recorded, it
- * survives the save format, and the harness that consumes it can tell
- * the difference between a click that still works and one whose widget
- * has moved.
- *
- * Linked WITHOUT SDL.
- */
+/* test_intent.c  --  the recorded input stream (UI_PLAN M1) */
 
 #include "replay.h"
 #include "intent.h"
@@ -107,13 +94,7 @@ static void test_harness(void)
         CHECK(all_have_ticks, "each recorded click carries a frame tick");
     }
 
-    /* The fixture must actually exercise the passages screen, and the
-     * click there must actually have produced a command. A recorded
-     * click that emitted nothing is skipped by the verifier — "no
-     * expectation" compares equal to everything — so a session that
-     * quietly stopped buying charts would go on passing while testing
-     * nothing. That is the trap N3's first recording fell into, and it
-     * is worth one assertion per screen the fixture claims to cover. */
+    /* The fixture must actually exercise the passages screen, and. */
     {
         int i, chart_clicks = 0, chart_orders = 0;
         for (i = 0; i < gs->intent_count; i++) {

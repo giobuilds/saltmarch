@@ -1,12 +1,5 @@
-/*  test_ghost_faction.c  --  neighbours with no AI
- *                            (MMO_PLAN later phases)
- *
- * An NPC island is a recorded human session, re-addressed and replayed.
- * The point of the tests is that "re-addressed" is honest: the commands
- * land on the right island under the right identity, the ones that
- * cannot be re-addressed are dropped rather than fudged, and the
- * resulting world is still a pure function of its log.
- */
+/* test_ghost_faction.c  --  neighbours with no AI
+ * (MMO_PLAN later phases) */
 
 #include "ghost_faction.h"
 #include "replay.h"

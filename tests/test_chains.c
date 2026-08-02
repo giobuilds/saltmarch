@@ -1,27 +1,5 @@
-/*  test_chains.c  --  can the economy actually be built?
- *                     (SUPPLY_CHAIN Phase 3)
- *
- * The plan names this the assertion it most needs: "a chain specified
- * but not reachable" is the failure a content phase produces, and
- * nothing else catches it. A tier can want Soap; a Soap Boilery can
- * want Tallow; a Tallow Works can want Pigs; and if no profile grows
- * pasture, the whole branch is decoration and the tier is permanently
- * unhappy. Nothing in the def table says so — every row is
- * individually well-formed.
- *
- * So this walks the graph. Which buildings can be PLACED on a given
- * set of islands is a question about generated terrain, so it is asked
- * of real maps over several seeds; which goods can then be MADE is a
- * fixpoint over the def table. What comes out is the set of goods that
- * economy can actually produce, and every tier's needs must be inside
- * it.
- *
- * Written generically over BUILDING_DEFS and TIER_DEFS rather than
- * against Phase 3's thirteen buildings, because Phases 4-8 add forty
- * more and this is the test that should keep failing usefully.
- *
- * SDL-free: sim library only.
- */
+/* test_chains.c  --  can the economy actually be built?
+ * (SUPPLY_CHAIN Phase 3) */
 
 #include "map.h"
 #include "building.h"
@@ -69,14 +47,7 @@ static void survey(const MapProfile *profiles, int n, uint32_t seed,
 
 /* ---- what those buildings can make ------------------------ */
 
-/* Fixpoint: a good is makeable if some placeable building produces it
- * and every input that building consumes is itself makeable. Iterate
- * until nothing new appears — chains are short, so this converges in a
- * handful of passes and the bound is just a guard against a cycle.
- *
- * Goods traded between islands are deliberately NOT counted: the
- * question is what an economy can produce, and "buy it from the
- * faction" would answer yes for everything and assert nothing. */
+/* Fixpoint: a good is makeable if some placeable building produces. */
 static void reachable_goods(const int placeable[BUILDING_TYPE_COUNT],
                             int out_makeable[RES_COUNT])
 {
@@ -106,21 +77,7 @@ static void reachable_goods(const int placeable[BUILDING_TYPE_COUNT],
 /* ---- the assertions --------------------------------------- */
 
 /* NEEDS_PLAN Phase 1 split this in two, and the split is a design
- * statement rather than a convenience.
- *
- * BASICS must be satisfiable from the climates named — they are
- * survival, and a tier whose survival needs an island the player has
- * not got is a tier that cannot exist there. LUXURIES need only be
- * satisfiable SOMEWHERE in the archipelago: they are what raises
- * happiness above neutral, and needing to sail for them is the point
- * of the sea rather than a flaw in the table.
- *
- * The first thing this caught: Plantain Fry, a jungle good, joining
- * the Wrights' luxuries. Under the old single list that read as
- * "Wrights are unsatisfiable in the north", which would have been a
- * real fault; under the split it reads as "a northern Wright's House
- * survives on sausages and bread, and trades south for the rest",
- * which is the intended shape. */
+ * statement rather than a convenience. */
 static void report_needs(const ResourceType *list, const int makeable[RES_COUNT],
                          const TierDef *tier, const char *what,
                          const char *where, int *unmet)
@@ -196,11 +153,7 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
-    /* And every LUXURY of every tier must be makeable somewhere in a
-     * full archipelago. A luxury nobody can make anywhere is a tier
-     * that can never be happy — the same fault as an unmakeable basic,
-     * just slower to notice, and the check that would have caught Wool
-     * Cloaks and Plantain Fry being dropped from the table entirely. */
+    /* And every LUXURY of every tier must be makeable somewhere in. */
     {
         int t, unmet = 0;
         survey(NORTH_SOUTH, 6, 4242u, placeable);
@@ -290,11 +243,7 @@ static void test_tiers_are_satisfiable(void)
         CHECK(unmet == 0, msg);
     }
 
-    /* And the negatives, which are what make the other climates matter
-     * rather than decorate. The home island alone must NOT be able to
-     * brew, and the whole NORTH must not be able to make a Fur Coat —
-     * the moment it can, the southern colony is optional and the
-     * shipping lane is scenery. */
+    /* And the negatives, which are what make the other climates matter */
     survey(HOME, 1, 4242u, placeable);
     reachable_goods(placeable, makeable);
     CHECK(!makeable[RES_BEER],
@@ -433,14 +382,7 @@ static void test_no_dead_goods(void)
           BUILDING_DEFS[BUILDING_GRAMOPHONE_WORKS].consumes[2] == RES_SHELLAC,
           "the Watchmaker's and the Gramophone Works are the two");
 
-    /* And the rule driven on a REAL three-input def, not a synthetic
-     * one. building_missing_input's own comment says it was hoisted
-     * out of island_tick_buildings so a test could reach it, because
-     * the third slot would otherwise stay unproven until this phase.
-     * Making good on that: each of the three inputs is withheld in
-     * turn, and each alone must block the tick. A two-slot
-     * implementation passes the first two of these and fails the
-     * third. */
+    /* And the rule driven on a REAL three-input def, not a synthetic */
     {
         const BuildingDef *w = &BUILDING_DEFS[BUILDING_WATCHMAKERS];
         Stockpile          st;

@@ -1,24 +1,5 @@
-/*  test_tier.c  --  the tier graph and the upgrade rule
- *                   (SUPPLY_CHAIN Phase 2)
- *
- * Phase 2 raises ceilings before the content hits them, and turns the
- * tier model from a ladder into a graph. Neither change has content
- * behind it yet — MAX_BUILDING_INPUTS is 3 and no building takes three
- * inputs; MAX_TIER_GOODS is 5 and no tier lists five; TierDef has a
- * requires_building field and no tier requires one. So the widening is
- * unproven unless something drives it with data of its own, which is
- * what these tests are for: they write their own defs and tiers and
- * push them through the real rules.
- *
- * The rule under test is the one a player meets as "why can't I
- * upgrade this house": tier_upgrade_check(). It is deliberately the
- * SAME function on both sides — sim_upgrade_house calls it to decide
- * and the confirm popup calls it to predict — so the last section
- * checks the two agree over a real world rather than trusting that
- * they share a name.
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui and libsaltmarch_sim.
- */
+/* test_tier.c  --  the tier graph and the upgrade rule
+ * (SUPPLY_CHAIN Phase 2) */
 
 #include "population.h"
 #include "building.h"
@@ -244,15 +225,7 @@ static void test_real_table(void)
     CHECK(tier_upgrade_requires(BUILDING_HOUSE, TIER_BRANCH_LINE) == BUILDING_NONE,
           "no tier needs a building yet — the Academy is Phase 8");
 
-    /* The table NEEDS_PLAN Phase 1 gives them.
-     *
-     * This block used to assert the opposite of its last line: "nobody
-     * eats raw Grain any more", because Grain was milled and baked and
-     * the tier wanted the bread. That was the assertion of a game where
-     * a player's first farm fed nobody — which is precisely what killed
-     * the first real player's marshfolk. Marshfolk eat Fish and Grain
-     * now, and the two chains that used to be survival are what
-     * happiness is made of instead. */
+    /* The table NEEDS_PLAN Phase 1 gives them. */
     {
         const TierDef *m = tier_def_for(BUILDING_HOUSE);
         const TierDef *w = tier_def_for(BUILDING_HOUSE_WORKER);
@@ -343,11 +316,7 @@ static void test_real_table(void)
           "the goods are necessary but the Gold is still required too");
 }
 
-/* ---- 4b. the Academy: a second future for every house ------
- * SUPPLY_CHAIN Phase 8's verify step. The prerequisite mechanism has
- * been proven synthetically since Phase 3 (T_GATED); this is the same
- * rule with real content behind it, and the first time a house has had
- * more than one place to go. */
+/* ---- 4b. the Academy: a second future for every house ------ */
 static void test_academy(void)
 {
     static const BuildingType HOUSES[] = {
@@ -414,13 +383,7 @@ static void test_academy(void)
     }
 }
 
-/* ---- 4c. an Academy is a prerequisite, not a patron ---------
- * The other half of Phase 8's verify step, and the one that needs a
- * real world rather than the rule alone: demolishing an Academy must
- * demote nobody. Scholars keep their standing because the
- * prerequisite is checked when a house CLIMBS, not every needs tick —
- * so this asserts an absence, which is exactly the kind of thing that
- * breaks silently if pop_update ever learns about requires_building. */
+/* ---- 4c. an Academy is a prerequisite, not a patron --------- */
 static void test_academy_demolition(void)
 {
     GameState *gs = game_init();
@@ -433,12 +396,7 @@ static void test_academy_demolition(void)
     isl = game_cur_island(gs);
     isl->stockpile.amount[RES_GOLD] = 500000;
 
-    /* A Warehouse, an Academy, a house, and roads over everything that
-     * is left. The road carpet is not decoration: island_has_building
-     * requires the Academy be road-CONNECTED, which is the plan's
-     * wording and the difference between a prerequisite and a
-     * decoration. A first attempt at this test placed the two
-     * buildings alone and the upgrade was refused, correctly. */
+    /* A Warehouse, an Academy, a house, and roads over everything. */
     for (r = 0; r < MAP_ROWS; r++)
         for (c = 0; c < MAP_COLS; c++)
             if (building_can_place(&isl->map, BUILDING_WAREHOUSE, r, c)) {
@@ -543,16 +501,7 @@ static void test_sim_and_ui_agree(void)
     }
     pop_init(&isl->pop_data[idx]);
 
-    /* SUPPLY_CHAIN Phase 4 gives this test its accept path back. Until
-     * Artisans existed both base tiers were terminal and the only
-     * verdict either side could reach on the SHIPPED table was "nowhere
-     * to go"; now the same house can be refused AND promoted, and both
-     * halves are asserted jointly — sim reading Island, UI reading a
-     * snapshot — which is the wiring rather than the rule.
-     *
-     * Refusal first: a cottage with its own tier's goods but none of
-     * the four Artisans want. Gold is deliberately abundant throughout,
-     * because the whole point of the rule is that Gold is not the gate. */
+    /* SUPPLY_CHAIN Phase 4 gives this test its accept path back. Until */
     isl->stockpile.amount[RES_GOLD] = 5000;
     stockpile_add(&isl->stockpile, RES_FISH, 3);
     stockpile_add(&isl->stockpile, RES_OILSKINS, 3);

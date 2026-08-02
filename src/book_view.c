@@ -1,9 +1,4 @@
-/*  book_view.c  --  Your side of the order book (UI_PLAN N3)
- *
- *  Layout, the retained-row fold and hit-testing. No SDL, no drawing,
- *  no GameState — see book_view.h for why the rows are retained and why
- *  this is not a third ExchangeKind.
- */
+/* book_view.c  --  Your side of the order book (UI_PLAN N3) */
 
 #include "book_view.h"
 #include "island_bar.h"
@@ -46,11 +41,7 @@ static int32_t clamp_i(int32_t v, int32_t lo, int32_t hi)
     return v;
 }
 
-/* What a row is called. A resource names itself; a chart names a route
- * id and nothing better until N4, which is the phase that knows how to
- * draw a passage. Naming it "Chart 17" is not a placeholder for want of
- * effort — the id IS the route's identity, and pretending to a name
- * before the map can show which water it means would be worse. */
+/* What a row is called. A resource names itself; a chart names a route */
 static void row_name(char *dst, size_t cap, uint16_t kind, uint16_t what)
 {
     if (kind == (uint16_t)TRADE_RESOURCE) {
@@ -97,11 +88,7 @@ static int evict_one(BookView *v)
     return 0;
 }
 
-/* Insert in ascending id order. Ids are monotonic, so this is almost
- * always an append — but the snapshot walks the book's ARRAY, and the
- * array reuses the slots of cancelled orders, so "the order it arrives
- * in" and "the order it was placed in" are not the same list. Sorting by
- * id here is what makes the displayed order stable frame to frame. */
+/* Insert in ascending id order. Ids are monotonic, so this is almost */
 static void insert_row(BookView *v, const UiOrder *o)
 {
     int at, i;
@@ -135,12 +122,7 @@ static int id_among(const uint32_t *ids, int n, uint32_t id)
 void book_view_update(BookView *v, const UiSnapshot *snap, int island,
                       const UiState *st)
 {
-    /* The ids that are still live this frame, collected first and
-     * compared afterwards. Marking rows by INDEX as they are matched
-     * would be the obvious way and would be wrong: inserting a row —
-     * or evicting one to make room — moves every row after it, so the
-     * marks would end up describing their neighbours. Ids do not
-     * move. */
+    /* The ids that are still live this frame, collected first. */
     uint32_t        live[UI_MAX_ORDERS];
     int             live_n = 0;
     const UiIsland *isl;
@@ -330,11 +312,7 @@ static void build_composer(UiList *out, const BookView *view,
     if (ro) ui_list_disable_last(out, REJ_NOT_OWNER);
     x = r.x + r.w + BOOK_BTN_GAP;
 
-    /* The good is chosen by cycling. The two buttons carry the resource
-     * they SELECT as their identity, so neither one is "the button at
-     * x=120" — a recorded click still means Beer when a good is added
-     * above it. Gold is not a row: you cannot post to trade currency
-     * for itself. */
+    /* The good is chosen by cycling. The two buttons carry the resource */
     prev_res = (res + (int32_t)RES_GOLD - 1) % (int32_t)RES_GOLD;
     next_res = (res + 1) % (int32_t)RES_GOLD;
 

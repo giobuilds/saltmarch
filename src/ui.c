@@ -1,14 +1,4 @@
-/*  ui.c  --  HUD painting and the menu overlay
- *
- *  Since UI_PLAN Phase 3 the bar's geometry, tabs, affordability and
- *  hit-testing live in hud_view.c, which links no SDL and is driven by
- *  tests. What remains here is paint: every rect comes out of the
- *  UiList that hud_build() produced, so what is drawn and what is
- *  clickable can no longer disagree.
- *
- *  The menu overlay below is untouched; Phase 6 folds it in with the
- *  other confirm popups.
- */
+/* ui.c  --  HUD painting and the menu overlay */
 
 #include "ui.h"
 #include "fonts.h"
@@ -286,9 +276,7 @@ void ui_draw(SDL_Renderer *renderer, const UiList *list,
     (void)view;
 }
 
-/* =========================================================
- * Menu overlay
- * ========================================================= */
+/* Menu overlay */
 
 /* One menu button rectangle. Buttons are stacked vertically, centred on
  * the screen. Still geometry-in-the-drawer, unlike the HUD: the menu is

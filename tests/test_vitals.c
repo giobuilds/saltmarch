@@ -1,14 +1,5 @@
-/*  test_vitals.c  --  the alert strip, the stores overlay and the
- *                     overlay arbiter (UI_PLAN Phase 4)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui and libsaltmarch_sim.
- *
- * The plan's named verification is the last group here: a synthetic
- * snapshot with a stalled tick accumulator must produce a health row.
- * That one matters more than it looks — it is the difference between a
- * player noticing a stalled simulation in seconds and noticing it at
- * the next desync.
- */
+/* test_vitals.c  --  the alert strip, the stores overlay and the
+ * overlay arbiter (UI_PLAN Phase 4) */
 
 #include "vitals.h"
 #include "inventory_view.h"
@@ -119,22 +110,12 @@ static void test_island_rules(void)
     CHECK(has_text(&v, "starving"),
           "a house below neutral is reported as STARVING, not merely unhappy");
 
-    /* And WHICH good it is short of, which is the whole difference
-     * between a symptom and an answer. A Marsh Cottage wants Fish,
-     * Oilskins and Marsh Gin all at once; with an empty store the strip
-     * must name one of them rather than saying "going hungry" to a
-     * player who can already see people leaving. */
+    /* And WHICH good it is short of, which is the whole difference */
     CHECK(has_text(&v, "no Fish"),
           "and the strip names the good it wants");
 
     /* Given some Fish, it moves on to the next thing it lacks — the
-     * row follows the shortage rather than being written once.
-     *
-     * That next thing is GRAIN, not Oilskins, and the difference is the
-     * point of NEEDS_PLAN Phase 1: Grain is a basic and Oilskins is a
-     * luxury, so the strip names what keeps people alive before what
-     * makes them happy. This assertion said "no Oilskins" when
-     * Marshfolk had no basics to distinguish. */
+     * row follows the shortage rather than being written once. */
     healthy(&s);
     s.islands[0].detail_known       = 1;
     s.islands[0].buildings[0].happiness = 0;
@@ -144,14 +125,7 @@ static void test_island_rules(void)
     CHECK(has_text(&v, "no Grain"),
           "and asks for the other BASIC before either luxury");
 
-    /* Fed, but not growing. NEEDS_PLAN Phase 4 makes this its own
-     * sentence at its own severity: everybody is alive, nobody is
-     * arriving, and a luxury is why. Saying that in the same words as
-     * starvation is what taught players to ignore both.
-     *
-     * The happiness value is what decides which sentence — a house at 0
-     * is starving whatever is in the warehouse — so the fixture has to
-     * put it between NEUTRAL and GROW rather than at the floor. */
+    /* Fed, but not growing. NEEDS_PLAN Phase 4 makes this its own */
     healthy(&s);
     s.islands[0].detail_known           = 1;
     s.islands[0].buildings[0].happiness = HAPPINESS_NEUTRAL + 1;

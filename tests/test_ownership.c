@@ -1,15 +1,6 @@
-/*  test_ownership.c  --  headless verification of MMO_PLAN Phase 5's
- *                        sim half: ownership, grants, harbor escrow,
- *                        docking — privacy by validation.
- *
- * Two players share one GameState here, the way they will share one
- * deterministic world in co-op: the test flips local_player_id between
- * submissions to play both sides, everything flows through the command
- * funnel, and at the end game_verify_determinism() must still pass —
- * proving the whole ownership era replays from the log.
- *
- * Built and run by tests/run.sh.
- */
+/* test_ownership.c  --  headless verification of MMO_PLAN Phase 5's
+ * sim half: ownership, grants, harbor escrow,
+ * docking — privacy by validation. */
 
 #include "game.h"
 #include "building.h"

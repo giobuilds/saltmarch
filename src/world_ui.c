@@ -12,19 +12,7 @@
 #include <SDL3/SDL.h>
 
 /* Where an island sits on screen, projected from where it sits in the
- * SEA (MARITIME_PLAN Phase 1).
- *
- * This was NODE_POS: eight hand-placed screen fractions, rewritten by
- * hand when Phase 5 doubled the archipelago and unable to survive
- * being doubled again. Islands now have real positions, so the map
- * draws the world rather than a diagram of it — two islands close
- * together on the water look close together here, and a route drawn
- * between them is the route a ship actually sails.
- *
- * The projection itself moved to sea_view.c at UI_PLAN N5, unchanged:
- * it is arithmetic, everything spatial on this screen is derived from
- * it, and it was the one part of this file a headless test could have
- * checked and could not reach. What is left here is drawing. */
+ * SEA (MARITIME_PLAN Phase 1). */
 static void node_screen(const Sea *sea, int screen_w, int screen_h, int i,
                         float *out_x, float *out_y)
 {
@@ -188,20 +176,12 @@ static SDL_FRect colonise_btn_rect(int screen_w, int screen_h)
     return r;
 }
 
-/* ---- the sea (UI_PLAN N5) ----------------------------------
- * Paths as paths, waypoints by name, shipments where they actually are,
- * and the lairs on the way. Everything here comes out of the SeaView —
- * nothing on this screen decides where a thing goes any more.
- */
+/* ---- the sea (UI_PLAN N5) ---------------------------------- */
 static void draw_path(SDL_Renderer *r, const SeaPath *p)
 {
     int i;
 
-    /* The lane reads as infrastructure; a private passage as something
-     * you own the knowledge of. A passage you hold no chart for is
-     * drawn dimmer than one you can actually sail, because "known" and
-     * "usable" are two different things and the difference is the whole
-     * of the Chart House. */
+    /* The lane reads as infrastructure; a private passage as something */
     if (!p->is_private)   SDL_SetRenderDrawColor(r,  70, 110, 150, 255);
     else if (p->carrying) SDL_SetRenderDrawColor(r, 210, 175,  90, 255);
     else if (p->held)     SDL_SetRenderDrawColor(r, 150, 130, 170, 255);
@@ -368,15 +348,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             font_draw_text(renderer, FONT_SMALL, "Uncharted",
                            (int)(nb.x + 8.0f), (int)(nb.y + nb.h + 26.0f), dim);
         } else {
-            /* This line was the plan's example of the problem, and it
-             * was not hypothetical: a rival's island arrives with an
-             * empty building list, pop_total() over it is 0, and the
-             * map cheerfully labelled every held island in the world
-             * "Pop 0". A populated colony reading as deserted is the
-             * screen inventing a fact about somebody else.
-             *
-             * UI_PLAN N2: a number you were not told is a mark, never a
-             * value. */
+            /* This line was the plan's example of the problem, and. */
             int known = (isl->owner == local_player);
             char pop[32];
 
@@ -414,11 +386,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     }
 
     /* Ghost voyages (Phase 4): other players' ships from the shared
-     * feed, drawn under our own markers in a deliberately muted style.
-     * Position is wall-clock lerp along the lane; a ghost whose voyage
-     * has elapsed returns progress < 0 and simply isn't drawn, which is
-     * how a stale feed fades out. Non-interactive: hover shows an info
-     * tooltip, and they never appear in the hit-test. */
+     * feed, drawn under our own markers in a deliberately muted style. */
     {
         int gi, drawn = 0, skipped = 0;
         float hw = (float)TILE_W * WORLD_NODE_ZOOM / 2.0f;
@@ -428,11 +396,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
             const GhostVoyage *g = &ghosts[gi];
             float t = ghost_progress(g, unix_ms);
 
-            /* Cap what gets drawn (UI_PLAN M4). The ghost list comes
-             * from a file other people append to, so its length is not
-             * ours to decide; past a couple of dozen the map is a mess
-             * and the frame is paying for it. The remainder is counted
-             * and stated rather than silently dropped. */
+            /* Cap what gets drawn (UI_PLAN M4). The ghost list comes */
             if (drawn >= WORLD_MAX_DRAWN_GHOSTS) {
                 if (t >= 0.0f) skipped++;
                 continue;
@@ -578,11 +542,7 @@ void world_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                            docked ? txt : dim);
         }
 
-        /* --- Insurance (MMO_PLAN later phases) --------------
-         * The premium and the lane's history, side by side: a quote
-         * that has crept up IS the news that this lane has been losing
-         * ships. The faction's books are the game's information layer,
-         * so they are shown where the decision is made. */
+        /* --- Insurance (MMO_PLAN later phases) -------------- */
         {
             SDL_FRect ib     = insure_btn_rect(screen_w, screen_h);
             int       docked = sh->at_island >= 0;

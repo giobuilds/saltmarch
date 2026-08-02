@@ -1,32 +1,5 @@
-/*  test_visibility.c  --  what a client is not told
- *                         (SERVER_AUTHORITY.md Phase 3)
- *
- * VISIBILITY.md's complaint was concrete: every client held the whole
- * world in RAM, so "concealment" was a rendering convention and a
- * determined player could read a rival's books with a debugger. Every
- * phase since has added things worth hiding — stockpiles, then charts,
- * then expeditions — and hidden none of them.
- *
- * This is the test that the complaint is answered. It does not check
- * that the UI declines to draw something; it checks the CLIENT'S OWN
- * GameState after a push, which is the only place the question can
- * honestly be asked. If the bytes are not there, no amount of client
- * modification finds them.
- *
- * The two halves matter equally:
- *
- *   what a rival must NOT see -- their stockpile, their buildings,
- *      their charts, their expeditions, their holds, and whether a
- *      shipment took a private passage;
- *
- *   what a rival MUST still see -- the island exists, who holds it,
- *      whether it will let you dock, the harbour escrow you trade
- *      across, and the order book. A filter that hid those would break
- *      the game rather than secure it, and that is a much easier
- *      mistake to make than leaving something exposed.
- *
- * Built and run by tests/run.sh.
- */
+/* test_visibility.c  --  what a client is not told
+ * (SERVER_AUTHORITY.md Phase 3) */
 
 #include "game.h"
 #include "net.h"

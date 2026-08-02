@@ -1,27 +1,8 @@
 #ifndef CONFIRM_VIEW_H
 #define CONFIRM_VIEW_H
 
-/* =========================================================
- * confirm_view.h  --  One confirmation, showing the command
- *                     (UI_PLAN Phase 6)
- *
- * Four popups became one: build, demolish, tier upgrade and ship build
- * were the same panel with different words, three files apart, each
- * with its own geometry helpers and its own hit-test enum.
- *
- * The new job is the interesting half. The popup renders the LITERAL
- * Command it will submit — kind, decoded payload, and the tick it
- * would apply at — beside the human sentence. Two things follow:
- *
- *   - the confirm layer and the wire format become the same rendering
- *     code, so the UI cannot describe one action while sim_apply
- *     receives another;
- *   - a screenshot of a confirmation is evidence. "It said it would
- *     demolish building 12" is checkable after the fact.
- *
- * The command is built when the popup opens (game_confirm_*) and
- * submitted verbatim on accept. Nothing is re-derived in between.
- * ========================================================= */
+/* confirm_view.h  --  One confirmation, showing the command
+ * (UI_PLAN Phase 6) */
 
 #include <stdint.h>
 #include "game.h"
@@ -47,22 +28,11 @@ typedef struct {
     int32_t  option_count;
     int32_t  chosen;
 
-    /* The needs checklist (SUPPLY_CHAIN Phase 2). A house upgrades
-     * when it can be supplied, so the popup lists the tier being
-     * entered and marks each good present or missing. Empty for every
-     * other confirmation.
-     *
-     * Built from tier_upgrade_check()'s own table, and the accept
-     * button is enabled by that same function — the checklist is a
-     * rendering of the rule, not a second opinion about it. */
+    /* The needs checklist (SUPPLY_CHAIN Phase 2). A house upgrades */
     struct {
         char    label[24];
         uint8_t met;
-        /* Whether this is something the tier lives on or something it
-         * is merely glad of (NEEDS_PLAN Phase 4). The popup shows both
-         * because moving in is gated on the basics alone, and a player
-         * looking at a greyed luxury should be able to tell that it is
-         * not what is stopping them. */
+        /* Whether this is something the tier lives on or something. */
         uint8_t luxury;
     } needs[MAX_TIER_GOODS * 2];
     int32_t  need_count;

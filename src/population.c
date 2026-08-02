@@ -6,31 +6,14 @@
 #include "resource.h"
 #include <stdio.h>
 
-/* ---- Per-tier needs table --------------------------------
- * Keyed by the house's actual BuildingType, so upgrading a house
- * (game_upgrade_house, game.c — just mutates buildings[idx].type in
- * place) automatically changes what pop_update() requires next tick,
- * with zero other state to migrate. RES_COUNT in a needs[] slot means
- * "unused" — same sentinel convention as BuildingDef.consumes[]. */
-/* SUPPLY_CHAIN Phase 3: the two northern BASE tiers, with the needs
- * the plan gives them. Two things changed from the old ladder.
- *
- * Grain stopped being eaten directly. It is milled into Flour and
- * baked into Bread, which is what makes the Windmill and the Bakehouse
- * worth building rather than decorative.
- *
- * Neither tier upgrades. They are the bottoms of two different lines —
- * Marshfolk climb to Artisans (Phase 4) and Wrights to Engineers
- * (Phase 6) — so next_tier is BUILDING_NONE for both, and the confirm
- * popup correctly reports there is nowhere to go. The Cottage ->
- * Wright's House edge that used to exist is gone: a Wright's House is
- * now something you build. */
+/* ---- per-tier needs table ---------------------------------
+ * Keyed by the house's BuildingType, so upgrading a house changes
+ * what it requires next tick with no other state to migrate.
+ * RES_COUNT means "unused". */
+
 static const TierDef TIER_DEFS[] = {
-    /* Marshfolk. Fish and Grain are a fisher's hut and a farm — the
-     * opening every player reaches for, which until NEEDS_PLAN kept
-     * nobody alive because the tier wanted Oilskins and Marsh Gin
-     * instead, two chains behind fertility checks. Those are what
-     * happiness is now made of. */
+    /* Marshfolk: the opening tier. Fish and Grain are a fisher's
+     * hut and a farm. */
     { BUILDING_HOUSE,
       { RES_FISH, RES_GRAIN, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
       { RES_OILSKINS, RES_MARSH_GIN, RES_COUNT, RES_COUNT, RES_COUNT,
@@ -47,12 +30,8 @@ static const TierDef TIER_DEFS[] = {
         RES_COUNT },
       BUILDING_HOUSE_ENGINEER, 600, BUILDING_NONE },
 
-    /* Artisans inherit Fish and Grain, which is the whole point of
-     * inheritance: a home island's first two chains are still wanted
-     * by the tier that outgrew them. Sewing Machines sit in luxury
-     * rather than basic so an Artisan neighbourhood survives a Machine
-     * Shop outage instead of dying of one — a change of meaning, not
-     * of cost, since a refined good is charged per house either way. */
+    /* Artisans inherit Fish and Grain, so a home island's first two
+     * chains are still wanted by the tier that outgrew them. */
     { BUILDING_HOUSE_ARTISAN,
       { RES_FISH, RES_GRAIN, RES_PRESERVES, RES_COUNT, RES_COUNT,
         RES_COUNT },
@@ -87,12 +66,9 @@ static const TierDef TIER_DEFS[] = {
         RES_COUNT },
       BUILDING_NONE, 0, BUILDING_NONE },
 
-    /* Scholars are on no line: reached from ANY house, and only where
-     * an Academy stands. Their basics are Books plus WHATEVER THE HOUSE
-     * THEY CAME FROM ATE — see tier_basic_needs(). The basic[] list
-     * here is therefore the fallback for a Scholar's House with no
-     * recorded origin, and Books is the only entry every scholar
-     * shares. */
+    /* Scholars are on no line: reached from any house where an
+     * Academy stands. basic[] here is the fallback for one with no
+     * recorded origin. */
     { BUILDING_HOUSE_SCHOLAR,
       { RES_BOOKS, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT, RES_COUNT },
       { RES_CHARTS, RES_COFFEE, RES_SPECTACLES, RES_COUNT, RES_COUNT,
@@ -101,14 +77,9 @@ static const TierDef TIER_DEFS[] = {
 };
 #define TIER_DEF_COUNT (int)(sizeof(TIER_DEFS) / sizeof(TIER_DEFS[0]))
 
-/* A scholar's household need not have been a merchant's first: their
- * basics are Books plus whatever the house they came from ate. See
- * population.h. Every other tier answers with a copy of basic[].
- *
- * The fallback for an unknown origin is Marshfolk's, not nothing: a
- * Scholar's House restored from a save written before origin_tier
- * existed has to want SOMETHING, and the base tier's food is the one
- * answer that is true of every island. */
+/* A Scholar's basics are Books plus whatever the house they came from
+ * ate. Every other tier answers with a copy of basic[]. An unknown
+ * origin falls back to the base tier's food. */
 int tier_basic_needs(const TierDef *tier, BuildingType origin,
                      ResourceType out[MAX_TIER_GOODS])
 {
@@ -211,12 +182,8 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
 
     if (out_to) *out_to = BUILDING_NONE;
 
-    /* Both of these used to consult tier->next_tier, which was the
-     * same thing as `next` while a house had exactly one edge. Since
-     * SUPPLY_CHAIN Phase 8 it is not: a terminal tier still has an
-     * Academy branch, and asking about that branch must not be refused
-     * because its LINE goes nowhere. `next` is the edge being asked
-     * about; nothing here may reach past it. */
+/* Both consult tier_branch_target rather than tier->next_tier, so the
+ * Academy branch is not silently ignored. */
     if (!tier) return REJ_UNAVAILABLE;
     if (!next) return REJ_UNAVAILABLE;   /* an edge to nowhere */
 
@@ -228,11 +195,8 @@ RejectReason tier_upgrade_check_def(const TierDef *tier, const TierDef *next,
      * the thing they have to go and build, not the money they happen
      * to be short of as well. */
     for (k = 0; k < MAX_TIER_GOODS; k++) {
-        /* The bar for entry is the tier's BASICS, not everything it
-         * will ever want: you may move into a neighbourhood you cannot
-         * yet keep in spectacles, and then go and build the spectacle
-         * shop. Demanding the luxuries too would make every upgrade
-         * wait on the whole chain above it. */
+    /* The bar is the tier's BASICS, not its luxuries: a tier is
+     * enterable when it can be kept alive. */
         if (next->basic[k] == RES_COUNT) continue;
         if (stock[next->basic[k]] <= 0) return REJ_NEEDS_GOODS;
     }
@@ -255,15 +219,8 @@ int pop_is_house_type(BuildingType type)
 void pop_init(PopData *p)
 {
     p->active    = 1;
-    /* ZERO. A house is LAID EMPTY and becomes a household when
-     * island_settle_house can find it one — a couple off a boat while
-     * the founder allowance lasts, and out of the reserve after that.
-     *
-     * It opened at five once, so growth would be visible within a
-     * minute; then at two, when a house became a family. Zero is the
-     * honest version of the same idea: a roof is a roof until somebody
-     * moves in, and whether anybody does is the question the whole
-     * phase is about. */
+    /* Zero: a house is laid empty and becomes a household when
+     * island_settle_house finds it one. */
     p->residents = 0;
     p->timer     = 0;
     /* Neutral, not zero: a house that has just been built is neither
@@ -274,43 +231,15 @@ void pop_init(PopData *p)
     p->founded     = 0;
 }
 
-/* ---- pop_update ----------------------------------------
- * The needs loop.  Runs once per sim tick for every house.
- *
- * We use a single timer per house rather than a global
- * tick so houses placed at different times stagger their
- * consumption — avoiding a sudden stockpile spike every
- * NEEDS_INTERVAL seconds.
- * -------------------------------------------------------- */
-/* What a house's supplies deserve, 0..HAPPINESS_MAX, and what they cost.
- *
- * BASICS ARE NOT ALL-OR-NOTHING any more, which is the change this
- * phase exists for. A house short of one of its two basics is not
- * dead, it is miserable: it scores a fraction of NEUTRAL and eats what
- * there is. Only a house with NOTHING drifts to zero, and only a house
- * at zero loses anybody.
- *
- * Luxuries are read only when every basic is met — people buy gin after
- * bread, not instead of it — and each one met is an equal share of the
- * distance from NEUTRAL to MAX.
- *
- * Consumes what it counts, so the caller cannot forget to. */
-/* How much of one good a house wants per needs tick (NEEDS_PLAN Ph.3).
- *
- * YOU EAT AS A PERSON; YOU OWN MANUFACTURED THINGS AS A HOUSEHOLD. Raw
- * goods — what the land and the sea give up directly — scale with the
- * number of mouths. Refined goods are one per house however many live
- * there, because a household owns one lamp and everybody reads by it.
- *
- * That split is not a convenience, it is what makes the economy close.
- * Charging every good per resident needs about 2.1 workers per person
- * fed, and every worker is somebody's resident, so it diverges: an
- * island can never staff its own supply. Charging raw goods only brings
- * the base tier to 0.68, which closes with room for warehouses,
- * harbours and ships. The arithmetic is in docs/NEEDS_PLAN.md.
- *
- * The classification is RESOURCE_CATEGORIES, which already existed for
- * the stores overlay — no good had to be reclassified for this. */
+/* ---- pop_update ------------------------------------------
+ * One timer per house rather than a global one, so needs ticks are
+ * staggered and the load is spread. */
+/* What a house's supplies deserve, 0..HAPPINESS_MAX. Basics are
+ * scored proportionally -- half the basics is misery, not death --
+ * and luxuries lift it above neutral. */
+/* Units of one good a house wants per needs tick. Raw goods scale
+ * with mouths; refined goods are one per household, since you eat as
+ * a person and own manufactured things as a household. */
 int tier_good_amount(ResourceType g, int residents)
 {
     if (RESOURCE_CATEGORIES[g] == RCAT_RAW)
@@ -318,13 +247,7 @@ int tier_good_amount(ResourceType g, int residents)
     return 1;
 }
 
-/* What a house's supplies deserve, and what they cost.
- *
- * A good counts as MET only if the whole amount was there — feeding
- * four of six people is not feeding the house — but whatever WAS there
- * is eaten either way. A shortage should show up as an empty warehouse
- * and unhappy people, not as goods left on a shelf because the delivery
- * was short. */
+/* What a house's supplies deserve, and what they cost. */
 static int happiness_target(const TierDef *tier, const ResourceType *basic,
                             int residents, Stockpile *s)
 {
@@ -387,64 +310,30 @@ void pop_update(PopData pop[], const Building buildings[], int count,
         if (!buildings[i].connected || tier == NULL || p->residents <= 0)
             target = 0;
         else {
-            /* MOUTHS, NOT HEADS (LIFE_PLAN Phase 5). An adult eats a
-             * whole ration, a child or an elder a half — so a house of
-             * six with two children is charged for five, and only for
-             * the goods that were ever per-person in the first place.
-             * NULL means every head is a mouth, which is what this did
-             * before ages existed. */
+            /* Mouths, not heads: a worker eats a whole ration and
+             * everybody else a half. NULL charges one each. */
             int mouths = mouths_at ? mouths_at(ctx, i) : p->residents;
             if (mouths < 1) mouths = 1;
             target = happiness_target(tier, basic, mouths, s);
 
-            /* THE SECOND INDEPENDENT INPUT (LIFE_PLAN Phase 7). What
-             * the island charges in tax moves the target a rung or two,
-             * and it is INDEPENDENT OF THE HARVEST — which is the point
-             * LIFE_PLAN §6 makes about why one input must never be able
-             * to move them all. A bad fishing year and a greedy rate
-             * are different problems and a house can suffer one without
-             * the other.
-             *
-             * Capped at TAX_HAPPINESS_MAX rungs of ten, so tax can make
-             * a comfortable island uncomfortable but cannot on its own
-             * empty a fed house. */
+            /* The tax rate, capped, as a second input independent of
+             * the harvest. */
             target += tax_rungs;
             if (target < 0) target = 0;
         }
 
-        /* ONE STEP PER TICK, and that is the whole of the hysteresis.
-         * A neighbourhood that loses its larder has ten ticks of
-         * goodwill before anybody leaves; one that is rescued climbs
-         * back at the same pace. Nothing counts consecutive failures,
-         * because the ladder already remembers. */
+        /* One rung per tick, which is the whole of the hysteresis:
+         * the ladder already remembers. */
         if      (p->happiness < target) p->happiness++;
         else if (p->happiness > target) p->happiness--;
 
         if (p->happiness > HAPPINESS_MAX) p->happiness = HAPPINESS_MAX;
         if (p->happiness < 0)             p->happiness = 0;
 
-        /* GOLD USED TO BE MINTED HERE (LIFE_PLAN Phase 7 removed it).
-         * A fed house paid `3 x residents` every needs tick, which made
-         * a household of children exactly as good an earner as a
-         * household of workers and made the player's income a
-         * population count wearing a currency's clothes.
-         *
-         * Gold now comes from WORK — a building earns what its output
-         * is worth, pays its crew, and the player taxes both halves in
-         * island_tick_buildings. Being fed is still what keeps a house
-         * on the ladder; it is no longer what pays for anything. */
 
-        /* GROWTH USED TO LIVE HERE (LIFE_PLAN Phase 6b removed it). A
-         * happy house gained a resident every needs tick, and where
-         * that resident came from was never asked. Now a house grows
-         * only by birth — residents_breed owns the upward direction
-         * entirely — so happiness buys a household the room to raise
-         * children rather than conjuring grown strangers into a spare
-         * bed.
-         *
-         * Decline stays exactly where it was. The two are deliberately
-         * not symmetric: leaving is a decision about this month, being
-         * born takes nine of them. */
+
+        /* A house grows only by birth (residents_breed); pop_update
+         * can empty one but never fill it. */
         if (p->happiness == 0 && p->residents > 0) {
             const char *why = "no road to Warehouse";
             char        buf[48];

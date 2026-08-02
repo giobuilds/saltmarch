@@ -1,19 +1,4 @@
-/*  test_calendar.c  --  the tick, said in dates  (LIFE_PLAN Phase 4)
- *
- * The calendar stores nothing: a date is a pure function of the sim
- * tick. So these assertions are about the ARITHMETIC and about the one
- * property the whole design rests on —
- *
- *     ONE MONTH IS ONE NEEDS TICK IS ONE WORK CYCLE.
- *
- * That alignment is the entire reason the shift durations were retuned
- * in this phase. If it ever stops holding, an island's harvest and its
- * calendar drift apart and a player is told two different things about
- * the same world, so it is asserted directly against the constants the
- * sim actually uses rather than against 300.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_calendar.c  --  the tick, said in dates  (LIFE_PLAN Phase 4) */
 
 #include "calendar.h"
 #include "population.h"

@@ -1,17 +1,5 @@
-/*  snapshot.c  --  Full world state as bytes
- *                  (SERVER.md, "Log truncation: the snapshot format")
- *
- *  See snapshot.h for what is captured and why the encoding is
- *  explicit rather than a struct dump.
- *
- *  The two halves below are written to be read side by side: every
- *  put_* in the writer has a get_* at the same position in the reader,
- *  in the same order. That symmetry IS the format specification —
- *  there is no schema anywhere else — so a field added to one half and
- *  forgotten in the other is the failure mode to watch for. The
- *  hash check at the end of decode is the backstop that turns such a
- *  mistake into a loud refusal rather than a world that quietly drifts.
- */
+/* snapshot.c  --  Full world state as bytes
+ * (SERVER.md, "Log truncation: the snapshot format") */
 
 #include "snapshot.h"
 #include "island.h"
@@ -166,12 +154,7 @@ static void get_stockpile(R *r, Stockpile *s)
     s->capacity = (int)r_i32(r);
 }
 
-/* FNV-1a over the payload. The sim_hash the snapshot carries is a
- * SEMANTIC check -- it catches an encoder that writes a field the
- * decoder skips -- but it can only see what sim_hash itself covers,
- * which is not everything in here (agents, for one, are world state
- * that no hash reads). This is the blunt one: any flipped byte
- * anywhere in the buffer fails it. */
+/* FNV-1a over the payload. The sim_hash the snapshot carries is. */
 static uint32_t fnv1a(const unsigned char *p, size_t n)
 {
     uint32_t h = 2166136261u;
@@ -190,11 +173,7 @@ static void put_building(W *w, const Building *b)
     w_i32(w, (int32_t)b->col);
     w_u8(w,  (uint8_t)(b->active ? 1 : 0));
     w_u32(w, b->timer);
-    /* connected and worker_count are recomputed every frame before
-     * anything reads them, so they are not load-bearing — but they ARE
-     * hashed, and a snapshot whose hash did not match the world it came
-     * from would fail its own verification. Cheaper to store two ints
-     * than to special-case the check. */
+    /* connected and worker_count are recomputed every frame. */
     w_i32(w, (int32_t)b->connected);
     w_i32(w, (int32_t)b->worker_count);
 }
@@ -281,12 +260,7 @@ static int get_agent(R *r, Agent *a)
     return 1;
 }
 
-/* A person: 24 bytes in memory and 24 on the wire (LIFE_PLAN Phase 3).
- *
- * NO NAME IS WRITTEN. A resident's name is a pure function of
- * (world_seed, id) — see resident.c — so storing it would be storing a
- * derived value, the same mistake put_island explains at length about
- * the map grid. The id is what carries it. */
+/* A person: 24 bytes in memory and 24 on the wire (LIFE_PLAN Phase 3). */
 static void put_resident(W *w, const Resident *p)
 {
     w_u8(w, (uint8_t)(p->active ? 1 : 0));
@@ -379,12 +353,7 @@ static void get_ship(R *r, Ship *s)
     s->escorting     = r_i32(r);
 }
 
-/* The order book (MARITIME_PLAN Phase 2). Live entries only — an
- * inactive slot holds nothing the world needs, and writing its stale
- * bytes would put noise in a buffer whose checksum has to mean
- * something. Slot identity is not preserved across a restore, which is
- * safe because nothing refers to an order by slot: orders are found by
- * id, and the matcher re-derives its ordering from price and time. */
+/* The order book (MARITIME_PLAN Phase 2). Live entries only —. */
 static void put_orderbook(W *w, const OrderBook *b)
 {
     int i;
@@ -476,11 +445,7 @@ static int get_orderbook(R *r, OrderBook *b)
     return !r->bad;
 }
 
-/* What each player knows (MARITIME Phase 3b). Written flat rather than
- * sparsely: it is a few kilobytes, it compresses to nothing in the
- * places that matter, and a sparse encoding of "which routes does this
- * player know" is exactly the kind of cleverness that goes wrong
- * silently on the decode side. */
+/* What each player knows (MARITIME Phase 3b). Written flat rather. */
 /* Expeditions in progress (MARITIME Phase 3d). Live entries only, like
  * the order book: a mission is addressed by nothing, so compacting the
  * dead slots out loses no identity. */
@@ -525,11 +490,7 @@ static int get_surveys(R *r, SurveyBoard *b)
     return !r->bad;
 }
 
-/* The fleets (MARITIME Phase 5b). Their lairs regenerate from the seed
- * with the rest of the sea, but where they have WANDERED to and what
- * they are sitting on does not — so the whole fleet is written rather
- * than only the live ones, because a dead fleet is a fact about the
- * world (that lair is clear) and not an empty slot. */
+/* The fleets (MARITIME Phase 5b). Their lairs regenerate from the seed */
 static void put_pirates(W *w, const PirateSea *ps)
 {
     int i, r;
@@ -669,20 +630,7 @@ static void put_island(W *w, const Island *isl)
     w_i32(w, (int32_t)isl->agent_assign_timer);
     put_stockpile(w, &isl->stockpile);
 
-    /* The map is (seed, profile) and nothing else.
-     *
-     * Terrain is IMMUTABLE once generated: outside map.c's own
-     * generation passes nothing in the tree writes map.tiles at all.
-     * Placement does not mark tiles -- occupancy is derived from
-     * buildings[] -- so a road changes no terrain, and there is nothing
-     * for a settled island's map to have drifted into. Storing the
-     * grid would be storing a pure function of these eight bytes: it
-     * was 32 KB per island of the first draft of this format, nine
-     * tenths of the whole snapshot, and every byte of it recomputable.
-     *
-     * If terrain ever becomes mutable -- terraforming, depletion of a
-     * deposit -- this is the line that has to change, and the tiles
-     * come back. */
+    /* The map is (seed, profile) and nothing else. */
     w_u32(w, isl->map.seed);
     w_i32(w, (int32_t)isl->map.profile);
 
@@ -779,18 +727,7 @@ static int get_island(R *r, Island *isl)
 
 /* ---- the public halves ------------------------------------- */
 
-/* ---- redaction (SERVER_AUTHORITY.md Phase 3) --------------
- * Blank everything `viewer` is not entitled to know, in place, on a
- * COPY of the world. A copy rather than a filter woven through the
- * encoder because the encoder is the one thing that must not grow a
- * second version of itself: a redacted snapshot has to be the same
- * format as a full one, byte for byte, or every decoder learns about
- * views and the whole seam leaks.
- *
- * The scratch is allocated per call. At one push a second that is a
- * 5 MB malloc and memcpy per client per second — real, but not the
- * expensive part of anything, and a shared scratch is the obvious
- * optimisation if it ever shows up in a profile. */
+/* ---- redaction (SERVER_AUTHORITY.md Phase 3) -------------- */
 static void redact_for(GameState *gs, uint32_t viewer)
 {
     int i;
@@ -800,13 +737,7 @@ static void redact_for(GameState *gs, uint32_t viewer)
 
         if (isl->owner == viewer) continue;
 
-        /* The public face: name, profile, whether settled, who holds
-         * the charter, and whether foreigners may dock. Ownership is
-         * public in spirit already — the world map names it — and
-         * docking has to be, or a captain cannot know before sailing
-         * whether they will be turned away.
-         *
-         * Everything past this line is the owner's business. */
+        /* The public face: name, profile, whether settled, who holds */
         stockpile_init(&isl->stockpile);
 
         memset(isl->buildings, 0, sizeof(isl->buildings));
@@ -1044,11 +975,7 @@ int snapshot_decode(GameState *gs, const unsigned char *buf, size_t len)
     if (tmp->current_island < 0 || tmp->current_island >= MAX_ISLANDS)
         tmp->current_island = 0;
 
-    /* The sea is a pure function of the seed, like every Map, so it is
-     * regenerated rather than carried in the buffer — except for the
-     * cursors, which are the one part of it that is world state. Both
-     * must happen BEFORE the hash check, because sim_hash reads the
-     * cursors. */
+    /* The sea is a pure function of the seed, like every Map, so it. */
     sea_init(&tmp->sea, tmp->world_seed, MAX_ISLANDS);
     {
         int p;

@@ -58,12 +58,7 @@ void faction_init(Faction *f)
 {
     int i;
 
-    /* Zero the whole struct first. Every byte of this is hashed, and
-     * GameState is malloc'd rather than calloc'd — a field this
-     * function forgets is uninitialised memory entering sim_hash, which
-     * makes two clients of the same world disagree for reasons neither
-     * can see. That is not hypothetical: the price-history ring
-     * (UI_PLAN M3) was added and immediately produced exactly that. */
+    /* Zero the whole struct first. Every byte of this is hashed. */
     memset(f, 0, sizeof(*f));
 
     f->gold         = FACTION_START_GOLD;
@@ -79,11 +74,8 @@ void faction_init(Faction *f)
 }
 
 /* Linear elastic quote from a base price and the current inventory:
- *   inventory 0            -> 2 * base_price   (scarce: pays/charges more)
- *   inventory baseline     ->     base_price   (day-one neutral)
- *   inventory 2*baseline   -> 0  -> clamped    (glutted: pays/charges little)
- * Multiply-then-divide keeps resolution so a good priced at 2-3 still
- * moves; clamped to [1, 4*base] so a quote is never free or unbounded. */
+ * inventory 0            -> 2 * base_price   (scarce: pays/charges more)
+ * inventory baseline     ->     base_price   (day-one neutral) */
 static int quote(int base_price, int32_t inventory)
 {
     int q = base_price * (2 * FACTION_BASE_INVENTORY - (int)inventory)

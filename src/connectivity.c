@@ -1,20 +1,4 @@
-/*  connectivity.c  --  Road-network reachability  (Phase 3)
- *
- *  Two-step algorithm, both driven off `buildings[]` directly
- *  (roads are BUILDING_ROAD entries, not a Tile flag — see the
- *  Phase 2 note in building.c):
- *
- *  1. Mark every tile currently covered by an active road in a
- *     scratch MAP_ROWS x MAP_COLS grid (roads are 1x1, so this is
- *     one cell per road building).
- *  2. Multi-source BFS over that grid, seeded from every road tile
- *     adjacent to an active Warehouse's footprint. Reachable road
- *     tiles are "connected."
- *
- *  A building is then connected if it IS a Warehouse or Road
- *  (neither needs a route to itself/isn't gated), or if any tile
- *  adjacent to its footprint is a reached road tile.
- */
+/* connectivity.c  --  Road-network reachability  (Phase 3) */
 
 #include "connectivity.h"
 #include "map.h"
@@ -33,19 +17,7 @@ static Pt  queue[MAP_ROWS * MAP_COLS];
 static int bfs_dist[MAP_ROWS][MAP_COLS];
 static Pt  bfs_parent[MAP_ROWS][MAP_COLS];
 
-/* Phase 5: a SEPARATE walkability grid for connectivity_bfs_from(),
- * deliberately not reusing road_grid. Road tiles AND active
- * Warehouse footprint tiles both count as walkable here, since a
- * Warehouse is naturally a hub where multiple road spurs converge
- * without necessarily touching each other directly — e.g. one road
- * touching the Warehouse's north edge and another touching its west
- * edge are a normal layout, and an agent should be able to walk
- * through the Warehouse to get from one to the other. road_grid
- * itself stays road-only and untouched: it drives the `connected`
- * flag (bfs_from_warehouses/footprint_adjacent_to_reached below),
- * and widening ITS definition would silently change which buildings
- * count as connected — a Phase 3 behavior already shipped, not
- * something a Phase 5 pathfinding fix should touch as a side effect. */
+/* Phase 5: a SEPARATE walkability grid for. */
 static int walk_grid[MAP_ROWS][MAP_COLS];
 
 static const int DR[4] = { -1, 1,  0, 0 };
@@ -175,13 +147,7 @@ void connectivity_update(Building buildings[], int count, uint32_t *sig)
     }
 }
 
-/* =========================================================
- * Phase 5: point-to-point pathfinding
- *
- * connectivity_bfs_from() recomputes walk_grid itself (cheap: one
- * pass over buildings[]), so it's self-contained and doesn't rely
- * on connectivity_update() having just run this frame.
- * ========================================================= */
+/* ========================================================= */
 
 static void mark_walk_tiles(const Building buildings[], int count)
 {

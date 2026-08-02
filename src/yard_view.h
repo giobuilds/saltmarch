@@ -1,52 +1,8 @@
 #ifndef YARD_VIEW_H
 #define YARD_VIEW_H
 
-/* =========================================================
- * yard_view.h  --  The yard, and the fleet it launches
- *                  (UI_PLAN N6)
- *
- * MARITIME_PLAN Phase 5 made a hull a choice: guns cost hold, so a
- * merchantman carries the cargo that makes trading worth doing and
- * cannot defend it, a warship can take anything at sea and has nowhere
- * to put it, and the answer to "how do I move cargo through dangerous
- * water" is a second ship rather than a compromise ship.
- *
- * None of that was reachable. `game_build_ship()` is
- * `game_build_ship_class(SHIP_MERCHANTMAN)` and the confirm popup called
- * it with no way to say otherwise, so every ship in every game since
- * that phase has been a merchantman — the trade-off existed in the sim
- * and nowhere a player could see it. Escorts were the same: the command
- * has been there since Phase 5a with nothing to issue it.
- *
- * So this screen is two lists, on `Y`:
- *
- *   the yard   — one row per hull, its guns, what it survives, what it
- *                carries and what the yard charges, side by side, so
- *                the trade is legible BEFORE the gold is spent;
- *   the fleet  — one row per ship of yours, its class, its condition,
- *                where it is, and who it is guarding.
- *
- * CONDITION IS THE OTHER HALF OF THE PHASE. A hull is the only thing
- * about a ship that moves: it loses hull in a fight and never gets it
- * back, and a ship out of hull is gone. Until now that number existed
- * only in the sim, which meant a player sent a half-wrecked warship at a
- * fleet with no way of knowing it was half-wrecked. `guns` here is
- * `ship_fighting_strength()` — what the hull is ACTUALLY worth in a
- * fight, scaled by how much of it is left — rather than the class
- * table's number, because that is the figure the bet is made against.
- *
- * There is no refit: the sim has no command that repairs a hull, so
- * this screen does not offer one. A damaged ship says what it is worth
- * and that is the whole truth available. Inventing a repair here would
- * mean inventing it in the sim, which is a design decision and not a
- * UI phase's to make.
- *
- * ESCORT IS CHOSEN BY CYCLING, for the reason N3's good-picker cycles:
- * there is no text input and no drag in this game. Each button carries
- * the ship it SELECTS as its identity rather than a direction, so a
- * recorded click still means "guard ship 3" if the fleet changed shape
- * between frames — the same rule the island bar's chevrons follow.
- * ========================================================= */
+/* yard_view.h  --  The yard, and the fleet it launches
+ * (UI_PLAN N6) */
 
 #include <stdint.h>
 #include "ui_kit.h"

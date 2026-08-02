@@ -1,29 +1,5 @@
-/*  test_productivity.c  --  what a worker is worth
- *                           (LIFE_PLAN Phase 8)
- *
- * Until this phase a worker was a worker. Production advanced by the
- * headcount and by nothing else, so a well-fed veteran and a hungry
- * child of twelve were the same number.
- *
- * TWO THINGS HERE ARE LOAD-BEARING.
- *
- * The first is section 6's rule: "status must be several independent
- * inputs, so one bad harvest cannot move every one of them at once."
- * A test that only checked the total would pass on a single input
- * dressed up as four, so the assertions below move ONE input at a time
- * and insist the others hold still.
- *
- * The second is the floor, and it is an arithmetic trap rather than a
- * design one. The obvious way to apply a percentage is
- * `advance * percent / 100`, and for a lone worker in a bad way that is
- * `1 * 85 / 100` — which is ZERO. A single hungry fisherman would land
- * nothing at all, forever: a stall, not a slowdown, and invisible in
- * any test that only ever staffs a building fully. The sim scales the
- * PERIOD instead so nothing is ever divided; the last test here is what
- * would have caught it.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_productivity.c  --  what a worker is worth
+ * (LIFE_PLAN Phase 8) */
 
 #include "game.h"
 #include "island.h"
@@ -198,11 +174,7 @@ static void test_a_lone_miserable_worker_still_works(void)
                     continue;
                 if (!building_can_place(&isl->map, BUILDING_HOUSE, wr+3, wc))
                     continue;
-                /* BESIDE the road, not below the house. Connectivity is
-                 * 4-adjacent, so a hut at (wr+3, wc+1) touches the road
-                 * at (wr+2, wc) only diagonally — it never connects, and
-                 * a hut that cannot connect lands nothing for a reason
-                 * that has nothing to do with productivity. */
+                /* BESIDE the road, not below the house. Connectivity. */
                 if (!building_can_place(&isl->map, BUILDING_FISHERS_HUT,
                                         wr+2, wc+1))
                     continue;
@@ -224,16 +196,7 @@ static void test_a_lone_miserable_worker_still_works(void)
                    game_free(gs); return; }
 
     /* Held JUST above the bottom of the ladder: miserable enough for
-     * the hunger penalty, never so miserable that the house empties.
-     *
-     * Two things about this took a try each. pop_update sheds a
-     * resident at happiness ZERO, so pinning it there starves the
-     * workers out of existence and measures nothing — the house was
-     * empty and the assertion failed for the wrong reason. And the
-     * pinning has to happen AFTER the tick, because pop_update walks
-     * happiness one rung toward what the larder deserves: set before,
-     * a 1 becomes a 0 on the needs tick and sheds anyway. Two, set
-     * afterwards, leaves it oscillating between 1 and 2. */
+     * the hunger penalty, never so miserable that the house empties. */
     before = isl->stockpile.amount[RES_FISH];
     for (t = 0; t < 6000; t++) {
         sim_run_one_tick(gs);

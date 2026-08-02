@@ -1,46 +1,7 @@
 #ifndef BOOK_VIEW_H
 #define BOOK_VIEW_H
 
-/* =========================================================
- * book_view.h  --  Your side of the order book (UI_PLAN N3)
- *
- * The sim has had a matching order book since MARITIME_PLAN Phase 2 and
- * no way to reach it. This is the screen: post a buy or a sell with a
- * limit price, see what is resting, cancel one.
- *
- * WHY THIS IS NOT A THIRD ExchangeKind. Decision 4 unified the
- * marketplace and the harbour quay into one surface and predicted its
- * own failure mode — "if per-kind branches start appearing per-column,
- * the unification has failed". They appear here before the first line:
- * the columns are disjoint (side, resting quantity, limit, age against
- * yours, theirs, bid, ask, trend), the action cluster is one Cancel
- * against six quantities, the draft composer exists only here, and a row
- * is identified by an ORDER ID rather than a ResourceType. So the plan's
- * own mitigation applies: split rather than defend.
- *
- * ROWS ARE RETAINED, NOT REBUILT. This is the load-bearing decision and
- * the reason book_view_update() takes its own output as an input.
- *
- * The snapshot carries live orders only. Build the rows from it alone
- * and a filled order is simply absent next frame, every row below it
- * slides up, and the click that was already travelling toward Cancel
- * lands on somebody else's order. The order book is the first screen in
- * this project that ANOTHER PLAYER changes mid-read, and a row that
- * disappears between the frame that drew it and the click that hits it
- * is the one failure it must not have.
- *
- * So an order that leaves the book stays where it was, struck through,
- * with a dead Cancel. It is still a pure function — of (previous view,
- * snapshot) rather than of the snapshot alone — so it still replays
- * headlessly, which is what matters. Ordering is by ascending order id,
- * never by position in the snapshot's array: the snapshot compacts
- * around inactive slots, so array position is exactly the thing that
- * moves under a cursor.
- *
- * Stale rows are cleared when the panel closes (book_view_reset), and
- * the oldest is dropped if the view fills — a stale row is a note about
- * something that just happened, not a permanent record.
- * ========================================================= */
+/* book_view.h  --  Your side of the order book (UI_PLAN N3) */
 
 #include <stdint.h>
 #include "ui_kit.h"
@@ -98,16 +59,7 @@ void book_view_reset(BookView *v);
 void book_view_update(BookView *v, const UiSnapshot *snap, int island,
                       const UiState *st);
 
-/* ---- the draft ---------------------------------------------
- * There is no text input in this game — InputState carries clicks, a
- * wheel and a few function keys — so a limit price is entered with
- * stepper buttons, starting from the market's own quote. Two clicks for
- * the ordinary case, and the steppers reach the limits a quote screen
- * could never express, which is the entire reason a book exists.
- *
- * The draft lives in UiState because it is a pure fold over the input
- * stream: every hit below returns the value the click produces, and the
- * caller assigns it. No overlay computes a draft of its own. */
+/* ---- the draft --------------------------------------------- */
 void book_draft_default(UiState *st);
 
 /* What the draft's limit currently means: the explicit price if one was
@@ -148,11 +100,7 @@ typedef enum {
 
 UiRect book_col_rect(UiRect row, BookCol col);
 
-/* The id a row header carries. The order id is 32 bits and a widget id
- * has 16 for its value, so the identity keeps the low half and the FULL
- * id rides in the widget's value — which is what the cancel hit reads
- * and what game_cancel_order() is given. Content-derived either way, so
- * decision 2 (ids are identities, never positions) still holds. */
+/* The id a row header carries. The order id is 32 bits and a widget id */
 uint32_t book_row_id(uint32_t order_id);
 
 void book_build(UiList *out, const BookView *view, const UiState *st,

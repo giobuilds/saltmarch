@@ -1,22 +1,5 @@
-/*  test_sea.c  --  the water between the islands
- *                  (MARITIME_PLAN Phase 1: sea geometry)
- *
- * The sea is generated, not authored, and everything downstream will
- * depend on it: voyage durations, sight, distance-priced risk, and
- * eventually which private route a chart unlocks. So the properties
- * worth asserting are the ones a generator can quietly stop having.
- *
- * The first of those is determinism. A Sea is a pure function of
- * (seed, island count) and is regenerated on load rather than saved,
- * which means a generator that drifted — a float rounding differently,
- * an added pass shifting a sequence — would not corrupt a save, it
- * would silently produce a DIFFERENT WORLD from the same seed on a
- * different machine. That is the failure this project fears most,
- * because it surfaces as two players disagreeing rather than as a
- * wrong answer on one.
- *
- * Built and run by tests/run.sh.
- */
+/* test_sea.c  --  the water between the islands
+ * (MARITIME_PLAN Phase 1: sea geometry) */
 
 #include "sea.h"
 #include "island.h"      /* MAX_ISLANDS */
@@ -80,11 +63,7 @@ int main(void)
                     if (!r) { missing++; continue; }
                     if (r->total_ticks == 0) instant++;
 
-                    /* The stored total must equal the legs it is made
-                     * of. They are stored separately because a ship
-                     * walks legs and a booking quotes a total, and the
-                     * two drifting apart would put ships in the wrong
-                     * place for reasons nothing would report. */
+                    /* The stored total must equal the legs it is made */
                     for (leg = 0; leg < r->waypoint_count + 1; leg++)
                         sum += r->leg_ticks[leg];
                     if (sum != r->total_ticks) mismatched++;
@@ -168,17 +147,7 @@ int main(void)
 
                     /* The trade-off itself: every private passage beats
                      * the patrolled lane. If this ever stops holding,
-                     * charts are a cost with no benefit.
-                     *
-                     * Checked across the WHOLE POOL, not just the two
-                     * in play (MARITIME_PLAN Phase 3e). Passages
-                     * rotate, so one that is only tested while it
-                     * happens to be live is one that can turn out to
-                     * be the long way round the day it comes in — and
-                     * a chart that made you slower is worse than no
-                     * chart at all. Checking only the live pair passed
-                     * happily while pool entries ran 4% slower than
-                     * the lane. */
+                     * charts are a cost with no benefit. */
                     {
                         int pair = sea_pair_index(&sea, i, j);
                         int slot;
@@ -228,16 +197,7 @@ int main(void)
 
     printf("\n=== the sea has not silently got slower ===\n");
     {
-        /* SEA_UNITS_PER_TICK is fitted to the generator so that the
-         * average PUBLIC crossing stays near the 200 ticks every
-         * voyage used to take. Nothing enforces that fit, and the
-         * failure mode is not a wrong number — it is every voyage in
-         * the game getting slower while nothing says so. It has
-         * happened twice. So the fit is asserted.
-         *
-         * The band is deliberately wide: this is a guard against a
-         * generator change moving the centre by half, not a golden
-         * value that fails on a one-tick rounding difference. */
+        /* SEA_UNITS_PER_TICK is fitted to the generator so that. */
         double   sum = 0.0;
         int      pairs = 0, i, j;
         double   mean;

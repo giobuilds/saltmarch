@@ -1,21 +1,4 @@
-/*  test_feed.c  --  headless verification of MMO_PLAN Phase 4
- *
- * The shared feed's client half, exercised without any window or sync
- * script:
- *
- *   - feed_track_departures publishes exactly one line per departure
- *     (handshake first), including a route auto-depart, and never
- *     re-publishes a voyage it has already seen.
- *   - feed_reload parses a hand-built feed_in.jsonl: resolves peer
- *     names from handshakes, clamps hostile long names, skips our own
- *     echoed lines, counts malformed/garbage lines instead of crashing,
- *     ignores a partial trailing line, and caps the ghost list.
- *   - ghost_progress maps wall time onto 0..1 and returns -1 outside
- *     the voyage window (stale ghosts fade out).
- *   - The cosmetic boundary holds: none of it touches sim_hash.
- *
- * Built and run by tests/run.sh.
- */
+/* test_feed.c  --  headless verification of MMO_PLAN Phase 4 */
 
 #include "game.h"
 #include "feed.h"

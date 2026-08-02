@@ -1,29 +1,4 @@
-/*  test_yard.c  --  the yard and the fleet (UI_PLAN N6)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui.
- *
- * The phase exists because a trade-off the sim makes was unreachable:
- * every ship built since MARITIME_PLAN Phase 5 has been a merchantman,
- * not by choice but because game_build_ship() is
- * game_build_ship_class(SHIP_MERCHANTMAN) and nothing could say
- * otherwise. So the headline assertion is that a click on the warship's
- * row builds a WARSHIP — and that the confirmation it opens carries that
- * hull in the command it will submit, since a popup that showed one hull
- * and submitted another would be the exact drift Phase 6 closed.
- *
- * Also checked:
- *   - the three hulls really do trade against each other (guns cost
- *     hold), so the screen is showing a decision rather than a ladder;
- *   - condition is what the hull is WORTH, not what it was: a damaged
- *     warship reports fewer guns, which is the number the bet is made
- *     against;
- *   - escort cycles through your own ships and round to nobody, never
- *     selecting itself, and the button carries the ship it would guard;
- *   - a one-ship fleet says why it cannot form a convoy;
- *   - a foreign harbour can be read and not acted on.
- *
- * Built and run by tests/run.sh.
- */
+/* test_yard.c  --  the yard and the fleet (UI_PLAN N6) */
 
 #include "yard_view.h"
 #include "ui_kit.h"

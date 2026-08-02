@@ -1,10 +1,4 @@
-/*  chart_view.c  --  The passages, and the maps of them (UI_PLAN N4)
- *
- *  Layout, the retained-row fold and hit-testing. No SDL, no drawing,
- *  no GameState — see chart_view.h for why the rows are retained, why
- *  the Sea is read directly, and why this screen scopes rather than
- *  hides.
- */
+/* chart_view.c  --  The passages, and the maps of them (UI_PLAN N4) */
 
 #include "chart_view.h"
 #include "island_bar.h"
@@ -110,11 +104,7 @@ static void chart_quotes(const UiSnapshot *snap, int32_t *ask, int32_t *bid)
     }
 }
 
-/* Is one of OUR expeditions out towards `to`? Scoped to this player's
- * harbours, which is also all a properly redacted client holds — a
- * rival's research is blanked before the snapshot is taken, so this
- * cannot show what it is not told even when it is running against a
- * single-player world that happens to know everything. */
+/* Is one of OUR expeditions out towards `to`? Scoped to this player's */
 static int survey_out(const UiSnapshot *snap, int from, int to,
                       uint64_t *out_back)
 {
@@ -232,16 +222,7 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
             row->ask        = ask[rid];
             row->bid        = bid[rid];
 
-            /* When this water goes out of use. The lane never does; of
-             * the two private passages the one at the cursor — variant 1
-             * — goes at the next rotation and the other a full lifetime
-             * behind it, because rotating advances the cursor and
-             * variant 2 becomes variant 1.
-             *
-             * The schedule itself is sea.c's, not a copy of it: a clock
-             * that disagreed with the event it is timing would tell a
-             * player their charts had hours left on the morning they
-             * became waste paper. */
+            /* When this water goes out of use. The lane never does. */
             row->expires_tick = 0u;
             if (rt->is_private && variant >= 1)
                 row->expires_tick =
@@ -251,14 +232,7 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
         }
 
         /* Whether an expedition to this island could sail, said in the
-         * sim's own vocabulary (UI_PLAN N7).
-         *
-         * "Nothing left to find" is read off the rows this screen is
-         * already showing rather than reproducing survey_target_route:
-         * the sim looks for a live private passage the player does not
-         * know, and an unknown private row IS that passage. The sim
-         * stays the authority — a click that gets here anyway is
-         * refused and the flash says the same words. */
+         * sim's own vocabulary (UI_PLAN N7). */
         {
             ChartRow *head = &v->rows[find_header_row(v, d)];
             int       unknown = 0, k;
@@ -268,16 +242,7 @@ void chart_view_update(ChartView *v, const UiSnapshot *snap, const Sea *sea,
                     v->rows[k].is_private && !v->rows[k].gone &&
                     !v->rows[k].known) unknown = 1;
 
-            /* IN THE SIM'S ORDER, not in the order a player might find
-             * most useful. sim_survey checks the crew, then the boat,
-             * then the paper, then whether there is anything left to
-             * find — so a harbour with no scholar and nothing to find
-             * must say "no scholar", because that is the sentence the
-             * click would come back with. Sorting these by helpfulness
-             * would produce a screen that is right about the world and
-             * wrong about the refusal, which is the drift decision 3
-             * exists to prevent. There is a test that compares the two
-             * across several broken worlds. */
+            /* IN THE SIM'S ORDER, not in the order a player might find */
             if (!v->yours)                  head->survey_reason = REJ_NOT_OWNER;
             else if (v->scholars_free <= 0) head->survey_reason = REJ_NO_CREW;
             else if (v->boats_free <= 0)    head->survey_reason = REJ_NO_BOAT;
@@ -353,11 +318,7 @@ UiRect chart_col_rect(UiRect row, ChartCol col)
 
 /* ---- the builder ------------------------------------------- */
 
-/* Buy and Sell for one passage. Both carry the route as their identity
- * and the price the row was SHOWING as their value — the same limit
- * stamping the exchange rows use, so a quote that moves between the
- * frame and the tick is refused rather than filled at a price nobody
- * read (UI_PLAN M3). */
+/* Buy and Sell for one passage. Both carry the route as their identity */
 static void push_actions(UiList *out, const ChartView *view,
                          const ChartRow *row, UiRect rr)
 {
@@ -424,11 +385,7 @@ void chart_build(UiList *out, const ChartView *view, const UiState *st,
         l.cursor += CHART_ROW_GAP;
 
         if (row->header) {
-            /* A destination, carrying the island it names. The row
-             * itself is never hit-tested — chevrons for changing island
-             * belong to the island bar, and two ways to do one thing is
-             * how they come to disagree — but the expedition button on
-             * it is (UI_PLAN N7). */
+            /* A destination, carrying the island it names. The row */
             UiRect btn;
 
             ui_list_push(out, ui_id(UI_GROUP_ISLAND, (uint16_t)row->island),

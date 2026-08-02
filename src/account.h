@@ -1,43 +1,8 @@
 #ifndef ACCOUNT_H
 #define ACCOUNT_H
 
-/* =========================================================
- * account.h  --  Who a connection is entitled to be
- *                (AUTH_PLAN Phase 1)
- *
- * `host_assign_id()` grants an identity to anyone who asks for it: send
- * `--as 3` and you are player 3, provided player 3 owns an island and
- * is not currently connected. Ids are small integers from 1, so they
- * are enumerated rather than guessed, and the only guard is "not
- * currently connected" — which, in a world that ticks while its players
- * sleep, is most of the time. This file is what makes `--as` a LOOKUP
- * rather than an assertion.
- *
- * THE THREE LAYERS, and the line this file sits above (AUTH_PLAN):
- *
- *     account       handle + credential      SERVER-SIDE ONLY
- *         | owns                             never hashed, never sent
- *     player_id     owns islands and ships   WORLD STATE
- *         | presented as                     hashed, replayed, snapshotted
- *     display name  what the feed shows      COSMETIC
- *
- * Nothing here may cross into the layer below. `MSG_WORLD` hands the
- * snapshot to every joining client, so a credential stored there would
- * be handed to everyone on join; `sim_hash` covers world state, and
- * hashing a secret would desync every client that cannot know it. So
- * accounts live in a sidecar the host reads and never transmits, and
- * the sim does not know this file exists.
- *
- * TOKENS, NOT PASSWORDS, and therefore no cryptographic dependency. A
- * 256-bit machine-generated token has no entropy problem, so it needs
- * no KDF — a hash at rest and a constant-time comparison are enough.
- * Passwords would need a real KDF and a wire nobody can read, which is
- * AUTH_PLAN Phase 3 and brings TLS with it. See sha256.h.
- *
- * OFF BY DEFAULT. A host with no account store behaves exactly as it
- * did: co-op between friends must not regress into a login screen. The
- * dedicated server turns it on by having a store.
- * ========================================================= */
+/* account.h  --  Who a connection is entitled to be
+ * (AUTH_PLAN Phase 1) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -48,13 +13,7 @@
 #define ACCOUNT_NAME_LEN    24
 #define ACCOUNT_MAX         64
 
-/* Failed attempts before an account stops answering, and for how long.
- *
- * Per ACCOUNT rather than only per connection, because a refused login
- * costs the attacker one reconnect: the per-connection limit is "one
- * attempt", which on its own is no limit at all. Five is generous for a
- * client pasting a token it already has and punishing for a program
- * working through the space. */
+/* Failed attempts before an account stops answering, and for how long. */
 #define ACCOUNT_MAX_FAILS   5
 #define ACCOUNT_LOCK_MS     60000u
 
@@ -66,12 +25,7 @@ typedef struct {
     uint8_t  hash[ACCOUNT_HASH_BYTES];    /* sha256(salt || token)      */
     uint64_t created_unix;
 
-    /* Rate limiting. In memory only and deliberately not persisted: a
-     * lockout is a live defence against a program hammering one
-     * account, not a record to keep. Restarting the server clears it,
-     * which is a real limitation and the right trade — the alternative
-     * is a write to disk on every failed guess, which is a disk-filling
-     * attack wearing a helpful hat. */
+    /* Rate limiting. In memory only and deliberately not persisted:. */
     uint32_t fails;
     uint64_t locked_until_ms;
 } Account;
@@ -126,11 +80,7 @@ AccountResult account_create(AccountStore *s, uint32_t player_id,
 
 /* Is this connection entitled to this account? `now_ms` is a monotonic
  * clock for the lockout; the caller owns it, so this stays testable
- * without a clock of its own.
- *
- * On success `*out_player` is the world identity to use — the whole
- * point of the exercise: identity comes from the credential, never from
- * what the client asked to be. */
+ * without a clock of its own. */
 AccountResult account_verify(AccountStore *s, uint32_t id,
                              const uint8_t token[ACCOUNT_TOKEN_BYTES],
                              uint64_t now_ms, uint32_t *out_player);

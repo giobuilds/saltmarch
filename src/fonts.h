@@ -1,32 +1,7 @@
 #ifndef FONTS_H
 #define FONTS_H
 
-/* =========================================================
- * fonts.h  --  SDL_ttf wrapper
- *
- * Provides two font sizes used throughout the game:
- *   FONT_NORMAL (14pt) – resource counts, building names
- *   FONT_SMALL  (11pt) – tooltips, small labels
- *
- * All text rendering goes through font_draw_text() so the
- * rest of the codebase never calls SDL_ttf directly.
- *
- * WHERE THE FONT COMES FROM
- * =========================
- * The font is BUNDLED (assets/fonts/) and loaded relative to the
- * executable via SDL_GetBasePath(), so the same code works on Linux,
- * macOS and Windows.
- *
- * It used to be a hardcoded /usr/share/fonts/... path, which existed
- * only on Fedora. That made the game unusable anywhere else — and
- * silently so, because a missing font is not a fatal error: every
- * resource count, price and menu label simply vanished while the game
- * carried on running. fonts_init() returning 0 is now something the
- * caller is expected to treat as a real failure.
- *
- * Liberation Sans is OFL-1.1 licensed, which permits redistribution;
- * the licence travels with it in assets/fonts/.
- * ========================================================= */
+/* ========================================================= */
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>

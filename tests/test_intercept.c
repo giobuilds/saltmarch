@@ -1,14 +1,4 @@
-/*  test_intercept.c  --  tide-time PvP (MMO_PLAN later phases)
- *
- * An intercept is a Command naming a voyage. The engagement is computed
- * from the ordered log plus a seeded hash, so both players' clients and
- * the server reach the same outcome without exchanging a shot — the
- * feed never becomes a real-time arbiter, which is the property the
- * whole architecture is protecting.
- *
- * The interesting cases are the refusals: an intercept must not be able
- * to land on a voyage the attacker never saw.
- */
+/* test_intercept.c  --  tide-time PvP (MMO_PLAN later phases) */
 
 #include "game.h"
 #include "pirate.h"
@@ -54,11 +44,7 @@ static void two_at_sea(GameState *gs, int cargo_a, int cargo_b)
 
 static void test_pirates_can_be_hunted(void)
 {
-    /* The point of Phase 5b. Piracy used to be a hash: cargo vanished
-     * and there was nothing to go after. Now the fleet is somewhere,
-     * it is sitting on what it took, and a hull with guns can go and
-     * get it back — which is also the only reason to arm that is not
-     * aimed at another player. */
+    /* The point of Phase 5b. Piracy used to be a hash: cargo vanished */
     GameState *gs = game_init();
     Ship      *sh;
     Pirate    *pr;
@@ -92,17 +78,7 @@ static void test_pirates_can_be_hunted(void)
               "a fleet cannot be attacked from your own harbour");
     }
 
-    /* Put the warship exactly on the lair. A ship's position is
-     * derived from its voyage and cannot be assigned, so the way to
-     * place one somewhere is to pick a route THROUGH that somewhere
-     * and wind its departure back by the leg that reaches it. The
-     * public lane always threads a waypoint, which is what makes this
-     * possible at all rather than a search.
-     *
-     * The earlier version of this test looked for a lair near the
-     * harbour and printed "nothing to test here" when it found none —
-     * which it always did. Every assertion below it was skipped, and
-     * the test reported success. */
+    /* Put the warship exactly on the lair. A ship's position. */
     {
         const Route *r = sea_route_between(&gs->sea, 0, 1);
 
@@ -291,21 +267,7 @@ static void test_guns_decide_it(void)
 
 static void test_the_roll_is_not_lumpy(void)
 {
-    /* Whether the roll favours some ships over others.
-     *
-     * THE SAMPLE SIZE IS THE TEST. At 200 draws a Bernoulli(0.55)
-     * count has a standard deviation of 7, so anything from about 96
-     * to 124 is ordinary noise and a test with that band cannot tell a
-     * biased generator from a fair one — it just passes. (The first
-     * version of this test did exactly that, and I briefly believed it
-     * had found a defect in the old hash when what it had found was
-     * sampling variation.) At 4000 draws sigma is 31, and a systematic
-     * few percent has somewhere to show up.
-     *
-     * This matters here because survey.c DID have a degenerate mix —
-     * one route at 0% where 14% was expected, which is five sigma and
-     * not luck. The lesson was not "hash bad", it was "measure with
-     * enough samples to tell". */
+    /* Whether the roll favours some ships over others. */
     int a, worst = 1000000, best = 0;
 
     for (a = 0; a < MAX_SHIPS; a++) {

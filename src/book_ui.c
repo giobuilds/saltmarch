@@ -1,8 +1,4 @@
-/*  book_ui.c  --  Painting the order book (UI_PLAN N3)
- *
- *  Consumes the UiList that book_build() produced. Nothing here decides
- *  where anything goes; see book_ui.h.
- */
+/* book_ui.c  --  Painting the order book (UI_PLAN N3) */
 
 #include "book_ui.h"
 #include "fonts.h"

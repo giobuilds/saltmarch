@@ -1,44 +1,8 @@
 #ifndef PIRATE_H
 #define PIRATE_H
 
-/* =========================================================
- * pirate.h  --  Something to hunt
- *               (MARITIME_PLAN Phase 5b: pirates as entities)
- *
- * Piracy has been a pure function since it existed:
- * `shipment_is_raided()` hashed a voyage's identity and returned a
- * boolean. That is fine for a hazard and useless for an enemy. Nothing
- * was there. You could not find it, could not fight it, could not
- * decide to go and deal with it, and the loss it caused went nowhere —
- * the goods left the world.
- *
- * A pirate is now a thing in the water. It sits somewhere, it takes
- * what passes near it, it KEEPS what it takes, and it can be hunted
- * down and emptied. Three consequences fall out of that, and they are
- * why the change is worth the state it costs:
- *
- *   A raid becomes CAUSED rather than rolled. Your cargo was taken
- *   because it sailed past the Coffin Race and somebody was waiting
- *   there — not because a hash said so. A route is dangerous for a
- *   reason a player can learn, and learning it is what the named
- *   waypoints were always for.
- *
- *   Loss becomes RECOVERABLE. Plunder sits in a hold at a place, so
- *   hunting the fleet that has been bleeding your lane is a way to get
- *   it back — possibly somebody else's, which makes a successful hunt
- *   a service to every trader on that water.
- *
- *   And a warship gains a use that is not PvP. Phase 5a made hulls a
- *   choice but gave the guns only one thing to shoot at: other
- *   players. A game where the only reason to arm is to raid your
- *   neighbours is a game about raiding your neighbours.
- *
- * WHERE THEY ARE IS GENERATED; WHAT THEY HOLD IS WORLD STATE. Their
- * lairs come from the world seed like everything else in the sea, so
- * every client agrees where the dangerous water is without being told.
- * Their plunder, their damage and whether they are still alive are
- * hashed, snapshotted and replayed.
- * ========================================================= */
+/* pirate.h  --  Something to hunt
+ * (MARITIME_PLAN Phase 5b: pirates as entities) */
 
 #include <stdint.h>
 #include "sea.h"

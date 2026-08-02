@@ -1,9 +1,4 @@
-/*  sea_view.c  --  The sea as a place (UI_PLAN N5)
- *
- *  Pure geometry over the snapshot and the (generated) Sea. No SDL, no
- *  drawing — see sea_view.h for why a map surface has a headless half at
- *  all, and why an unlearned passage is not plotted.
- */
+/* sea_view.c  --  The sea as a place (UI_PLAN N5) */
 
 #include "sea_view.h"
 #include "island.h"
@@ -139,13 +134,7 @@ static void build_paths(SeaView *v, const UiSnapshot *snap, const Sea *sea,
     }
 }
 
-/* Every waypoint, named, and the fleets that lie at some of them.
- *
- * Where a fleet lairs is generated from the world seed and therefore no
- * secret (ui_snapshot.c says so where it copies them) — what they are
- * sitting on is not copied, and hunting them is N6's question. A lane
- * that runs through one is the point: it is the only way "this passage
- * is fast but unsafe" is ever visible before the cargo is lost. */
+/* Every waypoint, named, and the fleets that lie at some of them. */
 static void build_marks(SeaView *v, const UiSnapshot *snap, const Sea *sea,
                         float screen_w, float screen_h)
 {

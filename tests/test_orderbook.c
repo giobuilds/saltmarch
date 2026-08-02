@@ -1,20 +1,5 @@
-/*  test_orderbook.c  --  players trading with each other
- *                        (MARITIME_PLAN Phase 2)
- *
- * The order book is the first mechanic where one player's command
- * moves another player's goods, so the properties worth asserting are
- * the ones that make that safe:
- *
- *   - posting RESERVES. A sell that did not take the goods out of the
- *     stockpile could be posted ten times over and filled ten times.
- *   - cancelling returns exactly what is left, not what was posted.
- *   - a fill is not a transfer: goods cross the water and arrive when
- *     the route says they do.
- *   - matching is reproducible, because it is sim state and a replay
- *     must fill the same trades in the same order.
- *
- * Built and run by tests/run.sh.
- */
+/* test_orderbook.c  --  players trading with each other
+ * (MARITIME_PLAN Phase 2) */
 
 #include "game.h"
 #include "orderbook.h"
@@ -63,14 +48,7 @@ static GameState *two_traders(uint32_t seed)
     gs->islands[1].stockpile.amount[RES_GOLD]  = 100000;
     gs->islands[0].stockpile.amount[RES_PLANKS] = 100;
 
-    /* These tests are about the book, not about the market maker, so
-     * point it somewhere else. It quotes the six goods it is furthest
-     * from baseline on, so overstocking six the tests never touch
-     * guarantees Planks is never one of them and the faction's orders
-     * can never fill against the test's. Zeroing its stock instead does
-     * NOT work: mean reversion walks it back to baseline and the quotes
-     * reappear halfway through a long test. The market maker gets its
-     * own section at the end. */
+    /* These tests are about the book, not about the market maker. */
     {
         static const ResourceType DECOY[FACTION_QUOTE_GOODS] = {
             RES_WOOD, RES_FISH, RES_GRAIN, RES_WOOL, RES_CLOTH, RES_FISH_OIL
@@ -362,13 +340,7 @@ int main(void)
 
         /* An ask for 5 at 9 is resting, so it sets the price. A bid for
          * 20 at 12 arrives: 5 fill at 9, and the 15 the buyer was
-         * willing to overpay comes straight back.
-         *
-         * The buyer reserved 240. Cancelling the unfilled 15 must
-         * return exactly the 180 those units still hold — not the 195
-         * a reserve decremented by the FILL price rather than the LIMIT
-         * price would hand back, which pays the 15 out twice and mints
-         * gold by part-filling an order and withdrawing it. */
+         * willing to overpay comes straight back. */
         place(gs, 1u, 0, RES_PLANKS,  -5,  9);
         run_ticks(gs, 1);
         place(gs, 2u, 1, RES_PLANKS,  20, 12);
@@ -399,11 +371,7 @@ int main(void)
 
         if (!gs) { printf("game_init failed\n"); return 1; }
 
-        /* Player 1 crosses their own book: best bid and best ask are
-         * both theirs. That pair must not fill — but it also must not
-         * WEDGE the book. A matcher that gave up on the resource the
-         * moment the top of book was self-crossing would let one player
-         * lock every other player out of a good for free. */
+        /* Player 1 crosses their own book: best bid and best ask. */
         gs->islands[0].stockpile.amount[RES_GOLD] = 100000;
         place(gs, 1u, 0, RES_PLANKS,  10, 50);   /* own bid, very high */
         place(gs, 1u, 0, RES_PLANKS, -10,  1);   /* own ask, very low  */

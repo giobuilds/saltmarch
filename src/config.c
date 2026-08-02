@@ -1,8 +1,4 @@
-/*  config.c  --  The client's preferences (AUTH_PLAN Phase 2)
- *
- *  SDL-side, because SDL_GetPrefPath is what knows where a platform
- *  keeps a game's files. Nothing here is world state; see config.h.
- */
+/* config.c  --  The client's preferences (AUTH_PLAN Phase 2) */
 
 #include "config.h"
 #include "account.h"

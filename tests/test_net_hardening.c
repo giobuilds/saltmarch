@@ -1,31 +1,5 @@
-/*  test_net_hardening.c  --  the transport's own failure modes
- *                            (SERVER.md, "Transport hardening plan")
- *
- * test_lockstep.c and test_server.c prove the protocol does the right
- * thing when everyone behaves. This file is the other half: what
- * happens when a peer misbehaves, stalls, or quietly diverges — the
- * cases an audit found unhandled, each of which was a live defect
- * rather than a hypothetical.
- *
- * Everything here runs over net_pair_mem's in-memory transport, so it
- * is deterministic in any environment and needs no sockets. The
- * timeouts (handshake, idle, send stall) deliberately do NOT apply to
- * that transport — it has no sockets to stall and no latency to wait
- * on — so they are exercised by ci/host-smoke.sh over real TCP
- * instead, where they mean something.
- *
- * What is asserted here:
- *   - the desync detector actually fires, at boundaries reached during
- *     BURSTY tick advancement, long after the hash ring has wrapped —
- *     the two bugs that between them made it near-useless;
- *   - a guest whose send fails drops the command rather than stamping
- *     it locally, because the alternative is a world quietly forked off
- *     the authoritative log;
- *   - a client cannot flood the authoritative command log, and one that
- *     keeps trying loses its connection.
- *
- * Built and run by tests/run.sh.
- */
+/* test_net_hardening.c  --  the transport's own failure modes
+ * (SERVER.md, "Transport hardening plan") */
 
 #include "game.h"
 #include "net.h"
@@ -40,12 +14,7 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                \
     } while (0)
 
-/* One iteration of both main loops. `host_ticks` per step is the knob
- * that matters in this file: the hash boundary check used to be "did
- * this frame happen to land exactly on a multiple of
- * NET_HASH_INTERVAL", so any value that does not divide 50 evenly made
- * the host skip most of its boundaries and the guest skip a different
- * set — which is why 3 is used below and not 1. */
+/* One iteration of both main loops. `host_ticks` per step is the knob */
 static void step(NetSession *hn, GameState *hg,
                  NetSession *gn, GameState *gg, int host_ticks)
 {
@@ -98,15 +67,7 @@ int main(void)
 
     printf("=== net hardening: desync detection ===\n");
 
-    /* Join, then run well past HASH_RING (16) boundaries — 50 ticks
-     * each — in bursts of SEVEN. Both halves of the old bug live in
-     * this stretch. The ring's write slot stopped advancing after the
-     * sixteenth boundary, so only the newest was ever really kept; and
-     * a boundary was recorded only if a burst happened to END on it, so
-     * with a stride of 7 the host recorded one boundary in seven
-     * (multiples of 350) and the guest, whose bursts are irregular
-     * because it is catching up, a different sparse subset. Two sparse
-     * subsets that rarely intersect is a detector that rarely fires. */
+    /* Join, then run well past HASH_RING (16) boundaries — 50 ticks */
     for (i = 0; i < 400; i++) step(hn, hg, gn, gg, 7);
 
     gisl = find_owned_island(gg, 2u);
@@ -127,16 +88,7 @@ int main(void)
 
     /* The host should notice at the NEXT boundary the guest reports —
      * within 50 ticks — and answer with a full world, which the guest
-     * rebuilds by replay.
-     *
-     * The budget here is the assertion. 20 steps of 7 is 140 ticks:
-     * two or three boundaries, generous for a detector that examines
-     * every one of them and far too tight for the old one, which
-     * recorded a boundary only when a burst happened to end exactly on
-     * it — one in seven at this stride, and not the same one in seven
-     * the guest reported. That detector did eventually fire, hundreds
-     * of ticks late, which is why a loose budget here passed against
-     * the bug and told us nothing. */
+     * rebuilds by replay. */
     for (i = 0; i < 20; i++) step(hn, hg, gn, gg, 7);
     converge(hn, hg, gn, gg);
 
@@ -147,12 +99,7 @@ int main(void)
 
     printf("\n=== net hardening: a guest never forks the world ===\n");
 
-    /* Sever the host, leaving the guest with a live session whose sends
-     * now fail. command_submit falls back to LOCAL stamping when the
-     * session declines a submission — which on a guest would apply a
-     * command the host has never seen and never will. Dropping the
-     * click is the smaller loss; the fallback belongs to a session that
-     * has actually been torn down. */
+    /* Sever the host, leaving the guest with a live session whose sends */
     {
         int before = gg->cmd_count;
 
@@ -199,13 +146,7 @@ int main(void)
     {
         int before = hg->cmd_count, accepted;
 
-        /* 200 submissions with no tick in between, so nothing refills
-         * the budget. Every one of these would otherwise be appended to
-         * the log that is never truncated, replayed by every future
-         * joiner, and written into every checkpoint — permanently, for
-         * everyone, without exploiting anything cleverer than a loop.
-         * 200 is over budget but under the point of no return, which is
-         * what makes the next two checks different questions. */
+        /* 200 submissions with no tick in between, so nothing refills */
         game_set_current_island(gg, gisl);
         for (i = 0; i < 200; i++) game_set_docking(gg, gisl, i & 1);
 

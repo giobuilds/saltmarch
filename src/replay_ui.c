@@ -1,11 +1,5 @@
-/*  replay_ui.c  --  The record/replay CLI, and the UI harness
- *                   (MMO_PLAN Phase 1d, UI_PLAN M1)
- *
- *  Sits above both libraries: it drives the sim to rebuild a world and
- *  the real overlay builders to rebuild what was on screen. Still no
- *  SDL — the whole point is that a machine with no display can replay
- *  a session's clicks and check what they would do.
- */
+/* replay_ui.c  --  The record/replay CLI, and the UI harness
+ * (MMO_PLAN Phase 1d, UI_PLAN M1) */
 
 #include "replay.h"
 #include "book_view.h"
@@ -122,15 +116,7 @@ int replay_cli_run(int argc, char *argv[])
          * `--replay <file>` a determinism gate needing no expected hash
          * — the form CI runs on every platform. */
         if (!game_verify_determinism(gs)) {
-            /* State 3 is "not applicable", and it is not a failure.
-             * A checkpoint is the world as STATE: there is no log
-             * below it to re-derive it from, by design (SERVER.md,
-             * "Log truncation"). Its integrity is checked instead when
-             * it decodes -- a snapshot carries a checksum over its
-             * bytes and the sim_hash of the world it captured, and
-             * refuses to load if either disagrees. Reporting that as
-             * "nondeterministic" would be CI failing a file for not
-             * containing something it was never meant to contain. */
+            /* State 3 is "not applicable", and it is not a failure. */
             if (gs->replay_state == 3) {
                 printf("replay self-check: n/a — %s is a checkpoint "
                        "(state, not history); its own checksum and hash "
@@ -187,13 +173,7 @@ int replay_cli_run(int argc, char *argv[])
 }
 
 
-/* ---- recording a session through the UI (UI_PLAN M1) -------
- * The trades below are not called directly: the screen is built, a
- * widget is found by identity, and the click is hit-tested at that
- * widget's centre — exactly what a player's cursor would do. What gets
- * recorded is therefore a real (frame, position) pair rather than a
- * synthetic one, and replaying it re-derives the same widget or fails.
- */
+/* ---- recording a session through the UI (UI_PLAN M1) ------- */
 
 /* Click the widget with `id` on the exchange screen, recording the
  * intent and submitting whatever the hit maps to. */
@@ -252,11 +232,7 @@ static const UiWidget *find_valued(const UiList *l, uint32_t id, int32_t value)
     return NULL;
 }
 
-/* Click a widget on the order book, recording the intent and submitting
- * whatever the hit maps to — including the clicks that submit nothing,
- * because composing the draft IS the recorded state that later clicks
- * are hit-tested against. `book` is threaded through rather than built
- * here: its retained rows are the point (UI_PLAN N3). */
+/* Click a widget on the order book, recording the intent and submitting */
 static void click_book(GameState *gs, UiState *st, BookView *book,
                        uint32_t id, int32_t value, int by_value)
 {
@@ -372,11 +348,7 @@ static void click_charts(GameState *gs, UiState *st, ChartView *charts,
     intent_record(gs, &in);
 }
 
-/* The route the market currently has a map of on the counter, or -1.
- * Recorded sessions must click a passage the faction is actually
- * offering: a Buy against a route with no resting ask is a disabled
- * button, and a recording of clicks that do nothing tests nothing —
- * the lesson N3's first fixture taught. */
+/* The route the market currently has a map of on the counter, or -1. */
 static int offered_route(const GameState *gs, const UiSnapshot *snap,
                          const ChartView *v)
 {
@@ -512,16 +484,9 @@ void replay_record_ui_session(GameState *gs, uint32_t seed)
 
 /* ---- the UI harness (UI_PLAN M1) ---------------------------
  * Everything below drives the real UI code — the same builders and
- * hit-tests the game runs — against snapshots rebuilt from the log.
- * Nothing here draws, and nothing here links SDL.
- */
+ * hit-tests the game runs — against snapshots rebuilt from the log. */
 
-/* Every overlay a recorded frame could have been showing, in one place.
- * A struct rather than eleven out-parameters because UI_PLAN N3 added a
- * twelfth and a thirteenth — and because the book's view is RETAINED
- * between frames (it remembers the rows it drew so a filled order can
- * be struck through rather than vanish), which an out-parameter built
- * fresh at each call could not express. */
+/* Every overlay a recorded frame could have been showing, in one place. */
 typedef struct {
     ExchangeView  ex;    UiList ex_list;
     HudView       hud;   UiList hud_list;
@@ -534,12 +499,7 @@ typedef struct {
 } UiFrame;
 
 /* Rebuild every overlay for this frame. Lists are filled in a fixed
- * order so the golden dump is stable.
- *
- * `sea` rather than only the snapshot, because the passages screen reads
- * route geometry directly (UI_PLAN N1's recorded exception). It is the
- * replayed world's own Sea, regenerated from the same seed, so this is
- * still a frame rebuilt from the log and nothing else. */
+ * order so the golden dump is stable. */
 static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st,
                       const Sea *sea)
 {
@@ -691,11 +651,7 @@ static void walk_intents(GameState *gs, IntentVisitor visit, void *ctx)
     int        log_count;
     UiSnapshot snap;
     UiState    st;
-    /* One frame, reused: the overlays are rebuilt into it at every
-     * intent, and the book's rows survive from one to the next exactly
-     * as they do in a running client. On the heap because a UiFrame is
-     * some tens of kilobytes and this runs on every platform's default
-     * stack. */
+    /* One frame, reused: the overlays are rebuilt into it at every */
     UiFrame   *frame;
 
     if (gs->intent_count == 0) return;
@@ -802,12 +758,7 @@ static void verify_one(const UiFrame *f, const UiSnapshot *snap,
             v->failures++;
 
         } else if (!have) {
-            /* The click produced a command when it was recorded and
-             * produces nothing now: a widget moved out from under the
-             * position the player aimed at. This is the failure the
-             * harness exists for, and silently passing it (as an
-             * earlier version of this function did) makes the whole
-             * thing decorative. */
+            /* The click produced a command when it was recorded. */
             if (v->verbose) {
                 char b[96];
                 command_describe(actual, b, sizeof(b));

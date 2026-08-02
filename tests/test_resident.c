@@ -1,25 +1,4 @@
-/*  test_resident.c  --  a resident is a person  (LIFE_PLAN Phase 3)
- *
- * This phase is deliberately INERT: residents are created, named, aged
- * at arrival and carried through hash, save and snapshot, and then
- * nothing reads them. So there is no behaviour to assert, and the
- * assertions here are about the two things that are expensive to fix
- * later and cheap to fix now:
- *
- *   1. IDENTITY IS REPRODUCIBLE. Names come from hashing
- *      (world_seed, id) rather than from a stored string or an RNG
- *      stream. If that were not deterministic, every later phase would
- *      inherit a desync nobody could localise.
- *
- *   2. THE FORMAT SURVIVES A ROUND TRIP. A snapshot is what a save
- *      embeds and what MSG_WORLD sends, so a field dropped here is a
- *      field silently lost on every join and every reload.
- *
- * And one that is neither, but is the reason the spread exists at all:
- * arrivals must not be the same age, or an island dies in cohorts.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_resident.c  --  a resident is a person  (LIFE_PLAN Phase 3) */
 
 #include "game.h"
 #include "island.h"
@@ -167,12 +146,7 @@ static void test_arrivals_are_not_a_cohort(void)
     printf("\n=== and they are not all the same age ===\n");
     if (!gs) { printf("  FAIL: game_init\n"); failures++; return; }
 
-    /* A FRESH ISLAND HAS NO BUILDINGS AT ALL, so this has to lay some.
-     * The first draft of this test just ran ticks and read whoever
-     * turned up, found nobody, printed a note and passed — the exact
-     * shape of silent non-coverage that has now been found three times
-     * in replay.c's fixture. If the village cannot be laid, that is a
-     * failure and not a shrug. */
+    /* A FRESH ISLAND HAS NO BUILDINGS AT ALL, so this has to lay some. */
     if (!build_houses(gs, 3)) {
         printf("  FAIL: could not lay houses to put anybody in\n");
         failures++;
@@ -270,15 +244,7 @@ static void test_sync_tracks_the_houses(void)
     b[0].active = 1; b[0].type = BUILDING_HOUSE;
     p[0].active = 1; p[0].residents = 4;
 
-    /* SYNC ONLY REMOVES NOW (LIFE_PLAN Phase 7). It used to spawn
-     * whoever a house was short of, out of nowhere in particular. A
-     * household is founded by island_settle_house — from the island's
-     * immigration allowance, or out of the reserve — and grown by
-     * birth; what is left here is the downward reconciliation, so a
-     * house that starved loses the people pop_update says it lost.
-     *
-     * The first call therefore creates NOBODY, which is the assertion:
-     * an empty house with a count on it stays empty. */
+    /* SYNC ONLY REMOVES NOW (LIFE_PLAN Phase 7). It used to spawn */
     { int lv[2]; residents_tally(r, count, 1, NULL, lv, NULL, NULL);
       residents_sync(r, &count, &next, b, p, 1, 12345u, lv); }
     live = 0;

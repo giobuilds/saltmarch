@@ -1,8 +1,4 @@
-/*  hud_view.c  --  The build bar (UI_PLAN Phase 3)
- *
- *  Layout and hit-testing only; ui.c paints the result. See hud_view.h
- *  for the two rules this obeys (sticky tab, greyed-not-hidden).
- */
+/* hud_view.c  --  The build bar (UI_PLAN Phase 3) */
 
 #include "hud_view.h"
 #include <string.h>
@@ -48,10 +44,7 @@ void hud_view_build(HudView *out, const UiSnapshot *snap, int island)
         copy_str(e->name, sizeof(e->name), def->name);
 
         /* The same rule building_can_afford() applies, read off the
-         * snapshot: every non-zero line of the cost must be in stock.
-         * Being short only means the resource-payment option is out —
-         * the confirm popup can still offer to pay in Gold — so this
-         * greys the slot rather than disabling it. */
+         * snapshot: every non-zero line of the cost must be in stock. */
         for (r = 0; r < RES_COUNT; r++)
             if (def->cost[r] > 0 && isl->stock[r] < def->cost[r])
                 affordable = 0;

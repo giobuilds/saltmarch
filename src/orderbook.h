@@ -1,44 +1,8 @@
 #ifndef ORDERBOOK_H
 #define ORDERBOOK_H
 
-/* =========================================================
- * orderbook.h  --  Players trade with each other
- *                  (MARITIME_PLAN Phase 2: the order book)
- *
- * Trading was a player and the NPC faction, at a price the faction
- * quoted. This is players posting buy and sell orders that the sim
- * matches against each other, and a match becoming a shipment that
- * takes as long as the water between the two harbours.
- *
- * WHAT IS BEING TRADED IS A KIND AND AN ID, not a ResourceType.
- *
- * Every tradeable thing used to be an index into one flat enum. A
- * route chart is not: a chart for the passage by the Coffin Race is a
- * different object from one for the Silt Narrows, so they cannot share
- * an enum slot, and giving each generated route its own would grow
- * RES_COUNT — which sizes every stockpile, price table, faction
- * inventory and snapshot field in the game — with the size of the
- * world.
- *
- * So a TradeId is (kind, id): (TRADE_RESOURCE, RES_PLANKS) or
- * (TRADE_ROUTE_CHART, 17). The book compares the pair. This costs one
- * packed payload slot now and saves a retrofit later, which is the
- * whole argument for deciding it before the matcher exists rather than
- * after.
- *
- * MATCHING IS SIM STATE AND MUST BE REPRODUCIBLE. Orders, the book and
- * open bookings are hashed and replayed like everything else, so
- * matching runs at tick boundaries and its order is fully determined:
- * best price first, then earliest placed, then lowest order id. Ids are
- * assigned in command-log order, so a replay fills exactly the trades
- * the original run filled.
- *
- * GOODS AND GOLD ARE RESERVED WHEN AN ORDER IS POSTED, not when it
- * fills. A sell takes the goods out of the stockpile and a buy takes
- * the gold, both held against the order and returned on cancellation.
- * Without that a player could post the same cargo into ten books and
- * fill all ten.
- * ========================================================= */
+/* orderbook.h  --  Players trade with each other
+ * (MARITIME_PLAN Phase 2: the order book) */
 
 #include <stdint.h>
 #include "resource.h"
@@ -90,15 +54,7 @@ typedef struct {
 
 /* A matched trade, in transit. The goods are already out of the
  * seller's hands and the gold already out of the buyer's; this is the
- * crossing.
- *
- * A booking outlives its own delivery. It holds a merchant and a hull
- * from `from_island` for the ROUND TRIP: the cargo lands at
- * `arrive_tick`, and the two of them are only free again at
- * `return_tick`, having sailed home. Releasing them on delivery would
- * make a one-way trip the unit of trade capacity and quietly double
- * what an island can run — and it would contradict the thing that makes
- * merchants capital rather than fuel, which is that they come back. */
+ * crossing. */
 typedef struct {
     int32_t  active;
     TradeId  what;
@@ -129,13 +85,7 @@ void orderbook_init(OrderBook *b);
 /* How many live orders `player` holds. */
 int  orderbook_open_count(const OrderBook *b, uint32_t player);
 
-/* How many live orders and bookings the book holds in total.
- *
- * These are not conveniences: they are what sim_hash and the snapshot
- * both count, and they must agree. The book is compacted when it is
- * checkpointed — an order is addressed by id, never by slot — so the
- * hash may not depend on where in the array a live entry sits, only on
- * how many there are and what they say. */
+/* How many live orders and bookings the book holds in total. */
 int  orderbook_open_live(const OrderBook *b);
 int  orderbook_booking_live(const OrderBook *b);
 

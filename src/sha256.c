@@ -1,14 +1,4 @@
-/*  sha256.c  --  FIPS 180-4, straight (AUTH_PLAN Phase 1)
- *
- *  A textbook implementation on purpose: no tables beyond the constant
- *  K, no unrolling, no platform intrinsics. It hashes 32 bytes once per
- *  login, so every cycle it could save is a cycle nobody would notice,
- *  and every line it could shed is a line somebody has to trust.
- *
- *  Endian-independent by construction: words are assembled from bytes
- *  with shifts rather than cast over the buffer, so this produces the
- *  same digest on the big-endian platform nobody has tried yet.
- */
+/* sha256.c  --  FIPS 180-4, straight (AUTH_PLAN Phase 1) */
 
 #include "sha256.h"
 #include <string.h>

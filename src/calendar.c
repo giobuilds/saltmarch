@@ -1,8 +1,4 @@
-/*  calendar.c  --  the tick, said in dates  (LIFE_PLAN Phase 4)
- *
- *  Stores nothing. See calendar.h for why the month is the needs tick
- *  and why the day is decoration.
- */
+/* calendar.c  --  the tick, said in dates  (LIFE_PLAN Phase 4) */
 
 #include "calendar.h"
 #include <stdio.h>

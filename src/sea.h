@@ -1,37 +1,8 @@
 #ifndef SEA_H
 #define SEA_H
 
-/* =========================================================
- * sea.h  --  The water between the islands
- *            (MARITIME_PLAN Phase 1: sea geometry)
- *
- * Until now the sea was not a place. Islands had no position anywhere
- * in the tree — the only coordinates were `NODE_POS` in world_ui.c,
- * hand-placed screen fractions for drawing — and every crossing took
- * the same time, `SHIP_VOYAGE_TICKS`, whichever islands it joined.
- * Distance did not exist as a gameplay quantity, so nothing could
- * depend on it: not variable durations, not sight, not
- * distance-priced risk, and not more islands than somebody had
- * hand-placed dots for.
- *
- * A Sea is islands at positions, named waypoints between them, and
- * routes that are PATHS through those waypoints rather than a line and
- * a constant.
- *
- * REGENERATED, NOT SAVED. The whole thing is a pure function of the
- * world seed, exactly like a Map, so it is rebuilt by sea_init() on
- * load and appears in no save file and no snapshot. That is why this
- * phase needs neither a SAVE_VERSION bump nor a snapshot change: there
- * is nothing here a checkpoint could disagree about.
- *
- * INTEGER THROUGHOUT. Positions, distances and leg durations are
- * integers, and the distance function is an integer square root. Not
- * fastidiousness: MARITIME_PLAN's determinism note is that a float
- * accumulated into hashed state fails as two machines disagreeing
- * rather than as a wrong answer on one, and leg durations are exactly
- * the kind of derived quantity that invites a float. Drawing may use
- * floats freely — it is downstream of everything.
- * ========================================================= */
+/* sea.h  --  The water between the islands
+ * (MARITIME_PLAN Phase 1: sea geometry) */
 
 #include <stdint.h>
 
@@ -40,46 +11,11 @@
 #define SEA_WIDTH   10000
 #define SEA_HEIGHT  10000
 
-/* Sea units a ship covers in one sim tick.
- *
- * Measured rather than guessed, and RE-measured whenever the generator
- * changes shape. Across eight seeds the mean PUBLIC crossing comes out
- * at 196.7 ticks — the same centre SHIP_VOYAGE_TICKS used to impose on
- * every crossing alike, so voyages differ from each other (roughly 100
- * to 350 ticks) without the game as a whole getting slower.
- *
- * The value has moved twice, both times because something upstream
- * changed the average path and the constant had to absorb it:
- *
- *   15 -> 21  Phase 1. The first value quietly made the average voyage
- *             half again as long and made this comment untrue.
- *   21 -> 26  Phase 3a. Three routes per pair: the public lane now
- *             threads a slightly wider waypoint and carries a convoy
- *             penalty, which together took the mean to 246 before this
- *             was re-fitted.
- *   26 -> 34  Phase 3e. The private pool: the lane now threads the
- *             furthest waypoint the pool uses, so that every passage
- *             in it beats the lane, which pushed the mean to 258.
- *
- * If the generator's scale changes again, re-measure. The failure mode
- * is not a wrong number, it is every voyage in the game silently
- * getting slower while nothing says so. */
+/* Sea units a ship covers in one sim tick. */
 #define SEA_UNITS_PER_TICK  34
 
 /* How far apart things are kept. Islands and waypoints have different
- * requirements and used to share one number, which was too small.
- *
- * Islands must not merely be distinct: they must not OVERLAP once the
- * world map projects them, or one is drawn underneath another and
- * cannot be clicked at all. The projection is anisotropic — the sea is
- * square and the screen is not — so a pair separated diagonally can
- * clear in neither axis. At 1920x1080 with the map's margins, a node
- * is 141x70 px and the worst diagonal case needs roughly 1226 sea
- * units to clear it; 1500 leaves room for the margins to be tuned
- * without silently reintroducing the bug. test_world asserts the
- * relationship across seeds rather than trusting this comment.
- *
- * Waypoints only need to be distinct places. */
+ * requirements and used to share one number, which was too small. */
 #define SEA_MIN_ISLAND_SEPARATION    1500
 #define SEA_MIN_WAYPOINT_SEPARATION   600
 
@@ -96,51 +32,18 @@
 #define SEA_MAX_ROUTE_LEGS      (SEA_MAX_ROUTE_WAYPOINTS + 1)
 
 /* Three routes are IN PLAY between any island pair (MARITIME_PLAN
- * Phase 3): one public lane and two private passages.
- *
- * But more than that are GENERATED. Charts expire, and when one does
- * the passage it mapped goes out of use and a fresh one comes into
- * play — so the sea keeps changing shape and the map can never be
- * finished (Phase 3e). Each pair therefore has a POOL of private
- * routes, of which two are live at a time, and a cursor says which
- * two.
- *
- * THE CURSOR IS THE ONLY PART OF A SEA THAT IS WORLD STATE. Everything
- * else here is still a pure function of the world seed, which is the
- * property the rest of this header is written around: the geometry,
- * the names, the durations and the pool all regenerate identically on
- * every machine, and a checkpoint carries one small number per pair
- * saying where in the rotation the world has got to. Making the whole
- * Sea mutable would have been simpler to write and much worse to
- * reason about — a desync in generated data is a bug in a generator,
- * a desync in saved data is a bug anywhere.
- *
- * (1 + pool) * N*(N-1)/2 = 196 at eight islands and a pool of six. */
+ * Phase 3): one public lane and two private passages. */
 #define SEA_ROUTES_PER_PAIR 3    /* live: one public, two private     */
 #define SEA_PRIVATE_POOL    6    /* generated private passages        */
 #define SEA_STORED_PER_PAIR (1 + SEA_PRIVATE_POOL)
 #define SEA_MAX_PAIRS       (16 * 15 / 2)
 #define SEA_MAX_ROUTES      512
 
-/* How long a private passage stays in play. A "year" in a game with no
- * calendar: long enough that charting one is worth doing and short
- * enough that the map is never finished. Charter upkeep falls every
- * 1200 ticks, so this is fifteen of those.
- *
- * The pairs do NOT all turn over together. Each rotates on its own
- * offset, so the sea changes shape continuously rather than lurching
- * once every half hour and invalidating everybody's charts at the same
- * instant. */
+/* How long a private passage stays in play. A "year" in a game with. */
 #define SEA_ROUTE_LIFETIME_TICKS 18000
 
 /* Which of a pair's three this is. Variant 0 is the lane everybody
- * knows; 1 and 2 are the passages a chart buys you.
- *
- * PUBLIC IS ALWAYS THE SLOWEST OF THE THREE, and that is a guarantee
- * the generator has to make rather than hope for, because the whole
- * trade-off — "public are slow but protected, private are faster but
- * unsafe" — collapses if a pair ever generates a private route that is
- * the long way round. See the convoy penalty in sea.c. */
+ * knows; 1 and 2 are the passages a chart buys you. */
 #define SEA_ROUTE_PUBLIC    0
 
 typedef struct {
@@ -193,15 +96,7 @@ int sea_pair_index(const Sea *sea, int island_a, int island_b);
 int sea_rotate_pair(Sea *sea, int pair);
 
 /* The next tick at or after `now` on which `pair` rotates, in a world of
- * `island_count` islands. Answers `now` itself on a tick that rotates.
- *
- * The schedule is arithmetic over the pair index and the tick — it reads
- * no state and allocates nothing — but it exists as a function because
- * two callers need the same answer and must not compute it twice. The
- * sim asks "is it now?" every tick; the charts screen asks "how long
- * has this passage left?" every frame (UI_PLAN N4). A UI that reproduced
- * the stagger would be one edit away from telling a player their chart
- * had a thousand ticks left on the tick it became waste paper. */
+ * `island_count` islands. Answers `now` itself on a tick that rotates. */
 uint64_t sea_pair_next_rotation(int island_count, int pair, uint64_t now);
 
 /* Generate the whole sea from `seed` and `island_count`. Deterministic:
@@ -210,12 +105,7 @@ uint64_t sea_pair_next_rotation(int island_count, int pair, uint64_t now);
 void sea_init(Sea *sea, uint32_t seed, int island_count);
 
 /* The PUBLIC route joining two islands, or NULL. Order-independent — a
- * route is a piece of water, not a direction of travel.
- *
- * This is deliberately the public one rather than the best one: a
- * caller that has not been taught about charts must never accidentally
- * route a cargo down a passage the player has not discovered. Code that
- * means "the fastest route this player may use" asks for it by name. */
+ * route is a piece of water, not a direction of travel. */
 const Route *sea_route_between(const Sea *sea, int island_a, int island_b);
 
 /* One of a pair's three routes by variant, or NULL. Variant 0 is

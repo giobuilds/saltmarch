@@ -1,33 +1,5 @@
-/*  test_accounts.c  --  who a connection is entitled to be
- *                       (AUTH_PLAN Phase 1)
- *
- * The hole this closes, in one sentence from SERVER.md: "--as N is an
- * honour system: anyone who knows an id can claim it while its owner is
- * away — and ids are small integers from 1, so they are enumerated
- * rather than guessed."
- *
- * So the assertions that matter are adversarial, not happy-path:
- *
- *   - a wrong token is refused, and refused the same way a wrong ACCOUNT
- *     is, so the wire cannot be used to enumerate which ids exist;
- *   - repeated guesses lock the account rather than continuing to
- *     answer — the per-connection limit is one attempt, which on its own
- *     is no limit at all, because a refused login costs one reconnect;
- *   - a peer that fails authentication is dropped BEFORE any world is
- *     sent (invariant 6): a peer refused afterwards would already hold
- *     every island's stockpile;
- *   - `--as` is ignored on an authenticating server: identity comes from
- *     the credential, never from what the client asked to be, which is
- *     the whole fix;
- *   - and nothing in a credential reaches the snapshot, the hash or the
- *     command log (invariants 1 and 2).
- *
- * SHA-256 is checked against NIST's published vectors, because the
- * argument for implementing it here rather than taking a dependency is
- * only honest if it is bit-for-bit correct.
- *
- * Built and run by tests/run.sh.
- */
+/* test_accounts.c  --  who a connection is entitled to be
+ * (AUTH_PLAN Phase 1) */
 
 #include "account.h"
 #include "sha256.h"
@@ -196,11 +168,7 @@ static void test_file_round_trip(void)
     AccountStore s, t;
     uint8_t      token[ACCOUNT_TOKEN_BYTES];
     uint32_t     player = 0u;
-    /* In the current directory, not build/. This said "build/..." and
-     * passed everywhere a build/ happened to exist — which is every
-     * ordinary run, and not the sanitizer job, whose build directory is
-     * build-asan. A test that assumes a directory it does not own is a
-     * test that passes for a reason unrelated to what it checks. */
+    /* In the current directory, not build/. This said "build/...". */
     const char  *path = "test_accounts.tmp";
     Account     *a;
 

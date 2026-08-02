@@ -115,11 +115,7 @@ void agents_sync(Agent agents[], int *agent_count,
 void agents_assign_jobs(Agent agents[], int agent_count,
                         const Building buildings[], int building_count)
 {
-    /* A HEADCOUNT since LIFE_PLAN Phase 1, not a flag. It was a flag,
-     * which is what made Building.worker_count 0 or 1 and production a
-     * step function of labour: one agent claimed a workplace and every
-     * other resident on the island stayed at home however much the
-     * island needed the goods. */
+    /* A HEADCOUNT since LIFE_PLAN Phase 1, not a flag. It was a. */
     static int staff[MAX_BUILDINGS];
     int i, j;
 
@@ -165,16 +161,7 @@ void agents_assign_jobs(Agent agents[], int agent_count,
 
 /* ---- State machine + movement ---------------------------------- */
 
-/* Builds the road route from `from_idx`'s footprint to `to_idx`'s
- * footprint into a->path[]/path_len, followed by to_idx's own tile
- * as the final "last mile" waypoint. Sets path_len to 0 on failure
- * (no route) — can genuinely happen now if a road the route depended
- * on was demolished since the job was assigned (see agents_update()'s
- * callers: both just retry next frame rather than assuming success).
- * Note this only affects starting a *new* leg of the commute — an
- * agent already mid-walk doesn't re-validate its stored path, so
- * destroying a road out from under one just means its dot crosses a
- * tile that's no longer a road on its way, not a stuck/crashed agent. */
+/* Builds the road route from `from_idx`'s footprint to `to_idx`'s */
 static void build_commute_path(const Building buildings[], int count,
                                int from_idx, int to_idx, Agent *a)
 {

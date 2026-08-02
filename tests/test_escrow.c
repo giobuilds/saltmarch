@@ -1,17 +1,4 @@
-/*  test_escrow.c  --  the harbour as an exchange (UI_PLAN M5)
- *
- * Decision 4's claim, put to the test: the marketplace and the harbour
- * escrow are one screen parameterised by counterparty. If that is true,
- * the same builder and the same hit-test serve both, and only the
- * action cluster and the footer differ.
- *
- * Also here: nonce-stamped offers. A panel shows a state; the command
- * carries that state's stamp back; the sim refuses if the quay moved
- * underneath — because a visitor's ship can dock and take goods between
- * the frame you read and the button you press.
- *
- * Linked WITHOUT SDL.
- */
+/* test_escrow.c  --  the harbour as an exchange (UI_PLAN M5) */
 
 #include "exchange_view.h"
 #include "game.h"

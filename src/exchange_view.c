@@ -1,8 +1,4 @@
-/*  exchange_view.c  --  The exchange surface (UI_PLAN Phase 1)
- *
- *  Layout and hit-testing only: no SDL, no drawing, no GameState. See
- *  exchange_view.h for what this replaces and why the rows are a list.
- */
+/* exchange_view.c  --  The exchange surface (UI_PLAN Phase 1) */
 
 #include "exchange_view.h"
 #include "island_bar.h"
@@ -10,13 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* The action cluster, left to right. Sell versus buy is carried by the
- * widget's GROUP, not by the sign of its quantity, so the quantity can
- * mean exactly what it means everywhere else in this codebase: a count,
- * or -1 for "as much as possible" (game_sell_resource /
- * game_buy_resource already speak that). Encoding the direction in the
- * sign as well would have given two ways to say the same thing and one
- * way to get it wrong. */
+/* The action cluster, left to right. Sell versus buy is carried by. */
 #define EXCHANGE_SELL_ACTIONS 3
 static const int32_t ACTION_QTY[EXCHANGE_ACTIONS]   = { -1, 10, 1, 1, 10, -1 };
 static const char   *ACTION_LABEL[EXCHANGE_ACTIONS] = { "All", "-10", "-1",
@@ -65,15 +55,7 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
     out->their_gold = snap->counterparty_gold;
     out->capacity   = isl->capacity;
 
-    /* Gold is deliberately not a row: it is the medium, not a good.
-     * RES_GOLD sits last in the enum precisely so this loop bound stays
-     * correct as goods are added — the same property the old
-     * TRADE_SELLABLE_COUNT relied on, and which it got wrong once.
-     *
-     * Two passes, one per category, rather than a sort: it is the same
-     * result with no comparator to get wrong, and it keeps enum order
-     * inside a category (so Wood stays above Fish for a player who has
-     * learned where they are). */
+    /* Gold is deliberately not a row: it is the medium, not a good. */
     for (cat = RCAT_RAW; cat < RCAT_COUNT; cat++)
     for (r = 0; r < (int)RES_GOLD && out->row_count < EXCHANGE_MAX_ROWS; r++) {
         ExchangeRow *row;
@@ -255,11 +237,7 @@ void exchange_build(UiList *out, const ExchangeView *view,
         ui_list_push(out, exchange_row_id(row->ident), rr, row->name,
                      (int32_t)row->ident, UI_W_HEADER);
 
-        /* The one place the two kinds diverge, as decision 4 allows:
-         * a quotes screen offers six quantities to buy and sell, an
-         * offer screen offers "take what is here" and "stage ten". If
-         * this ever grows into per-column branching, the unification
-         * has failed and the widget should be split. */
+        /* The one place the two kinds diverge, as decision 4 allows: */
         if (view->kind == EXCHANGE_OFFER) {
             UiRect take = ui_col_from_right(rr, EXCHANGE_BTN_W,
                                             EXCHANGE_BTN_GAP, 1);
@@ -300,11 +278,7 @@ void exchange_build(UiList *out, const ExchangeView *view,
 
             /* Why this particular button cannot be pressed. The player
              * gets the same vocabulary the sim rejects with, so a
-             * greyed button and a refused command say the same thing.
-             *
-             * Note the asymmetry: "all"/"max" buttons stay live as long
-             * as anything at all is possible, while a fixed quantity is
-             * refused if that exact quantity is not. */
+             * greyed button and a refused command say the same thing. */
             if (sell) {
                 if (row->yours <= 0)                    why = REJ_NO_STOCK;
                 else if (!action_is_all(a) && row->yours < qty)
