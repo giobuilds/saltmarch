@@ -1,17 +1,5 @@
-/*  test_scrub.c  --  the time-travel scrubber
- *                    (MMO_PLAN later phases)
- *
- * A world is (seed, ordered log), so every past tick is still
- * reachable. This is the cash-in: re-simulate to any of them.
- *
- * The properties that make it safe rather than just clever:
- *   - a scrubbed world matches what the world ACTUALLY was at that
- *     tick, not an approximation of it;
- *   - the log survives the trip, so you can come back;
- *   - nothing can be submitted while looking at the past, because a
- *     command stamped behind the log's head would break the one
- *     invariant everything else stands on.
- */
+/* test_scrub.c  --  the time-travel scrubber
+ * (MMO_PLAN later phases) */
 
 #include "game.h"
 #include "scrub_view.h"

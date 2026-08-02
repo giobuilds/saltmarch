@@ -1,32 +1,5 @@
-/*  test_command_funnel.c  --  headless verification of MMO_PLAN
- *                             Phase 1a (funnel) + 1b (fixed timestep)
- *
- * The funnel's defining invariant: the world is a pure function of its
- * initial state plus the ordered command log, advanced in fixed ticks.
- * This test proves it the only way that actually catches an escaped
- * mutation — by replaying, which is exactly the Phase 1c F9 mechanism
- * in miniature:
- *
- *   1. Build a world, snapshot its initial islands[]/ships[] and clock
- *      (INITIAL).
- *   2. Play: submit a scripted command sequence and run the fixed-tick
- *      loop forward, so commands apply at their tick boundaries and the
- *      simulation advances. Copy the resulting world (PLAYED).
- *   3. Restore islands/ships and the sim clock to INITIAL (keeping the
- *      command log), then run the identical number of ticks again.
- *   4. Assert the replayed world is byte-identical to PLAYED.
- *
- * If any mutation had bypassed command_submit(), the log would not
- * carry it, replay would not reproduce it, and step 4 would fail. A
- * pass means every mutation the run performed went through the funnel,
- * and that ticking the sim from the same state and log is deterministic.
- *
- * Islands and Ships are pure value types (Map embeds its tile grid by
- * value; no heap pointers), so memcpy is a true deep copy and memcmp is
- * a total equality check including camera, map, agents and pop state.
- *
- * Built and run by tests/run.sh, linking the game's own .o files.
- */
+/* test_command_funnel.c  --  headless verification of MMO_PLAN
+ * Phase 1a (funnel) + 1b (fixed timestep) */
 
 #include "game.h"
 #include "resource.h"
@@ -60,14 +33,7 @@ int main(void)
 
     const int TICKS = 400;   /* > NEEDS_INTERVAL and a full voyage      */
 
-    /* ---- Play: submit commands, then run the fixed-tick loop --------
-     * Chosen so that at least some commands mutate regardless of the
-     * random map: trades and ship-building do not depend on tile
-     * layout. Placement commands may be rejected on a given seed;
-     * that is fine — rejection is deterministic and replay reproduces
-     * it identically, which is exactly what the invariant claims.
-     * Commands submitted here are stamped for tick 0 and applied on the
-     * first sim_run_one_tick below. */
+    /* ---- Play: submit commands, then run the fixed-tick loop -------- */
     ResourceType tradable = (RES_GOLD == 0) ? (ResourceType)1 : (ResourceType)0;
 
     game_buy_resource(gs, tradable, 5);   /* gold -> goods            */

@@ -1,43 +1,8 @@
 #ifndef SURVEY_H
 #define SURVEY_H
 
-/* =========================================================
- * survey.h  --  Sending a scholar to find the fast water
- *               (MARITIME_PLAN Phase 3d: the survey mission)
- *
- * Charts have been buyable from the market since Phase 3b, which was
- * always interim — a way to reach the mechanic, not the way you were
- * meant to get one. This is the intended source: an expedition.
- *
- * A survey commits ONE SCHOLAR, ONE RESEARCH BOAT AND ONE BLANK CHART,
- * takes a set time, and may fail. That is three different kinds of
- * cost, and they behave differently, which is the whole shape of the
- * mechanic:
- *
- *   the blank chart  is SPENT, always. Success or failure, the paper
- *                    is used up. That is the gamble.
- *   the boat         comes home, unless the expedition is lost.
- *   the scholar      likewise — and a lost scholar is a resident who
- *                    does not come back, so the Scholars' House that
- *                    sent them is smaller afterwards.
- *
- * A failed survey that cost only the chart would be a dice roll with a
- * fee. Risking the crew is what makes sending one a decision about
- * people rather than about money.
- *
- * YOU CANNOT NAME THE ROUTE YOU ARE LOOKING FOR. A survey is aimed at
- * an island — "find me a better way to Brinehold" — and the sim picks
- * an undiscovered passage between here and there. Asking for a route
- * by id would mean the player already knew it existed, which is
- * exactly what they are paying to find out.
- *
- * THE OUTCOME IS DERIVED, NOT ROLLED, from the mission's own identity,
- * the same discipline as voyage and shipment raids. Every client and
- * every replay computes the same result for the same expedition
- * without anything having to tell them, and the outcome is fixed when
- * the mission SAILS rather than when it lands — so a late tick cannot
- * change what already happened.
- * ========================================================= */
+/* survey.h  --  Sending a scholar to find the fast water
+ * (MARITIME_PLAN Phase 3d: the survey mission) */
 
 #include <stdint.h>
 

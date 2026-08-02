@@ -1,33 +1,8 @@
 #ifndef FX_REJECT_H
 #define FX_REJECT_H
 
-/* =========================================================
- * fx_reject.h  --  What happened to the thing I just clicked
- *                  (UI_PLAN M1, decision 3)
- *
- * A command applies at a tick boundary — 100ms later in single player,
- * several hundred milliseconds later through a co-op host. If it is
- * rejected, the click simply does nothing, and a player with no
- * feedback re-clicks and floods the log.
- *
- * So: when the UI submits, it remembers {seq, anchor} — the sequence
- * number command_submit stamped, and WHERE on screen the click came
- * from. When results come back from the tick, they are matched by
- * sequence and a short flash is drawn at that anchor, in the sim's own
- * rejection vocabulary.
- *
- * Two properties fall out of matching on the sequence rather than on
- * "the last thing I did":
- *
- *   - feedback is local by construction. A replayed command, or another
- *     player's, has no pending entry, so F9 and resync recompute
- *     hundreds of rejections silently — no special-casing needed.
- *   - it survives latency. The answer arrives whenever it arrives and
- *     still lands on the right tile.
- *
- * The matching and the decay live here, SDL-free and tested; the
- * drawing is render.c's (render_reject_flashes).
- * ========================================================= */
+/* fx_reject.h  --  What happened to the thing I just clicked
+ * (UI_PLAN M1, decision 3) */
 
 #include <stdint.h>
 #include "game.h"

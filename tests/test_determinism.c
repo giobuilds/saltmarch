@@ -1,20 +1,4 @@
-/*  test_determinism.c  --  headless verification of MMO_PLAN Phase 1c
- *
- * Exercises the F9 machinery the way the key does, but without a window:
- *
- *   1. Play a scripted session (commands + ticks) on a live world.
- *   2. Call game_verify_determinism(): it rebuilds the world from
- *      world_seed, replays the log, and compares sim_hash(). Assert it
- *      reports PASS (state 1) and that the two hashes are equal.
- *   3. Corrupt the live world by ONE unit of one resource — a mutation
- *      that no command in the log accounts for — and verify again.
- *      Assert it now reports DESYNC (state 2): proof the check actually
- *      catches an escaped mutation rather than always passing.
- *   4. Assert sim_hash ignores cosmetic state: moving a camera leaves
- *      the hash unchanged.
- *
- * Built and run by tests/run.sh.
- */
+/* test_determinism.c  --  headless verification of MMO_PLAN Phase 1c */
 
 #include "game.h"
 #include "resource.h"

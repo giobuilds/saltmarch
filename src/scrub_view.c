@@ -27,13 +27,7 @@ void scrub_build(UiList *out, uint64_t tick,
     ui_list_push(out, ui_id(UI_GROUP_ACTION, UI_ACTION_PREV), track,
                  NULL, 0, 0);
 
-    /* The handle is where we are, proportionally ACROSS THE RETAINED
-     * WINDOW. The track starts at min_tick, not at zero: once a
-     * server's history has been truncated the reachable past is a
-     * hundred ticks at the end of five million, and a track scaled from
-     * zero would put every reachable tick inside the last pixel. A
-     * zero-length window puts the handle at the far end rather than
-     * dividing by zero. */
+    /* The handle is where we are, proportionally ACROSS THE RETAINED */
     frac = (max_tick > min_tick)
          ? (float)(tick - min_tick) / (float)(max_tick - min_tick)
          : 1.0f;

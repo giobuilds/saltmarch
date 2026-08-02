@@ -1,78 +1,10 @@
-/*  map.c  --  Tile map + procedural island generator  (Phase 2)
- *
- *  HOW THE GENERATOR WORKS
- *  ========================
- *  We build a heightmap using VALUE NOISE — the simplest noise
- *  algorithm that produces organic-looking terrain.
- *
- *  Step 1 – Value noise
- *    We divide the grid into a coarse lattice of "control points".
- *    Each control point gets a random float in [0, 1].
- *    Any point between lattice corners is BILINEARLY INTERPOLATED
- *    from its four surrounding corners.  This blurs the random
- *    values into smooth rolling hills.
- *
- *    We layer TWO octaves (two different lattice scales) and
- *    add them with different weights so we get both broad land
- *    masses AND fine coastal detail.
- *
- *  Step 2 – Island mask
- *    A radial falloff (distance from map centre) is multiplied
- *    onto the heightmap so the edges always become ocean.
- *    Without this, noise would produce land at the map border.
- *
- *  Step 3 – Thresholding
- *    The final float is bucketed into tile types:
- *      < 0.35  → WATER
- *      < 0.42  → SAND   (beach ring)
- *      < 0.70  → GRASS
- *      >= 0.70 → FOREST (elevated interior)
- *
- *  Step 4 – Gameplay metadata
- *    buildable and fertility are derived from type.
- *
- *  RANDOM NUMBER GENERATOR
- *  =======================
- *  We implement a minimal LCG (Linear Congruential Generator).
- *  K&R §2.7 discusses integer overflow which is central here:
- *  we deliberately let uint32_t wrap around — that wrap-around
- *  is the source of the randomness.  The multiplier and addend
- *  are the same constants used by Borland's classic C RTL.
- * 
- * FIX
- *  THE BUG THAT WAS FIXED
- *  ======================
- *  In the previous version, noise_build_lattice() was called inside
- *  the per-tile loop.  This meant every tile sampled a DIFFERENT
- *  random lattice, so there was no spatial coherence — the result
- *  looked like static noise rather than smooth terrain.
- *
- *  The fix: build each octave's lattice ONCE before the tile loop,
- *  then sample the same lattice for every tile in that octave.
- *
- *  NOISE OVERVIEW
- *  ==============
- *  We use VALUE NOISE with two octaves:
- *    Octave 0 (coarse, weight 0.70) — large land masses
- *    Octave 1 (fine,   weight 0.30) — coastal detail, inlets
- *
- *  An ISLAND MASK (radial falloff from centre) is multiplied onto
- *  the combined height so the map edges are always ocean.
- *
- *  HEIGHT → TILE TYPE thresholds:
- *    < 0.30  → WATER
- *    < 0.40  → SAND   (beach ring)
- *    < 0.72  → GRASS
- *    >= 0.72 → FOREST (elevated interior)
- */
+/* map.c  --  Tile map + procedural island generator  (Phase 2) */
 
 #include "map.h"
 #include <stddef.h>   /* NULL         */
 #include <string.h>   /* memset       */
 
-/* =========================================================
- * Section 1 – Minimal LCG random number generator
- * ========================================================= */
+/* Section 1 – Minimal LCG random number generator */
 
 /* LCG state — local to this translation unit (static). */
 static uint32_t lcg_state = 0;
@@ -98,9 +30,7 @@ static float lcg_float(void)
     return (float)((lcg_next() >> 16) & 0xFFFF) / 65536.0f;
 }
 
-/* =========================================================
- * Section 2 – Value noise helpers
- * ========================================================= */
+/* Section 2 – Value noise helpers */
 
 /* A smaller lattice = larger, smoother blobs of terrain.
  * LATTICE_SIZE 6 means the entire 64-tile map is covered by
@@ -121,13 +51,7 @@ static void build_lattice(float lat[LATTICE_SIZE][LATTICE_SIZE])
             lat[r][c] = lcg_float();
 }
 
-/* Smooth interpolation (smoothstep).
- * t must be in [0, 1].  Returns a value in [0, 1] that
- * accelerates and decelerates at the endpoints — this
- * removes the blocky artefacts of plain linear interpolation.
- *
- *   f(t) = 3t² - 2t³
- */
+/* Smooth interpolation (smoothstep). */
 static float smoothstep(float t)
 {
     return t * t * (3.0f - 2.0f * t);
@@ -164,13 +88,7 @@ static float sample(float lat[LATTICE_SIZE][LATTICE_SIZE],
     );
 }
 
-/* =========================================================
- * Section 3 – Island mask
- *
- * Returns 1.0 at the map centre, falling to 0.0 at the edges.
- * Using a power of 1.8 gives a rounder island than power 2
- * while still forcing clean ocean borders.
- * ========================================================= */
+/* ========================================================= */
 static float island_mask(int row, int col)
 {
     float cx   = (MAP_COLS - 1) / 2.0f;
@@ -188,50 +106,10 @@ static float island_mask(int row, int col)
     return smoothstep(mask);
 }
 
-/* =========================================================
- * Section 4 – Classification and metadata
- * ========================================================= */
+/* Section 4 – Classification and metadata */
 
-/* ---- Per-profile generation parameters -------------------
- * Terrain semantics live in the classification step, not in the
- * noise: biasing the noise fights the radial mask that defines island
- * shape, whereas thresholds here cleanly decide what the same
- * heightmap MEANS.
- *
- * hop_elev_min is the elevation above which grass is hop-fertile
- * rather than grain-fertile (they are exclusive — that exclusivity is
- * exactly what makes a hop-rich island grain-poor, and so what
- * creates the need to trade). 256 means "never": no elevation can
- * reach it, so the profile grows no hops at all.
- *
- * min_* are the requirements map_init()'s retry loop enforces, so a
- * Highland is never generated without the hops that are its entire
- * reason to exist, and the starting island is always playable. */
-/* `crops` is the palette of SECONDARY crops the profile's fertile
- * grass can carry — grain and hops are assigned by elevation as
- * before, and each fertile tile then draws exactly one bit from this
- * palette. One per tile, not a random subset, because a tile that grew
- * everything would make the choice of where to put a field
- * uninteresting; patches of a single crop are what force layout
- * decisions. A palette of 0 means "grain and hops only".
- *
- * `deposits[]` is how many tiles of each mineral to scatter, indexed by
- * Deposit. These are minimums the retry loop enforces, same as min_hop:
- * an island whose whole reason to exist is iron must actually have
- * iron.
- *
- * SUPPLY_CHAIN Phase 5 adds the two southern palettes. They carry the
- * WHOLE southern crop list, not just the ones a building can use yet:
- * terrain is the expensive half of a climate and the chains that eat
- * cane, cocoa, coffee and tobacco arrive with their tiers in Phase 7.
- * A jungle that only grows what today's buildings consume would have
- * to be regenerated then, and every existing world's map would change
- * underneath its save. Pepper (Phase 4) is northern and
- * sits in the temperate and woodland palettes: it is the Kitchen's
- * second input, and the Preserves chain is the one an Artisans
- * neighbourhood cannot do without. Deliberately NOT on the highland,
- * which is metal country — a single island should not be able to feed
- * and equip Artisans by itself. */
+/* ---- Per-profile generation parameters ------------------- */
+/* `crops` is the palette of SECONDARY crops the profile's fertile */
 typedef struct {
     float    water_max, sand_max, grass_max;
     int      hop_elev_min;
@@ -268,11 +146,7 @@ static const ProfileParams PROFILE_PARAMS[PROFILE_COUNT] = {
     [PROFILE_ATOLL]     = { 0.30f, 0.50f, 0.80f, 256,   0,   0,  0,
         0,
         { [DEPOSIT_SAND] = 20, [DEPOSIT_PEARLS] = 10, [DEPOSIT_CLAY] = 3 } },
-    /* Plantation: broad open ground and almost no forest — the fields
-     * are the point. hop_elev_min 256 means no elevation can reach it,
-     * so southern grass is grain-fertile and never hop-fertile: beer
-     * stays a northern problem, which is what keeps the highland worth
-     * holding after the south is settled. */
+    /* Plantation: broad open ground and almost no forest — the fields */
     [PROFILE_PLANTATION] = { 0.32f, 0.44f, 0.78f, 256,   0,  90,  6,
         FERTILE_COTTON | FERTILE_CANE | FERTILE_TOBACCO | FERTILE_MAIZE |
         FERTILE_ALPACA,
@@ -360,15 +234,7 @@ static void tile_set_metadata(Tile *t, MapProfile p)
     }
 }
 
-/* ---- Secondary crops and deposits ------------------------
- * Both passes run AFTER the heightmap loop and draw their randomness
- * from a hash of (seed, coordinates) rather than from lcg_next(). That
- * is deliberate: the terrain LCG's draw order is what every existing
- * island's shape depends on, so a new pass that consumed from it would
- * silently reshape every map in every save. Hashing instead means
- * these passes are inserted, not interleaved.
- *
- * FNV-1a over the inputs, same mixer as sim_hash — no new constants. */
+/* ---- Secondary crops and deposits ------------------------ */
 static uint32_t coord_hash(uint32_t seed, uint32_t salt,
                            uint32_t a, uint32_t b)
 {
@@ -438,12 +304,7 @@ static int deposit_site_ok(const Map *map, int r, int c, Deposit d,
     const Tile *t = &map->tiles[r][c];
     int span = hi - lo;
 
-    /* Pearls are the one deposit that is not a site to build on. Oyster
-     * beds lie in shallow water, so they go where no building can
-     * stand, and the Pearl Beds station works them from the shore
-     * (BuildingDef.needs_adjacent_deposit, building.h). Every other
-     * mineral is dug out of the tile it sits under, and therefore has
-     * to be somewhere a mine can be placed. */
+    /* Pearls are the one deposit that is not a site to build on. Oyster */
     if (d == DEPOSIT_PEARLS)
         return t->type == TILE_WATER &&
                has_adjacent_type(map, r, c, TILE_SAND);
@@ -530,9 +391,7 @@ static void scatter_deposits(Map *map, MapProfile p)
     }
 }
 
-/* =========================================================
- * Section 5 – Public API
- * ========================================================= */
+/* Section 5 – Public API */
 
 static void generate_once(Map *map, uint32_t seed, MapProfile profile)
 {
@@ -626,17 +485,7 @@ static int profile_satisfied(const Map *map, MapProfile p)
         && forest >= pp->min_forest;
 }
 
-/* ---- map_init -------------------------------------------
- * Generate, then check the profile's contract, retrying with a
- * derived seed until it holds. Without this, a "Highland" could roll
- * zero hop tiles — which is a broken game rather than interesting
- * scarcity, since hops are the whole reason to colonise it. Sampling
- * showed the old unconditional generator produced zero hop tiles on
- * roughly a third of seeds.
- *
- * map->seed keeps the REQUESTED seed, not the working one: the loop
- * is deterministic given (requested seed, profile), so saving the
- * request is what makes a save reproduce the island exactly. */
+/* ---- map_init ------------------------------------------- */
 void map_init(Map *map, uint32_t seed, MapProfile profile)
 {
     uint32_t working = seed;

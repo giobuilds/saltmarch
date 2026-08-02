@@ -1,42 +1,8 @@
 #ifndef FEED_H
 #define FEED_H
 
-/* =========================================================
- * feed.h  --  The shared voyage feed: ghost multiplayer
- *             (MMO_PLAN Phase 4)
- *
- * Every client appends its own departures to feed_out.jsonl and
- * periodically re-reads feed_in.jsonl, rendering everyone else's
- * voyages as non-interactive GHOSTS on the world map. Transport
- * between the two files is deliberately out of process
- * (scripts/feedsync.sh — a shared folder, rsync, curl, anything);
- * the game itself performs zero networking.
- *
- * THE COSMETIC BOUNDARY. The Feed lives in App (main.c), NOT in
- * GameState. Nothing here is sim state: ghosts never enter sim_hash,
- * feed polling runs on wall clock, and the CLI record/replay path never
- * constructs a Feed. That containment — structural, not disciplinary —
- * is what keeps F9 and the CI determinism replay untouched by anything
- * another player (or a dead sync script) does.
- *
- * GHOST TIME. Peers' sim ticks are meaningless here (every client's
- * clock started at its own tick 0), so each published line carries
- * departure_unix_ms — wall time at publish — and ghosts are rendered
- * by wall-clock elapsed over the voyage's wall duration. A ghost whose
- * voyage has elapsed simply isn't drawn, so a stale feed fades out
- * naturally instead of freezing.
- *
- * FEED HYGIENE. The file is untrusted input: lines are parsed
- * defensively, unknown/malformed lines are counted and skipped (never
- * crash), a partial trailing line (a writer mid-append) is ignored,
- * names are length-clamped, and the ghost list is capped.
- *
- * File format: one JSON object per line.
- *   {"hello":<id>,"name":"<name>"}                       handshake
- *   {"player":<id>,"ship":..,"from":..,"to":..,
- *    "departure_tick":..,"cargo":[..],
- *    "departure_unix_ms":..}                             voyage
- * ========================================================= */
+/* feed.h  --  The shared voyage feed: ghost multiplayer
+ * (MMO_PLAN Phase 4) */
 
 #include "ship.h"
 #include <stdint.h>
@@ -87,10 +53,7 @@ void feed_track_departures(Feed *f, const Ship ships[], int ship_count,
                            uint64_t unix_ms);
 
 /* Seconds since the freshest voyage in the inbound feed, or -1 when
- * there is no feed at all (no ghosts — nothing has ever been read).
- * UI_PLAN Phase 4 shows this as an alert once it goes stale: a feed
- * that stopped updating turns the shared ocean into a museum of
- * hours-old ships, and the failure is otherwise silent. */
+ * there is no feed at all (no ghosts — nothing has ever been read). */
 int feed_age_seconds(const Feed *f, uint64_t now_unix_ms);
 
 /* Re-read FEED_IN_PATH and rebuild the ghost list if the poll interval

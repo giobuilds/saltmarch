@@ -1,15 +1,8 @@
 #ifndef INVENTORY_UI_H
 #define INVENTORY_UI_H
 
-/* =========================================================
- * inventory_ui.h  --  Drawing the stores overlay and the vitals
- *                     strip (UI_PLAN Phase 4)
- *
- * Two small drawers over two SDL-free views: inventory_view.c decides
- * the overlay's geometry, vitals.c decides which alerts exist and in
- * what order. Neither of them knows what a renderer is; neither of the
- * functions here decides anything.
- * ========================================================= */
+/* inventory_ui.h  --  Drawing the stores overlay and the vitals
+ * strip (UI_PLAN Phase 4) */
 
 #include <SDL3/SDL.h>
 #include "inventory_view.h"

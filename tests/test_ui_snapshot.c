@@ -1,30 +1,5 @@
-/*  test_ui_snapshot.c  --  what the screens are allowed to know
- *                          (UI_PLAN N1)
- *
- * The snapshot is the only thing any overlay ever sees, so it is the
- * only place to ask two questions that matter more than they look.
- *
- * FIRST: does it carry the world at all? Twelve phases of simulation —
- * an order book, charts, expeditions, fleets, trade capacity — arrived
- * with no way for a screen to see any of it. A snapshot that omits
- * something is not a missing feature, it is a feature that cannot be
- * built.
- *
- * SECOND, and the one this file exists for: DOES IT TELL ABSENCE FROM
- * ZERO? Since SERVER_AUTHORITY Phase 3 a foreign island arrives with an
- * empty building list and a zeroed stockpile, meaning "you were not
- * told" — and every screen that renders it will render `0`. An island
- * showing 0 Planks reads as a market to sell into rather than as one
- * you know nothing about, which is the screen telling the player
- * something false that they will act on.
- *
- * There is no way for a drawing function to recover that distinction
- * once it is lost, so it has to be carried, and it has to be carried
- * here.
- *
- * Linked without SDL, like the other UI tests: the snapshot is the
- * SDL-free seam between the sim and the screen.
- */
+/* test_ui_snapshot.c  --  what the screens are allowed to know
+ * (UI_PLAN N1) */
 
 #include "game.h"
 #include "ui_snapshot.h"

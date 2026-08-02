@@ -1,18 +1,4 @@
-/*  test_charter.c  --  port charters (MMO_PLAN later phases)
- *
- * An island is held, not owned outright: a charter bought from the
- * faction and kept current by upkeep. Miss enough payments and it
- * lapses — the island relists itself, which is how a persistent world
- * hands islands to new players with nobody administering it.
- *
- * The properties worth pinning:
- *   - the bid is a real gold sink into the faction, and gold is still
- *     conserved between the two sides;
- *   - a working colony pays upkeep without noticing;
- *   - an idle one lapses, and only after its grace period;
- *   - a lapsed island keeps its buildings and can be chartered again;
- *   - all of it replays, because all of it is hashed.
- */
+/* test_charter.c  --  port charters (MMO_PLAN later phases) */
 
 #include "game.h"
 #include "island.h"
@@ -27,13 +13,7 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                \
     } while (0)
 
-/* Put a ship at `island` with the founding gold aboard.
- *
- * Deliberately hand-placed rather than sailed: these tests are about
- * charters, not voyages. It writes ship state directly, which means a
- * world built this way is NOT a function of its command log — see
- * test_replays(), which sails the ship properly for exactly that
- * reason. */
+/* Put a ship at `island` with the founding gold aboard. */
 static void ship_at(GameState *gs, int island, int gold)
 {
     Ship *sh;

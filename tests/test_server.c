@@ -1,25 +1,4 @@
-/*  test_server.c  --  the persistent server (MMO_PLAN Phase 6)
- *
- * saltmarch_host is a clock, a socket and a checkpoint file wrapped
- * around the same sim and the same net.c the co-op host uses. This test
- * exercises everything in that sentence EXCEPT the socket, over the
- * in-memory transport, so it is deterministic in any environment (the
- * sandbox this repo is developed in emulates loopback TCP unfaithfully
- * — which is why the transport is swappable in the first place).
- *
- * What a dedicated server must do that a co-op host need not:
- *
- *   - serve MORE THAN ONE player, each with their own identity and
- *     their own granted island, and show each other's actions;
- *   - keep running when a player leaves (a co-op host, by design, does
- *     the opposite: it ends the session and continues single-player);
- *   - let a player come back to the island they left (--as N);
- *   - survive its own restart: the checkpoint it writes is a world that
- *     reloads to the same hash and keeps ticking from there;
- *   - never occupy a player identity itself.
- *
- * Built and run by tests/run.sh.
- */
+/* test_server.c  --  the persistent server (MMO_PLAN Phase 6) */
 
 #include "game.h"
 #include "net.h"

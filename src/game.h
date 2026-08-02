@@ -1,28 +1,9 @@
 #ifndef GAME_H
 #define GAME_H
 
-/* =========================================================
- * game.h  --  Top-level game state
- *
- * GameState owns the archipelago plus everything genuinely global:
- * input, frame timing, which island is being viewed, and the UI
- * overlay flags. A single pointer to GameState is stored in SDL's
- * appstate so all three callbacks (AppInit, AppEvent, AppIterate)
- * can reach it.
- *
- * Everything that is per-landmass — map, camera, stockpile,
- * buildings, population, agents — lives in Island (island.h). The
- * game logic here operates on the CURRENT island via cur()/
- * game_cur_island(); the per-island simulation itself is
- * island_update(), which runs for every settled island each frame,
- * not just the one on screen.
- *
- * This header is SDL-free (MMO_PLAN Phase 6): GameState and the sim
- * entry points below compile into libsaltmarch_sim, which the headless
- * replay tool and the future server host link WITHOUT SDL. The
- * SDL-facing client half — the per-frame camera/hover update and event
- * handling — lives in client.h.
- * ========================================================= */
+/* game.h -- GameState: the archipelago plus everything global (input,
+ * frame timing, the viewed island, overlay flags). Per-landmass state
+ * lives in Island (island.h). */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -44,15 +25,7 @@
 #include "pirate.h"
 #include "intent.h"
 
-/* Gold a new game's starting island begins with.
- *
- * Ten thousand since LIFE_PLAN Phase 6b, and the reason is demographic
- * rather than economic. A house now arrives with a COUPLE in it rather
- * than five grown strangers, and everybody after those two has to be
- * born and then raised to eighteen. So an island's population is no
- * longer something a player waits for — it is something they found, one
- * household at a time, and they need enough capital in hand to lay down
- * several roofs rather than one. */
+/* Gold a new game's starting island begins with. */
 #define STARTING_GOLD 10000
 
 /* Player identity (MMO_PLAN Phase 5). PLAYER_NONE marks an unowned
@@ -88,14 +61,7 @@ typedef struct {
 } ConfirmState;
 
 /* ---- what happened to my command (UI_PLAN M1) --------------
- * Every command applied at a tick boundary leaves one of these behind.
- * The UI drains them each frame and matches them against its pending
- * ring by (player_id, seq); anything it does not recognise — a replayed
- * command, another player's — has no pending entry and is silently
- * dropped, which is how feedback stays local without special-casing.
- *
- * A small ring: results older than a few frames are of no use to
- * anybody, and dropping the oldest is better than growing forever. */
+ * Every command applied at a tick boundary leaves one of these behind. */
 #define SIM_RESULT_RING 32
 
 typedef struct {
@@ -111,10 +77,7 @@ typedef struct {
  * name the type from inside the struct that owns them. */
 typedef struct GameState {
     /* ---- The archipelago ----------------------------------
-     * Every island exists from world-gen; `settled` (island.h)
-     * decides which are simulated and buildable. current_island is
-     * the one being viewed and the one all placement/UI actions
-     * apply to — see cur() in game.c and game_set_current_island(). */
+     * Every island exists from world-gen; `settled` (island.h) */
     Island islands[MAX_ISLANDS];
     int    current_island;
 
@@ -127,11 +90,8 @@ typedef struct GameState {
     int hovered_col;
 
     /* Time tracking for frame-rate-independent movement.
-    * last_tick  – client timestamp (ns) at the end of the previous frame,
-    *              0 before the first frame (client_update seeds it).
-    * delta_time – seconds elapsed since that frame (e.g. 0.016 at 60fps).
-    * All per-frame movement is multiplied by delta_time so the game
-    * behaves identically at 30, 60, or 144 fps. */
+     * last_tick  – client timestamp (ns) at the end of the previous frame,
+     * 0 before the first frame (client_update seeds it). */
     uint64_t last_tick;
     float delta_time;
 
@@ -140,40 +100,17 @@ typedef struct GameState {
     BuildingType selected_building;
 
     /* 1 if the current hover position is a valid placement spot
-     * for selected_building.  Used by render to colour the ghost.
-     * placement_reason is WHY not (a RejectReason; REJ_OK when valid) —
-     * the same vocabulary sim_apply rejects with, so the message under
-     * the cursor is definitionally the reason placement would fail
-     * rather than a client-side guess (UI_PLAN decision 3). Both are
-     * client-side view state: recomputed every frame from the hover,
-     * never hashed, never saved. */
+     * for selected_building.  Used by render to colour the ghost. */
     int placement_valid;
     int placement_reason;
 
     int menu_open;  /* 1 when the cog menu overlay is open */
 
-    /* Manual trade screen. trade_open mirrors menu_open's overlay
-     * pattern; trade_building_idx indexes the CURRENT island's
-     * buildings[] — every *_idx below is current-island-relative,
-     * which is safe because game_set_current_island() closes every
-     * overlay rather than trying to keep them alive across a switch. */
+    /* Manual trade screen. trade_open mirrors menu_open's overlay */
     int trade_open;
     int trade_building_idx;
 
-    /* ---- the confirmation popup (UI_PLAN Phase 6) ---------
-     * One popup where there were four (build, demolish, tier upgrade,
-     * ship build). It holds the COMMAND it would submit rather than the
-     * ingredients to build one later, which is what lets it render the
-     * literal thing sim_apply will receive.
-     *
-     * That also preserves the property the build popup was careful
-     * about: the command is built when the popup OPENS, from the tile
-     * that was clicked, not re-derived at confirm time — by then the
-     * cursor is over a button in a different screen region and would
-     * resolve to an unrelated tile.
-     *
-     * `alt` is the second option where one exists (paying Gold instead
-     * of goods); its kind is CMD_COUNT when there is none. */
+    /* ---- the confirmation popup (UI_PLAN Phase 6) --------- */
     ConfirmState confirm;
 
     /* Road drag-placement: the last tile this drag already placed
@@ -237,14 +174,7 @@ typedef struct GameState {
      * the flag lives here. */
     int  yard_open;
 
-    /* ---- The command funnel (MMO_PLAN Phase 1a) -----------
-     * Every world mutation is recorded here as a Command, in the order
-     * it was applied, and re-running the log from the world seed
-     * reproduces the world exactly. cmd_log is a grow-by-doubling heap
-     * array owned by GameState (freed in game_free via
-     * command_log_free). sim_tick_no is the world clock; today it is a
-     * plain frame counter, but Phase 1b makes it the authoritative
-     * fixed-timestep tick number. See command.h. */
+    /* ---- The command funnel (MMO_PLAN Phase 1a) ----------- */
     Command  *cmd_log;
     int       cmd_count;
     int       cmd_cap;      /* allocated capacity of cmd_log            */
@@ -259,11 +189,7 @@ typedef struct GameState {
      * they apply (UI_PLAN M1). Neither is world state: the sequence is
      * per-machine and the ring is drained by the UI. Not hashed, not
      * saved. */
-    /* The recorded input stream (UI_PLAN M1). Written beside the
-     * command log by game_save, replayed by the CI UI harness, ignored
-     * by the sim entirely — a world is still a pure function of (seed,
-     * commands). Recording is opt-in: only a client that calls
-     * intent_record() produces any. */
+    /* The recorded input stream (UI_PLAN M1). Written beside. */
     Intent   *intent_log;
     int       intent_count;
     int       intent_cap;
@@ -280,11 +206,7 @@ typedef struct GameState {
      * (reversion). One faction serves every island's marketplace. */
     Faction   faction;
 
-    /* The water between the islands (MARITIME_PLAN Phase 1). A pure
-     * function of world_seed, like every Map — regenerated by
-     * game_reset_world and by snapshot_decode, never saved and never
-     * hashed, because there is nothing about it a checkpoint could
-     * disagree with. */
+    /* The water between the islands (MARITIME_PLAN Phase 1). A pure */
     Sea       sea;
 
     /* The order book (MARITIME_PLAN Phase 2). World state: hashed,
@@ -292,12 +214,7 @@ typedef struct GameState {
      * replay fills exactly the trades the original run filled. */
     OrderBook book;
 
-    /* What each player knows of the sea, and the charts they hold
-     * (MARITIME_PLAN Phase 3b). The first state in this struct that
-     * belongs to a PLAYER rather than to a place or a thing — a player
-     * who loses their colony does not forget the passages. World state:
-     * hashed, snapshotted, replayed, because which route a booking
-     * takes depends on what its seller knows. */
+    /* What each player knows of the sea, and the charts they hold */
     Knowledge knowledge;
 
     /* Expeditions in progress (MARITIME_PLAN Phase 3d). World state:
@@ -312,46 +229,13 @@ typedef struct GameState {
      * state — hashed, snapshotted, replayed. */
     PirateSea pirates;
 
-    /* Who this client is (Phase 5). CLIENT state, not world state: it
-     * is never hashed and never saved — it says which player's commands
-     * this process emits (command_submit stamps it), not anything about
-     * the world. 1 in single player; a co-op guest is assigned its id
-     * by the host at join and keeps it after a disconnect. */
+    /* Who this client is (Phase 5). CLIENT state, not world state:. */
     uint32_t  local_player_id;
 
-    /* Predict only this player's own islands (SERVER_AUTHORITY.md
-     * Phase 2). 0 means "simulate the whole world", which is what
-     * offline play, the dedicated server, every replay and every test
-     * do — and what this field must stay at for all of them.
-     *
-     * When a server is the authority the client is not computing the
-     * world, it is GUESSING AHEAD of the next push. Guessing about
-     * somebody else's island is wasted work at best and visible
-     * nonsense at worst, because since Phase 3 those islands arrive
-     * redacted: a client that ran production on them would be
-     * simulating an empty harbour and drawing the result.
-     *
-     * CLIENT STATE, NOT WORLD STATE. Never hashed, never saved, never
-     * snapshotted, and set in exactly one place — client.c, from
-     * net_server_authoritative(). If this is ever non-zero on the
-     * server or in a replay, the sim stops being a pure function of
-     * (seed, log) and every guarantee in this codebase built on that
-     * sentence goes with it. */
+    /* Predict only this player's own islands (SERVER_AUTHORITY.md */
     uint32_t  predict_only;
 
-    /* The lockstep co-op session, or NULL offline (Phase 5). Client
-     * infrastructure like local_player_id: owned by App (main.c),
-     * referenced here only so command_submit can route submissions and
-     * the tick loop can respect the guest's authorisation horizon.
-     * Never hashed, never saved.
-     *
-     * net_submit is how the sim reaches a session without knowing what
-     * one is (MMO_PLAN Phase 6): net.c is a CLIENT file, so a direct
-     * call to net_submit_local() from command.c would drag the whole
-     * transport into the headless sim library. net_attach() installs
-     * the hook; it is NULL whenever `net` is, and the sim treats both
-     * cases identically. (The tick gate needs no hook — the tick pump
-     * itself is client-side, in client.c.) */
+    /* The lockstep co-op session, or NULL offline (Phase 5). Client */
     struct NetSession *net;
     int (*net_submit)(struct NetSession *ns, struct GameState *gs,
                       const Command *c);
@@ -367,44 +251,18 @@ typedef struct GameState {
      * never saved. */
     int       migrate_from;
 
-    /* ---- the scrubber (MMO_PLAN later phases) --------------
-     * A world is (seed, ordered log), so any past tick is reachable by
-     * re-simulating to it. While scrubbing, `scrub_live_tick` remembers
-     * where the world actually is, the sim does not advance, and
-     * command_submit refuses everything — acting in the past would
-     * append commands stamped behind the log's own head and corrupt the
-     * one thing the whole architecture rests on. */
+    /* ---- the scrubber (MMO_PLAN later phases) -------------- */
     int       scrub_active;
     uint64_t  scrub_live_tick;
 
-    /* The earliest tick this process can still rebuild (SERVER.md,
-     * "Log truncation"). Zero for a world that still has its whole
-     * history; the checkpoint tick for one restored from a snapshot or
-     * whose log has been truncated behind it.
-     *
-     * Everything that reconstructs a past tick does so by replaying
-     * from the beginning, so below this line there is no beginning to
-     * replay from — and replaying the surviving tail against a fresh
-     * seed would silently produce a DIFFERENT world rather than fail.
-     * The scrubber clamps to it; F9 stands down above it. */
+    /* The earliest tick this process can still rebuild. */
     uint64_t  history_floor_tick;
 
-    /* The snapshot the floor stands on, kept so the scrubber still
-     * works INSIDE the retained window: rebuilding a tick above the
-     * floor means decoding this and replaying the surviving tail,
-     * rather than replaying from a seed whose history is gone. Owned
-     * here, freed by game_free, NULL whenever history_floor_tick is 0. */
+    /* The snapshot the floor stands on, kept so the scrubber still */
     unsigned char *floor_snap;
     size_t         floor_snap_len;
 
-    /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ----
-     * replay_valid is 1 while the live world is exactly what replaying
-     * (world_seed, cmd_log) from tick 0 produces — true after
-     * game_new/init and normal play, false after a full-state load
-     * (whose world is not derived from the log; Phase 1d makes load a
-     * replay and restores this). The rest hold the last check's result
-     * for the HUD; replay_show_until_ns is a wall-clock draw deadline,
-     * the one cosmetic field here. */
+    /* ---- F9 determinism self-check (MMO_PLAN Phase 1c) ---- */
     int       replay_valid;
     int       replay_state;   /* 0 none, 1 pass, 2 desync, 3 n/a         */
     uint64_t  replay_live_hash;
@@ -413,30 +271,11 @@ typedef struct GameState {
     uint64_t  replay_show_until_ns;
 } GameState;
 
-/* ---- The command funnel ---------------------------------
- * command_submit() is the ONE entry point for changing world state: it
- * stamps the command with the current tick, appends it to the log, and
- * applies it via sim_apply(). Returns 1 if the command mutated state,
- * 0 if it was rejected as invalid (a replayed log must reject the same
- * commands identically each time, so rejection is not an error — it is
- * part of the deterministic result).
- *
- * sim_apply() is the sole dispatcher from a Command to the actual
- * mutation. It lives in game.c beside the per-kind mutators it calls,
- * and is the only place those mutators are invoked from. It never
- * appends to the log itself (so replay can call it directly without
- * doubling the log). */
+/* ---- The command funnel --------------------------------- */
 int  command_submit(GameState *gs, const Command *c);
 int  sim_apply(GameState *gs, const Command *c);
 
-/* The same dispatch, reporting WHY rather than just whether (UI_PLAN
- * decision 3). sim_apply() is the boolean form, kept because REJ_OK is
- * 0 and mechanically converting its call sites would have inverted
- * every one of them.
- *
- * There is deliberately no second validator: the reasons come from the
- * mutators themselves, so the message a player sees is the reason the
- * sim refused rather than a client-side guess that can drift. */
+/* The same dispatch, reporting WHY rather than just whether (UI_PLAN */
 RejectReason sim_apply_reason(GameState *gs, const Command *c);
 
 /* Copy out (and clear) everything recorded since the last drain.
@@ -445,50 +284,19 @@ int sim_results_drain(GameState *gs, SimResult *out, int max);
 
 /* Advance the world by exactly one fixed tick: apply every command
  * stamped for this tick (in log order), run each settled island's full
- * pipeline and every voyage for one tick, then increment sim_tick_no.
- * This is the sole path by which simulated time moves — game_update's
- * accumulator calls it zero or more times per frame, and replay/F9
- * (Phase 1c) call it to reconstruct the world from the log. */
+ * pipeline and every voyage for one tick, then increment sim_tick_no. */
 void sim_run_one_tick(GameState *gs);
 
-/* Canonical hash of the simulated world state (MMO_PLAN Phase 1c):
- * FNV-1a over sim_tick_no, then per island its stockpile and every
- * active building/PopData, then every active ship. Deliberately
- * EXCLUDES derived and cosmetic state — agents, cameras, UI flags — so
- * two runs that agree on the world proper hash equal even if their
- * agent floats or view differ. Two GameStates with the same hash have
- * the same world. */
+/* Canonical hash of the simulated world state (MMO_PLAN Phase 1c): */
 uint64_t sim_hash(const GameState *gs);
 
-/* The F9 self-check: rebuild a scratch world from world_seed, replay
- * the command log through sim_run_one_tick up to gs->sim_tick_no, and
- * compare sim_hash() against the live world. Returns 1 if they match
- * (deterministic), 0 if they diverge (a real bug — a mutation escaped
- * the funnel, a float leaked into the sim, or RNG was stepped outside
- * it). Fills gs->replay_* with the result for the HUD. When
- * replay_valid is 0 (e.g. just after loading a full-state save) it does
- * no work and reports state 3 = n/a. */
+/* The F9 self-check: rebuild a scratch world from world_seed, replay */
 int game_verify_determinism(GameState *gs);
 
-/* Replace the command log with a copy of `n` commands from `cmds`,
- * growing the allocation as needed, and reset cmd_applied to 0 so the
- * whole log is pending re-application. Used by game_load()/replay to
- * install a log read from disk. Returns 1 on success, 0 on OOM (the log
- * is left unchanged on failure). */
+/* Replace the command log with a copy of `n` commands from. */
 int  command_log_set(GameState *gs, const Command *cmds, int n);
 
-/* The same, from bytes that may not be aligned for a Command.
- *
- * A save file is a header, then a snapshot of arbitrary length, then the
- * command tail; a MSG_WORLD frame has the same shape. So the commands
- * begin at an offset nobody chose, and casting that to `Command *` is
- * undefined behaviour whether or not it is then dereferenced — C permits
- * the conversion only when the address is correctly aligned.
- *
- * It happens to work on x86, which is why it survived until a sanitizer
- * looked at it. `memcpy` from a `const void *` has no alignment
- * requirement at all, which is why this exists as its own entry point
- * rather than as a cast at each call site. */
+/* The same, from bytes that may not be aligned for a Command. */
 int  command_log_set_bytes(GameState *gs, const void *bytes, int n);
 
 /* Append one ALREADY-STAMPED command to the log without applying it —
@@ -518,15 +326,7 @@ int  intent_log_set(GameState *gs, const Intent *ins, int n);
 
 void intent_log_free(GameState *gs);
 
-/* ---- the overlay arbiter (UI_PLAN Phase 4) -----------------
- * Which overlay is on top, or UI_OVERLAY_NONE. Every "is anything open?"
- * question routes through here rather than each caller re-listing the
- * flags — that list was already wrong once: the mouse wheel zoomed the
- * world behind an open modal because the zoom code did not consult it
- * at all.
- *
- * The order below is the layering order the click cascade in main.c
- * uses, so the two cannot disagree about what "topmost" means. */
+/* ---- the overlay arbiter (UI_PLAN Phase 4) ----------------- */
 typedef enum {
     UI_OVERLAY_NONE = 0,
     UI_OVERLAY_MENU,
@@ -547,19 +347,7 @@ GameOverlay game_topmost_overlay(const GameState *gs);
  * drag-placement loop (do not lay road under a popup). */
 int game_overlay_open(const GameState *gs);
 
-/* ---- the time-travel scrubber (MMO_PLAN later phases) ------
- * Enter scrub mode (remembering the live tick), jump to any past tick,
- * and leave again (returning to the live tick). Jumping re-simulates
- * from tick 0 through the existing log, which at a 64x64 grid costs
- * milliseconds per thousand ticks — no checkpoint machinery needed yet.
- *
- * The log is never truncated: scrubbing back and then forward again
- * lands on the same state, because the commands were always there.
- *
- * While scrubbing, the sim is frozen and submissions are refused. The
- * UI can be driven as normal — hit-testing a past screen works, because
- * an overlay only ever reads a snapshot — which is what makes this a
- * debugging tool rather than a screenshot. */
+/* ---- the time-travel scrubber (MMO_PLAN later phases) ------ */
 void game_scrub_begin(GameState *gs);
 void game_scrub_to(GameState *gs, uint64_t tick);
 void game_scrub_end(GameState *gs);
@@ -592,12 +380,7 @@ int  game_set_history_floor(GameState *gs, const unsigned char *buf,
                             size_t len, uint64_t tick);
 void game_clear_history_floor(GameState *gs);
 
-/* Drop every command already applied, keeping only the pending tail,
- * and record that history below the current tick is gone. This is what
- * bounds a persistent server's log and checkpoint; pair it with
- * game_save_checkpoint, which writes the state the dropped commands
- * had produced. Costs the scrubber and F9 their reach below this tick
- * — see history_floor_tick. */
+/* Drop every command already applied, keeping only the pending. */
 void game_truncate_log(GameState *gs);
 
 /* The island currently being viewed — the one every placement, UI
@@ -605,13 +388,7 @@ void game_truncate_log(GameState *gs);
  * current_island is always a valid index. */
 Island *game_cur_island(GameState *gs);
 
-/* Switch the viewed island. Closes every overlay and clears
- * selected_building / demolish_mode / the road-drag state, because
- * all of those (and every *_idx field) are current-island-relative —
- * keeping a popup alive across a switch would leave it pointing at an
- * unrelated building on the new island. No-op if idx is out of range.
- * Switching to an unsettled island is allowed: you can look at an
- * island before you can build on it. */
+/* Switch the viewed island. Closes every overlay and clears */
 void game_set_current_island(GameState *gs, int idx);
 
 /* Allocate and initialise a new GameState.
@@ -637,69 +414,31 @@ void game_new_seeded(GameState *gs, uint32_t seed);
  * Returns 1 on success. Used by the "Save" menu button. */
 int  game_save(const GameState *gs, const char *path);
 
-/* Write the world as STATE: a full snapshot plus only the commands not
- * yet applied. Loading one restores rather than replays, so its cost is
- * the size of the world instead of its age — which is what lets a
- * server that has been up for months restart, and a client join it,
- * without walking every tick since the beginning (SERVER.md, "Log
- * truncation"). Returns 1 on success.
- *
- * The trade is deliberate and it is not free: a checkpoint cannot prove
- * its world was reachable by legal play, only that it was stored
- * faithfully, and a world loaded from one cannot be scrubbed or F9'd
- * back past the checkpoint because the history is gone. Prefer
- * game_save() anywhere that history is affordable. */
+/* Write the world as STATE: a full snapshot plus only the commands. */
 int  game_save_checkpoint(const GameState *gs, const char *path);
 
-/* Inverse of game_save(): restores buildings, population,
- * stockpile and camera from `path`, regenerating the map from
- * its stored seed. Returns 1 on success; on failure (missing,
- * corrupt, or wrong-version file) returns 0 and leaves gs
- * untouched. Used by the "Load" menu button. */
+/* Inverse of game_save(): restores buildings. */
 int  game_load(GameState *gs, const char *path);
 
 #define SAVE_FILE_PATH "saltmarch_save.dat"
 
 /* Read just the command log out of a .smlog, without touching the
  * current world. The caller owns *out_cmds and must free() it. Returns
- * 1 on success, 0 on a missing, corrupt or wrong-version file.
- *
- * Exists for ghost factions (MMO_PLAN later phases): seeding an NPC
- * island means replaying somebody else's recorded commands, which means
- * reading their log without becoming their world. */
+ * 1 on success, 0 on a missing, corrupt or wrong-version file. */
 int game_load_commands(const char *path, Command **out_cmds, int *out_count);
 
 /* The per-frame client update (camera, hover, drag input, and the
  * accumulator that spends real time on fixed sim ticks) lives in
  * client.h/client.c — it needs SDL, so it cannot live here. */
 
-/* Attempts to place a Road at (row, col) directly — no confirmation
- * popup. Roads are the one building type exempt from
- * game_place_building_confirmed()'s popup: a drag gesture placing
- * many tiles can't reasonably pop up a per-tile confirmation, and a
- * single non-dragged click on Road behaves the same way for
- * consistency. Checks placement validity and affordability itself;
- * returns 1 on success, 0 otherwise (no side effects on failure). */
+/* Attempts to place a Road at (row, col) directly — no confirmation */
 int game_try_place_road(GameState *gs, int row, int col);
 
-/* Place `type` at (row, col) on the current island, paying in goods or
- * in Gold. Builds the Command and submits it; the sim validates
- * everything, so an unaffordable placement is a rejected command rather
- * than a no-op here. This is the explicit form the confirm layer and
- * the record/replay harness both use — it takes what to build rather
- * than reading it back out of UI fields. */
+/* Place `type` at (row, col) on the current island, paying in goods or */
 int game_place_building(GameState *gs, int row, int col,
                         BuildingType type, int pay_with_gold);
 
-/* ---- the confirmation layer (UI_PLAN Phase 6) --------------
- * Opening a confirmation builds the command NOW and stores it; the
- * popup renders that command; accepting submits exactly it. Nothing is
- * re-derived in between, which is the whole point — what you were shown
- * and what the sim receives are the same bytes.
- *
- * Each opener is a no-op if the action is not currently possible (no
- * such building, wrong type), so a stale click cannot open a popup that
- * would submit nonsense. */
+/* ---- the confirmation layer (UI_PLAN Phase 6) -------------- */
 void game_confirm_build(GameState *gs, int row, int col,
                         BuildingType type);
 void game_confirm_demolish(GameState *gs, int building_idx);
@@ -741,32 +480,12 @@ void game_sell_resource(GameState *gs, ResourceType res, int qty);
 void game_sell_resource_limit(GameState *gs, ResourceType res, int qty,
                               int limit);
 
-/* Buys up to `qty` units of `res` for the stockpile, paying Gold at
- * BUY_PRICE[res] (resource.h) — the same markup rate the build-
- * confirmation popup's Gold-payment option uses. Clamps `qty` down
- * to whatever's actually possible: storage headroom (capacity minus
- * current amount) and Gold on hand, in that order. qty < 0 means
- * "buy as much as both allow" (resolved against the live stockpile,
- * mirroring game_sell_resource's qty < 0 = "sell all"). No-op if res
- * is RES_GOLD or the resolved quantity is <= 0. Used by the
- * Marketplace trade screen. */
+/* Buys up to `qty` units of `res` for the stockpile, paying Gold at */
 void game_buy_resource(GameState *gs, ResourceType res, int qty);
 void game_buy_resource_limit(GameState *gs, ResourceType res, int qty,
                              int limit);
 
-/* Removes the building at buildings[idx] (marks it inactive — the
- * slot itself is left for building_place() to reuse later, same
- * pattern as every other active-flagged array here). Free — no
- * refund. Also cleans up anything that referenced it: a demolished
- * House's PopData is deactivated (agents_sync() despawns its agents
- * next frame); any agent with home_idx == idx is deactivated
- * immediately (its home is simply gone); any agent with
- * work_idx == idx is snapped back to unemployed and standing at
- * home, so a destroyed workplace doesn't leave it permanently
- * "employed" at a dead job (agent_assign_jobs() only reassigns
- * agents with work_idx == -1). Recomputes storage capacity if the
- * demolished building was a Warehouse. No-op if idx is out of range
- * or already inactive. */
+/* Removes the building at buildings[idx] (marks it inactive —. */
 void game_demolish_building(GameState *gs, int idx);
 
 /* TIER_UPGRADE_COST_GOLD moved to population.h in SUPPLY_CHAIN Phase 2:
@@ -774,15 +493,7 @@ void game_demolish_building(GameState *gs, int idx);
  * edge, in TierDef.upgrade_gold, and the constant is now only the
  * first tier's value rather than every tier's. */
 
-/* Walks buildings[idx] along its tier's upgrade edge (TierDef.next_tier,
- * population.h) after tier_upgrade_check() agrees: deducts the tier's
- * Gold, then mutates the building's type in place. Nothing else needs to change
- * — PopData's residents/happy/timer stay exactly as they were (same
- * array index), agents' home_idx references stay valid (the home
- * didn't move), and pop_update()/connectivity/rendering/worker-
- * assignment all already look up BUILDING_DEFS live by the (now
- * different) type. No-op if idx is out of range, inactive, not a
- * house, or tier_upgrade_check() refuses. */
+/* Walks buildings[idx] along its tier's upgrade edge. */
 /* `branch` is a TierBranch (population.h): the house's own line, or
  * Scholars where an Academy stands. */
 void game_upgrade_house(GameState *gs, int idx, int branch);
@@ -811,26 +522,15 @@ int game_set_escort(GameState *gs, int ship_idx, int target_idx);
  * which may be somebody else's cargo, and rarely a route chart. */
 int game_attack_pirate(GameState *gs, int ship_idx, int pirate_idx);
 
-/* Move `qty` units of `res` between the current island's stockpile
- * and ship `ship_idx`'s hold. Positive qty loads onto the ship,
- * negative unloads. Clamped by what is actually present, by the
- * hold's per-resource capacity, and by the receiving stockpile's
- * capacity. No-op unless the ship is docked at the current island. */
+/* Move `qty` units of `res` between the current island's stockpile */
 void game_ship_transfer(GameState *gs, int ship_idx, ResourceType res, int qty);
 
-/* Found a colony on `island_idx` using ship `ship_idx`, which must be
- * docked there and carrying at least COLONY_FOUNDING_GOLD. The Gold
- * leaves the hold and becomes the new island's starting treasury;
- * the island becomes settled, and therefore simulated and buildable.
- * Returns 1 on success. */
+/* Found a colony on `island_idx` using ship `ship_idx`, which must. */
 int game_colonise(GameState *gs, int ship_idx, int island_idx);
 
 /* Order ship `ship_idx` to sail from wherever it is docked to
  * `dest_island`. The ship must be docked (at_island >= 0) at an island
- * other than the destination. Returns 1 if the voyage was ordered.
- * This replaces the inline ship-state mutation the world overlay used
- * to do directly, routing the ship-depart order through the funnel
- * like every other mutation (MMO_PLAN Phase 1a). */
+ * other than the destination. Returns 1 if the voyage was ordered. */
 int game_ship_depart(GameState *gs, int ship_idx, int dest_island);
 
 /* As above, but buying marine insurance for the voyage: the premium is
@@ -853,11 +553,7 @@ int game_ship_set_route_res(GameState *gs, int ship_idx, int leg);
  * route repeats the ship's last voyage (from_island -> to_island). */
 int game_ship_toggle_route(GameState *gs, int ship_idx);
 
-/* Attack another player's voyage with one of yours (MMO_PLAN later
- * phases). Both ships must be at sea; `target_departure` binds the
- * command to the voyage the player actually saw, so an intercept cannot
- * land on a later voyage of the same ship. The engagement is computed
- * deterministically inside the sim — there is nothing to aim. */
+/* Attack another player's voyage with one of yours (MMO_PLAN later */
 int game_intercept(GameState *gs, int my_ship, int target_ship,
                    uint64_t target_departure);
 
@@ -876,11 +572,7 @@ int game_grant_start(GameState *gs, int island_idx);
 int game_escrow_put(GameState *gs, int island_idx, ResourceType res, int qty);
 int game_escrow_take(GameState *gs, int island_idx, ResourceType res, int qty);
 
-/* The same, stamped with the quay state the panel was showing (UI_PLAN
- * M5). If the escrow has changed since — a visitor docked and took
- * something — the sim refuses with REJ_OFFER_CHANGED rather than
- * acting on an offer the player never actually saw. A nonce of 0 means
- * unstamped, which is what replayed and scripted commands carry. */
+/* The same, stamped with the quay state the panel was showing (UI_PLAN */
 int game_escrow_put_nonce(GameState *gs, int island_idx, ResourceType res,
                           int qty, uint32_t nonce);
 int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
@@ -906,26 +598,10 @@ int game_set_insurance(GameState *gs, int island_idx, int on);
  * Shipyard (MARITIME_PLAN Phase 3d). */
 int game_build_research_boat(GameState *gs, int island_idx);
 
-/* Owner only: send an expedition from `from_island` to look for an
- * uncharted passage to `to_island`. Commits a scholar, a research boat
- * and a blank chart; the chart is spent either way, and a failed
- * expedition may not come home at all.
- *
- * You cannot name the route — that is what you are paying to find
- * out. The sim picks an undiscovered private passage between the two. */
+/* Owner only: send an expedition from `from_island` to look for. */
 int game_survey(GameState *gs, int from_island, int to_island);
 
-/* Post an order at `island_idx`'s harbour (MARITIME_PLAN Phase 2).
- * `qty` carries the side: positive buys, negative sells. `limit` is the
- * worst price per unit the order will accept, and posting reserves at
- * it — the goods for a sell, `qty * limit` gold for a buy.
- *
- * `kind`/`what` name the thing being traded rather than a ResourceType,
- * because a route chart is not one of a fixed set of goods; see
- * orderbook.h. Both kinds are accepted: a TRADE_ROUTE_CHART order names
- * a private passage by its sea route id, and is posted from the
- * passages screen rather than the book's composer, because a chart is
- * chosen by pointing at water (UI_PLAN N4). */
+/* Post an order at `island_idx`'s harbour (MARITIME_PLAN Phase 2). */
 int game_place_order(GameState *gs, int island_idx, TradeKind kind,
                      uint16_t what, int qty, int limit);
 

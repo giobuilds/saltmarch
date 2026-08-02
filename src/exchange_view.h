@@ -1,34 +1,8 @@
 #ifndef EXCHANGE_VIEW_H
 #define EXCHANGE_VIEW_H
 
-/* =========================================================
- * exchange_view.h  --  One exchange surface, parameterised by
- *                      counterparty (UI_PLAN Phase 1, decision 4)
- *
- * MMO_PLAN's thesis is that a bot is indistinguishable from a slow
- * player. Carried into the UI, that means the marketplace (trading with
- * the NPC faction) and the harbour escrow panel (trading with another
- * player) are not two screens: they are one screen handed a different
- * value struct.
- *
- * ExchangeView is that struct — a pure snapshot of one side of a trade,
- * copied, never pointers into live sim state, so the whole layout and
- * hit-test path stays a function of its arguments and runs headlessly.
- *
- * WHAT THIS REPLACES. The old trade overlay laid out a 92px block per
- * good and derived its panel height from the number of goods. At six
- * goods it was 722px tall; at ten it would have been 1130px on a 1080px
- * screen — the capacity cliff UI_PLAN was written around, reached by
- * adding four goods. Here the panel measures what it wants, clamps to
- * what the screen has, and pages the remainder.
- *
- * ROWS ARE A LIST, NOT A PARALLEL ARRAY PER RESOURCE. The plan sketched
- * `int32_t bid[RES_COUNT], ask[RES_COUNT], ...`; rows carry their own
- * identity instead. Two reasons: an escrow offer's rows are cargo lines
- * rather than one-per-resource, and a test can build a 40-row view
- * without RES_COUNT having to grow to 40 first — which is exactly the
- * cliff this phase exists to prove is gone.
- * ========================================================= */
+/* exchange_view.h  --  One exchange surface, parameterised by
+ * counterparty (UI_PLAN Phase 1, decision 4) */
 
 #include <stdint.h>
 #include "faction.h"     /* FACTION_HIST_LEN */
@@ -83,16 +57,7 @@ typedef struct {
     int32_t      row_count;
 } ExchangeView;
 
-/* Build the OFFER view: the harbour escrow, as seen by the island's
- * owner (UI_PLAN M5). Rows are the goods sitting on the quay, and the
- * action cluster becomes take/stage rather than buy/sell — the same
- * screen with a different counterparty, which is decision 4's whole
- * claim put to the test.
- *
- * `nonce` identifies the state of the quay these rows describe. The
- * accept command carries it back, and the sim refuses if the escrow
- * has changed underneath an open panel — a visitor's ship can dock and
- * take goods between the frame you read and the button you press. */
+/* Build the OFFER view: the harbour escrow, as seen by the island's */
 void exchange_view_escrow(ExchangeView *out, const UiSnapshot *snap,
                           int island);
 
@@ -131,12 +96,7 @@ void exchange_view_market(ExchangeView *out, const UiSnapshot *snap,
 
 /* Build the widget list for `view` at page `st->exchange_page`.
  * Everything the drawer needs is in the list; everything the hit-test
- * needs is in the same list, which is what stops the two drifting.
- *
- * Widget ids are identities: UI_GROUP_SELL/UI_GROUP_BUY carry the
- * ResourceType, and the QUANTITY rides in the widget's value — so the
- * buttons of one row share an id and differ by payload, and no id
- * anywhere encodes "row 3 of page 2". */
+ * needs is in the same list, which is what stops the two drifting. */
 void exchange_build(UiList *out, const ExchangeView *view,
                     const UiState *st, float screen_w, float screen_h);
 

@@ -1,27 +1,5 @@
-/*  test_happiness.c  --  the ladder, and the goodwill it buys
- *                        (NEEDS_PLAN Phase 2)
- *
- * The bug this phase exists to kill: a house lost a resident on the
- * FIRST needs tick it went short, so a supply chain that stuttered was
- * punished exactly as hard as one that was never built. A player who
- * had done everything right watched their marshfolk leave because a
- * pasture was between wool ticks.
- *
- * Happiness is 0..10 and moves one step per tick toward what the
- * supplies deserve, which makes the ladder its own buffer — no second
- * field counts consecutive failures, because the number already
- * remembers. So the assertions here are mostly about TIME:
- *
- *   - a full larder climbs to the top and the house grows;
- *   - a house that loses everything keeps its people for ten ticks;
- *   - partial basics are miserable but survivable indefinitely, which
- *     is what "basics are not all-or-nothing" has to mean;
- *   - a rescue climbs back at the same pace it fell;
- *   - and a house with no road is scored as though the island were
- *     empty, however full the warehouse is.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_happiness.c  --  the ladder, and the goodwill it buys
+ * (NEEDS_PLAN Phase 2) */
 
 #include "game.h"
 #include "population.h"
@@ -93,19 +71,12 @@ static void test_plenty(void)
 
     CHECK(w.p[0].happiness == HAPPINESS_MAX,
           "everything supplied reaches the top of the ladder");
-    /* AND NOBODY MOVES IN (LIFE_PLAN Phase 6b). Happiness used to add a
-     * resident every needs tick, out of nowhere in particular. A house
-     * grows only by birth now — residents_breed owns the upward
-     * direction, and pop_update cannot fill a bed however delighted the
-     * household is. What plenty buys is the room and the will to raise
-     * children, which is a different function's business entirely. */
+    /* AND NOBODY MOVES IN (LIFE_PLAN Phase 6b). Happiness used to add. */
     CHECK(w.p[0].residents == start,
           "and nobody moves in — a house grows by birth or not at all");
     /* AND IT PAYS NOTHING (LIFE_PLAN Phase 7). Housing used to mint
      * gold — `3 x residents` every needs tick — which made a household
-     * of children exactly as good an earner as a household of workers.
-     * Gold comes from taxed wages now, so being fed is what keeps a
-     * house on the ladder and no longer what funds anything. */
+     * of children exactly as good an earner as a household of workers. */
     CHECK(w.s.amount[RES_GOLD] == 0,
           "and pays nothing — a house is not a mint");
 
@@ -146,11 +117,7 @@ static void test_the_goodwill(void)
     CHECK(w.p[0].happiness == HAPPINESS_MAX - 1,
           "it costs a rung of the ladder instead");
 
-    /* How long the famine can run before it costs anybody. Measured
-     * rather than asserted at a guessed number: the property is "a
-     * thriving house has about a ladder's worth of reprieve", and the
-     * exact rung leaving starts on is a tuning decision that should be
-     * free to move without this test lying about it. */
+    /* How long the famine can run before it costs anybody. Measured */
     {
         int ticks = 1;   /* the one above already happened */
 
@@ -201,11 +168,7 @@ static void test_rescue(void)
     int   i;
 
     printf("\n=== a rescue ===\n");
-    /* Six ticks of famine from neutral: enough to hit the floor and
-     * start losing people, not enough to empty the house. A house that
-     * empties completely does NOT repopulate itself — nobody is left
-     * to be unhappy — and that is deliberate rather than an oversight
-     * this test should paper over. */
+    /* Six ticks of famine from neutral: enough to hit the floor. */
     world_init(&w, 4);
     for (i = 0; i < 6; i++) { stock_basics(&w, 0); needs_tick(&w); }
     CHECK(w.p[0].happiness == 0, "the house has hit the floor");
@@ -310,12 +273,7 @@ static void test_consumption_scales(void)
     CHECK(w.p[0].happiness < HAPPINESS_NEUTRAL,
           "and feeding four of six people is not feeding the house");
 
-    /* And the ceiling is no longer something pop_update walks up to.
-     * Forty ticks of everything a house could want used to fill it from
-     * one to six; since Phase 6b it leaves the house exactly as it
-     * found it, because feeding people is not the same as making them.
-     * The capacity is still the ceiling — residents_breed checks it —
-     * but nothing here can reach it. */
+    /* And the ceiling is no longer something pop_update walks up to. */
     {
         int i;
         world_init(&w, 1);

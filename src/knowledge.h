@@ -1,45 +1,8 @@
 #ifndef KNOWLEDGE_H
 #define KNOWLEDGE_H
 
-/* =========================================================
- * knowledge.h  --  What each player knows, and what they hold
- *                  (MARITIME_PLAN Phase 3b: routes and charts)
- *
- * Phase 3a generated three routes between every island pair — one
- * public lane and two private passages — and left all three visible,
- * because a route existing and a player knowing it are different
- * things. This is the second half: the private ones are concealed, and
- * a player opens them for themselves.
- *
- * THE FIRST PER-PLAYER STATE IN THE WORLD. Everything before this was
- * owned by a place or a thing: an island has an owner, a ship has an
- * owner, an order has an owner. Nothing was ever true *of a player*.
- * Route knowledge is, and it cannot be attached to an island — a
- * player who loses their colony does not forget the sea.
- *
- * KNOWING AND HOLDING ARE SEPARATE, and the design says so twice in
- * different words: a private route is "unlocked with charts and
- * consumed when travel is done", and a player "unlocks that knowledge
- * for themselves". Those are two mechanics, not one:
- *
- *   known[]  -- a permanent bit. Once you have learned a passage
- *               exists you never unlearn it; you can see it on the map
- *               and you know what a chart for it is worth. Set the
- *               first time a chart for it reaches you.
- *   charts[] -- how many maps of it you hold. Spent, one per round
- *               trip, when a booking sails it.
- *
- * So knowing without holding is the normal state of an experienced
- * trader: you know four fast passages and can currently afford to sail
- * one. That is the pressure the Chart House exists to relieve.
- *
- * ALL OF IT IS WORLD STATE — hashed, snapshotted, replayed. It has to
- * be: which route a booking takes depends on what its seller knows, so
- * two clients that disagreed about knowledge would disagree about when
- * a cargo arrives. Concealment from the PLAYER is a presentation
- * question (and, properly, a server-authority one — see
- * SERVER_AUTHORITY.md); concealment from the SIM is not a thing.
- * ========================================================= */
+/* knowledge.h  --  What each player knows, and what they hold
+ * (MARITIME_PLAN Phase 3b: routes and charts) */
 
 #include <stdint.h>
 #include "sea.h"
@@ -49,11 +12,7 @@
  * knows every route by definition — it sells the maps). */
 #define MAX_PLAYERS 8
 
-/* Charts of one route one player may hold. A byte each, and the cap is
- * what keeps that honest — an unbounded stock would make a surveyed
- * passage permanently open, which is one of the open questions this
- * phase deliberately does not answer yet. 255 is "effectively
- * unlimited, but it fits". */
+/* Charts of one route one player may hold. A byte each, and the cap. */
 #define MAX_CHARTS_PER_ROUTE 255
 
 typedef struct {
@@ -91,11 +50,7 @@ int  knowledge_charts(const Knowledge *k, uint32_t player, int route_id);
 int  knowledge_add_charts(Knowledge *k, uint32_t player, int route_id,
                           int qty);
 
-/* Discard every player's charts of `route_id` — the passage has gone
- * out of use and the maps of it are waste paper (MARITIME_PLAN Phase
- * 3e). The KNOWN bit is deliberately left standing: you still remember
- * where the water was, and if the passage ever comes back round you
- * will know it on sight. What you no longer have is a usable map. */
+/* Discard every player's charts of `route_id` — the passage has gone */
 void knowledge_void_charts(Knowledge *k, int route_id);
 
 #endif /* KNOWLEDGE_H */

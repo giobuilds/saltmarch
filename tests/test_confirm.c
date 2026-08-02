@@ -1,17 +1,4 @@
-/*  test_confirm.c  --  the one confirmation (UI_PLAN Phase 6)
- *
- * The plan's verification: "hit-test results identical before/after;
- * rendered preview matches the submitted Command byte-for-byte in the
- * headless harness."
- *
- * The second half is the one that matters. A popup that says it will
- * demolish building 12 and then submits something else is the failure
- * this phase exists to make impossible, so the test takes the command
- * the view rendered and compares it — as bytes — with what the log
- * received when the popup was accepted.
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui and libsaltmarch_sim.
- */
+/* test_confirm.c  --  the one confirmation (UI_PLAN Phase 6) */
 
 #include "confirm_view.h"
 #include "ui_snapshot.h"

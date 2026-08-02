@@ -1,23 +1,4 @@
-/*  test_headless.c  --  the headless twin (MMO_PLAN Phase 6)
- *
- * Every other test in this directory links the client's object files
- * alongside the sim and pulls in SDL. This one deliberately does not:
- * tests/run.sh builds it against libsaltmarch_sim ALONE, with no SDL
- * flags at all. If a client dependency ever creeps back into the sim,
- * this test stops linking — which is the failure mode we want, since a
- * server that cannot link the sim is Phase 6 undone.
- *
- * What it asserts beyond the link itself:
- *
- *   1. A world can be built, ticked, hashed and freed with no client.
- *   2. Same seed + same commands => same hash, in two separate worlds
- *      (the property the server's checkpoint/replay model rests on).
- *   3. The scripted fixture session round-trips through save/load, and
- *      writes byte-identical files on repeat runs (the checkpoint
- *      format has no uninitialised padding in it).
- *   4. sim_log_set_enabled(0) silences the sim — a server ticking ten
- *      times a second must be able to stop narrating.
- */
+/* test_headless.c  --  the headless twin (MMO_PLAN Phase 6) */
 
 #include "game.h"
 #include "replay.h"
@@ -82,16 +63,7 @@ int main(void)
         int eb = replay_record_demo_session(b, 4242u);
 
         /* THE FIXTURE MUST EXERCISE THE ECONOMY, and this assertion is
-         * the only thing that keeps it honest.
-         *
-         * It has silently covered nothing twice: once paying for its
-         * house in goods the island did not have, and once placing a
-         * house on an island with NO WAREHOUSE — connectivity is seeded
-         * from warehouses, so pop_update took its "no road" branch for
-         * the fixture's whole life and three phases of needs work moved
-         * the recorded hash not at all. A hash agreeing with itself
-         * about a world where nothing happens is not a determinism
-         * gate; it is a very slow way of comparing two zeroes. */
+         * the only thing that keeps it honest. */
         CHECK(ea && eb,
               "the fixture fed somebody, and raised, married and employed "
               "its own children");
@@ -99,9 +71,7 @@ int main(void)
 
     /* Fifty years since the fixture was lengthened to cover demography
      * — it ran six and a half months before, which is too short for
-     * anybody in it to age, marry, conceive, inherit or turn twelve.
-     * Asked of DEMO_SESSION_TICKS rather than a literal, so the two
-     * cannot drift apart the next time the length moves. */
+     * anybody in it to age, marry, conceive, inherit or turn twelve. */
     CHECK(a->sim_tick_no == DEMO_SESSION_TICKS &&
           b->sim_tick_no == DEMO_SESSION_TICKS,
           "the fixture session ran its ticks with no client attached");

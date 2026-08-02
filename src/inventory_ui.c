@@ -1,8 +1,4 @@
-/*  inventory_ui.c  --  Painting the stores overlay (UI_PLAN Phase 4)
- *
- *  Consumes the UiList inventory_build() produced, like every other
- *  overlay since Phase 1.
- */
+/* inventory_ui.c  --  Painting the stores overlay (UI_PLAN Phase 4) */
 
 #include "inventory_ui.h"
 #include "ui_kit.h"
@@ -130,10 +126,7 @@ void inventory_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
                  buf, !view->detail_known ? HEAD : (row->full ? WARN : TEXT));
 
             /* Capacity as a bar, not just a number: "nearly full" is the
-             * thing worth seeing, and a fraction makes you do arithmetic.
-             * Not drawn at all when the amount is unknown: a bar is a
-             * quantity with no way to say it does not know one, and an
-             * empty track reads as an empty warehouse. */
+             * thing worth seeing, and a fraction makes you do arithmetic. */
             if (row->capacity > 0 && view->detail_known) {
                 UiRect track = inventory_col_rect(w->rect, INV_COL_CAPACITY);
                 UiRect fillr;

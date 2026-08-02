@@ -1,17 +1,7 @@
 #ifndef RESOURCE_H
 #define RESOURCE_H
 
-/* =========================================================
- * resource.h  --  Resource types and stockpile  (Phase 4)
- *
- * A Stockpile holds one integer count per ResourceType.
- * All buildings read and write the single global Stockpile
- * that lives in GameState.
- *
- * GOLD is special: it is a currency, not a physical good.
- * In Phase 4 it simply accumulates (no spending yet).
- * Spending mechanics arrive in Phase 5 with population needs.
- * ========================================================= */
+/* resource.h  --  Resource types and stockpile  (Phase 4) */
 
 /* ---- Resource types ------------------------------------
  * RES_GOLD stays last on purpose: exchange_view.c's row loop
@@ -27,15 +17,7 @@ typedef enum {
     RES_MALT  = 4,
     RES_BEER  = 5,
 
-    /* ---- SUPPLY_CHAIN Phase 3: the northern base tiers ----
-     * Seven chains, each a raw good and what is made from it. They are
-     * grouped by chain rather than by raw/refined so a reader can see
-     * the pairs; RESOURCE_CATEGORIES says which is which.
-     *
-     * Inserting these before RES_GOLD shifts its value, which is why
-     * this phase bumps SAVE_VERSION — a log recorded before the change
-     * would replay as different commands. Every table indexed by this
-     * enum is designated, so none of them silently misalign. */
+    /* ---- SUPPLY_CHAIN Phase 3: the northern base tiers ---- */
     RES_PLANKS,     /* Timber   -> Sawmill                            */
     RES_WOOL,       /* Sheep Pasture                                  */
     RES_OILSKINS,   /* Wool     -> Knitting House   (Marshfolk want)  */
@@ -50,15 +32,7 @@ typedef enum {
     RES_FLOUR,      /* Grain    -> Windmill                           */
     RES_BREAD,      /* Flour    -> Bakehouse        (Wrights want)    */
 
-    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ----
-     * The first tier reached by UPGRADING rather than by building, so
-     * these are the first goods whose whole purpose is to promote a
-     * neighbourhood rather than to keep one alive.
-     *
-     * Four chains, each deeper than anything in Phase 3: ore and
-     * charcoal become iron before iron becomes anything else, so the
-     * Bloomery is the first building whose inputs are BOTH themselves
-     * manufactured. Grouped by chain, raw good first. */
+    /* ---- SUPPLY_CHAIN Phase 4: iron, glass and the Artisans ---- */
     RES_CHARCOAL,        /* Wood            -> Charcoal Kiln          */
     RES_IRON_ORE,        /* Iron Mine        (a deposit)              */
     RES_COAL,            /* Coal Mine        (a deposit)              */
@@ -76,32 +50,13 @@ typedef enum {
     RES_STEEL,           /* Iron + Coal     -> Foundry                */
     RES_SEWING_MACHINES, /* Steel + Planks  -> Machine Shop (Artisans)*/
 
-    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ----
-     * The chain that makes the south load-bearing rather than
-     * scenery. Cotton grows on no northern profile, Cloth comes only
-     * from Cotton, and Artisans want Fur Coats — so an Artisans
-     * neighbourhood cannot exist without a southern island and the
-     * voyage between. That is the shipping lane's whole argument.
-     *
-     * The rest of the southern goods (cane, cocoa, coffee, tobacco,
-     * maize, plantain, alpaca, lac) wait for Phase 7, which brings the
-     * Merchants and Investors tiers that eat them. Their CROPS are
-     * already in the ground — see PROFILE_PLANTATION and
-     * PROFILE_JUNGLE — because terrain is the expensive half. */
+    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ---- */
     RES_COTTON,     /* Cotton Field    (southern only)                */
     RES_CLOTH,      /* Cotton         -> Spinning Mill                */
     RES_PELTS,      /* Trapper's Lodge (northern forest)              */
     RES_FUR_COATS,  /* Pelts + Cloth  -> Furrier       (Artisans)     */
 
-    /* ---- SUPPLY_CHAIN Phase 6: Engineers ----
-     * The deepest tier yet, and the one that finally needs the whole
-     * archipelago at once: gold ore is highland, lac is jungle,
-     * lobster is any coast, and the glass and brass behind the rest
-     * are Phase 4's northern industry.
-     *
-     * Two of these are the first THREE-input buildings in real
-     * content — the Watchmaker's and the Gramophone Works — which is
-     * the limit Phase 2 reserved and nothing had exercised. */
+    /* ---- SUPPLY_CHAIN Phase 6: Engineers ---- */
     RES_GOLD_ORE,       /* Gold Mine        (highland deposit)         */
     RES_WIRE,           /* Iron            -> Wire Mill                */
     RES_SPRINGS,        /* Iron            -> Spring Works             */
@@ -112,17 +67,7 @@ typedef enum {
     RES_LOBSTER,        /* Lobster Pots     (coast)                    */
     RES_BANQUET,        /* Lobster + Preserves -> Fine Kitchen (Eng.)  */
 
-    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ----
-     * The third line, both halves, and the phase where the southern
-     * islands stop being a novelty and become what the top of the
-     * economy runs on. Every Merchants good starts in the south.
-     *
-     * It also settles the plan's last loose ends: Sails, Wool Cloaks
-     * and Plantain Fry appear in the chains table but in no tier's
-     * needs. Rather than ship producers nothing consumes, Sails became
-     * what a Shipyard is built from, and the other two joined the
-     * Merchants list -- which took it to six and MAX_TIER_GOODS with
-     * it. */
+    /* ---- SUPPLY_CHAIN Phase 7: Merchants and Investors ---- */
     RES_COFFEE_BEANS,   /* Coffee Grove      (jungle)                  */
     RES_COFFEE,         /* Beans          -> Roastery      (Merchants) */
     RES_CANE,           /* Cane Field        (plantation)              */
@@ -149,13 +94,7 @@ typedef enum {
     RES_FLOWERS,        /* Flower Field      (temperate)               */
     RES_PERFUME,        /* Flowers+Gin    -> Perfumery     (Investors) */
 
-    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ----
-     * Invented outright: the source notes name a Scholars tier and
-     * stop, giving it no needs and no chains. These are the plan's
-     * proposal, and they lean on what already exists rather than
-     * adding terrain -- ink from the jungle's lac, paper from timber,
-     * and the two things a scholar's household actually wants made
-     * from those. */
+    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ---- */
     RES_INK,       /* Shellac        -> Ink Works                      */
     RES_PAPER,     /* Wood           -> Paper Mill                     */
     RES_BOOKS,     /* Ink + Paper    -> Bindery       (Scholars)       */
@@ -170,12 +109,7 @@ extern const char *RESOURCE_NAMES[RES_COUNT];
 
 /* ---- Resource categories (UI_PLAN Phase 2) ----------------
  * What KIND of good this is, for grouping in lists long enough to want
- * sections — the exchange screen today, the inventory overlay later.
- *
- * The split is by position in the production chain, which is what makes
- * a market list readable: what you dig up, what you make out of it, and
- * the money. RCAT_NONE is 0 so a resource added without a category is
- * caught by tests/test_defs.c rather than quietly filed under raw. */
+ * sections — the exchange screen today, the inventory overlay later. */
 typedef enum {
     RCAT_NONE = 0,
     RCAT_RAW,        /* taken from the land or the sea               */
@@ -195,14 +129,7 @@ const char *resource_category_name(ResourceCategory c);
  * RES_GOLD's slot is unused (you can't sell currency for itself). */
 extern const int SELL_PRICE[RES_COUNT];
 
-/* Baseline buy price per unit — the faction's ask at baseline inventory
- * (faction_ask() moves it elastically from here). Deliberately pricier
- * than SELL_PRICE: a convenience markup (the market spread), so
- * gathering resources normally stays cheaper than buying around them.
- * This is the escape hatch for an island generated with no forest at
- * all: with no Lumberjack possible, Wood income may never exist, so
- * anything costing Wood (Warehouse, House, Marketplace) needs a
- * Gold-only path. RES_GOLD's slot is unused. */
+/* Baseline buy price per unit — the faction's ask at baseline inventory */
 extern const int BUY_PRICE[RES_COUNT];
 
 /* Per-resource storage cap before any Warehouse is built.
@@ -221,10 +148,7 @@ void stockpile_init(Stockpile *s);
 
 /* Add `delta` units of `res` to the stockpile.
  * delta may be negative (consumption).
- * Clamps to zero on the low end — stock never goes negative.
- * For every resource except RES_GOLD (a currency, not a physical
- * good — see the design note above ResourceType), also clamps to
- * s->capacity on the high end. */
+ * Clamps to zero on the low end — stock never goes negative. */
 void stockpile_add(Stockpile *s, ResourceType res, int delta);
 
 /* Set the storage cap applied to every non-gold resource.

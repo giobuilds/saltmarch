@@ -1,20 +1,4 @@
-/*  test_faction.c  --  headless verification of MMO_PLAN Phase 3
- *
- * The elastic NPC market. Uses sim_apply() directly to isolate a single
- * trade from the per-tick mean reversion, then sim_run_one_tick() to
- * exercise reversion. Checks the properties the plan calls out:
- *
- *   - Day-one neutrality: at baseline inventory the quotes equal the old
- *     fixed SELL_PRICE / BUY_PRICE.
- *   - Conservation: player gold + faction gold is unchanged by a trade.
- *   - Elasticity: selling raises faction inventory and lowers its bid.
- *   - Mean reversion: leaving it alone drifts inventory back to baseline
- *     and the bid recovers.
- *   - Finite gold: a near-broke faction buys only what it can pay for.
- *   - Finite inventory: the faction sells only what it holds.
- *
- * Built and run by tests/run.sh.
- */
+/* test_faction.c  --  headless verification of MMO_PLAN Phase 3 */
 
 #include "game.h"
 #include "faction.h"

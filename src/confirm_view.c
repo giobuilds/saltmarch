@@ -121,15 +121,7 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
             from = (BuildingType)isl->buildings[idx].type;
         tier = tier_def_for(from);
 
-        /* SUPPLY_CHAIN Phase 8: a house may have TWO futures — its own
-         * line, and Scholars wherever an Academy stands. The popup
-         * offers whichever exist, in that order, and the command it
-         * submits carries the branch in `c`. `alt` was free here: for
-         * an upgrade it had no second payment option to hold.
-         *
-         * Both buttons are decided by the SAME shared rule the sim
-         * will apply, one branch at a time, so neither can offer
-         * something sim_apply then refuses (UI_PLAN decision 3). */
+        /* SUPPLY_CHAIN Phase 8: a house may have TWO futures — its own */
         out->title[0] = '\0';
         nbranch = tier_branches(from, branch);
         for (bi = 0; bi < nbranch; bi++) {
@@ -153,18 +145,9 @@ void confirm_view_build(ConfirmView *out, const UiSnapshot *snap)
                 snprintf(out->lines[out->line_count++], CONFIRM_LINE_LEN,
                          "To live, and then to be glad of it:");
 
-                /* One row per good the tier being entered will need.
-                 * This is the whole point of the popup — the upgrade is
-                 * not a price, it is a question about whether you can
-                 * keep supplying them. Listed for the FIRST branch;
-                 * the second names its destination on its button. */
+                /* One row per good the tier being entered will need. */
                 if (next) {
-                    /* Basics first, then luxuries, each marked for what
-                     * it is (NEEDS_PLAN Phase 4). Both are shown because
-                     * moving in is gated on the BASICS alone: a player
-                     * looking at a greyed luxury should be able to see
-                     * that it is not what is stopping them, and that
-                     * they will want it once they are in. */
+                    /* Basics first, then luxuries, each marked for what */
                     for (k = 0; k < MAX_TIER_GOODS; k++) {
                         if (next->basic[k] == RES_COUNT) continue;
                         out->needs[out->need_count].luxury = 0;
@@ -279,18 +262,10 @@ void confirm_build(UiList *out, const ConfirmView *view,
     for (i = 0; i < view->line_count; i++)
         (void)ui_row(&l, CONFIRM_LINE_H);
 
-    /* The needs checklist. Pushed as widgets rather than drawn from
-     * the view directly so the drawer reads its rects from the same
-     * list as everything else — UI_W_HEADER keeps them out of the
-     * hit-test, which is what "label only" means here: a good you are
-     * missing is information, not a button. */
+    /* The needs checklist. Pushed as widgets rather than drawn. */
     for (i = 0; i < view->need_count; i++) {
         UiRect r = ui_row(&l, CONFIRM_NEED_H);
-        /* The value carries both facts the drawer needs: met, and
-         * whether this is something they live on or something they are
-         * glad of. Packed rather than passed alongside, because a
-         * UiWidget has one int and the alternative is a second list the
-         * drawer would have to index in step (NEEDS_PLAN Phase 4). */
+        /* The value carries both facts the drawer needs: met. */
         ui_list_push(out, ui_id(UI_GROUP_NONE, (uint16_t)i), r,
                      view->needs[i].label,
                      view->needs[i].met + (view->needs[i].luxury ? 2 : 0),

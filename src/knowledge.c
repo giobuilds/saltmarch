@@ -1,16 +1,5 @@
-/*  knowledge.c  --  What each player knows, and what they hold
- *                   (MARITIME_PLAN Phase 3b)
- *
- *  See knowledge.h for why knowing a route and holding a chart for it
- *  are separate, and why both are world state rather than something
- *  the client keeps to itself.
- *
- *  Every accessor tolerates a player id this does not track. That is
- *  not defensiveness: PLAYER_FACTION genuinely is the exception —
- *  the market sells the maps, so it knows every passage and is never
- *  short of one — and writing that here once is better than every
- *  caller remembering it.
- */
+/* knowledge.c  --  What each player knows, and what they hold
+ * (MARITIME_PLAN Phase 3b) */
 
 #include "knowledge.h"
 #include "island.h"      /* PLAYER_FACTION */

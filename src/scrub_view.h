@@ -1,21 +1,8 @@
 #ifndef SCRUB_VIEW_H
 #define SCRUB_VIEW_H
 
-/* =========================================================
- * scrub_view.h  --  The time-travel slider
- *                   (MMO_PLAN later phases)
- *
- * A world is (seed, ordered log), which means every past tick is still
- * reachable: re-simulate to it. This is the widget for that — a bar
- * across the bottom of the screen, click anywhere to travel.
- *
- * Layout and hit-testing here, SDL-free and tested, like every other
- * surface since UI_PLAN Phase 0. The drawer is in the client.
- *
- * Why it is worth having at all: a bug that only shows up after twenty
- * minutes of play is otherwise twenty minutes per attempt to look at.
- * With this it is a click, and the sim is frozen while you look.
- * ========================================================= */
+/* scrub_view.h  --  The time-travel slider
+ * (MMO_PLAN later phases) */
 
 #include <stdint.h>
 #include "ui_kit.h"

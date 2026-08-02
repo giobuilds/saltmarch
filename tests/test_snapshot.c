@@ -1,22 +1,5 @@
-/*  test_snapshot.c  --  the full-state snapshot
- *                       (SERVER.md, "Log truncation")
- *
- * A snapshot exists so a client can start at tick T instead of
- * replaying every tick to reach it. That is only sound if a world
- * restored from one is INDISTINGUISHABLE from the world it was taken
- * from -- not merely equal at the instant of loading, but equal for
- * ever after.
- *
- * So the central assertion here is not a round trip. It is: take a
- * snapshot, let the original run on, restore a second world and let it
- * run the same distance, and require the two to hash the same. A field
- * the encoder forgets will usually survive a round trip -- it is only
- * read once the sim moves -- and will show up here as divergence a few
- * hundred ticks later, which is exactly the bug this format could most
- * easily have.
- *
- * Built and run by tests/run.sh.
- */
+/* test_snapshot.c  --  the full-state snapshot
+ * (SERVER.md, "Log truncation") */
 
 #include "game.h"
 #include "building.h"
@@ -54,14 +37,7 @@ static GameState *build_busy_world(uint32_t seed, int ticks)
      * dormant world is a weak test). */
     isl->stockpile.amount[RES_GOLD] = 5000000;
 
-    /* Order matters, and it is the whole reason this helper exists.
-     * Houses need a road route to an active Warehouse or they are
-     * permanently unhappy, shed a resident every needs tick, and empty
-     * out -- leaving a "busy" world with no population and no agents,
-     * which is a snapshot test that proves nothing. So: warehouse
-     * first, houses on a sparse lattice, then roads carpeting every
-     * tile that is left, which guarantees each house touches the
-     * network. */
+    /* Order matters, and it is the whole reason this helper exists. */
     for (r = 0; r < MAP_ROWS; r++)
         for (c = 0; c < MAP_COLS; c++)
             if (building_can_place(&isl->map, BUILDING_WAREHOUSE, r, c)) {
@@ -69,11 +45,7 @@ static GameState *build_busy_world(uint32_t seed, int ticks)
                 r = MAP_ROWS; break;
             }
 
-    /* Workplaces as well as homes. Without somewhere to work every
-     * agent sits at AGENT_IDLE_HOME with an empty path, and path[] --
-     * the one variable-length thing in the format, and the only part
-     * whose length is itself encoded -- would go untested. Commuters
-     * are what put waypoints in a snapshot. */
+    /* Workplaces as well as homes. Without somewhere to work every */
     for (r = 0; r < MAP_ROWS && jobs < 12; r += 3)
         for (c = 0; c < MAP_COLS && jobs < 12; c += 3)
             if (building_can_place(&isl->map, BUILDING_LUMBERJACK, r, c)) {

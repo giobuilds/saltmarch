@@ -1,26 +1,12 @@
-/*  resident.c  --  a resident is a person  (LIFE_PLAN Phase 3)
- *
- *  See resident.h for why identity is split from motion and why names
- *  are derived rather than stored.
- */
+/* resident.c  --  a resident is a person  (LIFE_PLAN Phase 3) */
 
 #include "resident.h"
 #include "simlog.h"
 #include <stdio.h>
 #include <string.h>
 
-/* ---- names ------------------------------------------------
- * Marsh-flavoured and deliberately plain: these are fisherfolk and
- * farmhands, not heroes. 48 x 40 is 1920 combinations, which is more
- * than an island can hold, so a player rarely meets the same name twice
- * — and the collisions that do happen read as a family rather than as a
- * bug, which is the right failure. */
-/* SPLIT BY SEX SINCE PHASE 6b. Residents have a sex now because a
- * household is founded by a couple and only one half of one can be
- * pregnant, and a table that answered "Bess" for a man would put that
- * fact on screen as a mistake the moment anything displayed either.
- * The two lists are deliberately the same length, so neither sex draws
- * from a smaller pool and reads as less varied. */
+/* ---- names ------------------------------------------------ */
+/* SPLIT BY SEX SINCE PHASE 6b. Residents have a sex now because. */
 static const char *const FIRST_NAMES_F[] = {
     "Bess",  "Maud",  "Ivy",   "Neve",  "Sela",  "Nan",   "Tilda", "Marta",
     "Peg",   "Ada",   "Elsie", "Hettie","Winna", "Bryde", "Salla", "Grea",
@@ -44,16 +30,7 @@ static const char *const SURNAMES[] = {
 #define FIRST_COUNT (int)(sizeof(FIRST_NAMES_F) / sizeof(FIRST_NAMES_F[0]))
 #define SUR_COUNT   (int)(sizeof(SURNAMES)      / sizeof(SURNAMES[0]))
 
-/* FNV-1a over (world_seed, id, salt) with a murmur3 finaliser, the same
- * shape survey.c uses and for the same reasons: integer-only so every
- * platform agrees, byte-wise so a small id does not leave the low bits
- * doing all the work, and avalanched at the end because callers read
- * the LOW bits with `%` and FNV diffuses badly into those.
- *
- * A different salt per question makes "what is your first name", "what
- * is your surname" and "how old are you" independent — without it every
- * Bess would be the same age, which is the sort of pattern a player
- * notices long before they can say why. */
+/* FNV-1a over (world_seed, id, salt) with a murmur3 finaliser, the same */
 static uint32_t resident_hash(uint32_t world_seed, uint32_t id, uint32_t salt)
 {
     uint32_t h = 2166136261u;
@@ -129,12 +106,7 @@ void resident_name(const Resident *r, uint32_t world_seed,
  * they decide a house has gained or lost somebody. */
 
 /* Severs `idx`'s marriage from the OTHER side, so no live resident is
- * ever left pointing at a slot that has been cleared or reused.
- *
- * Reciprocity is checked rather than assumed: only a partner who names
- * `idx` back is widowed. Without that a stale one-way link — from an
- * older snapshot, or from a bug — would let one death silently divorce
- * a couple it had nothing to do with. */
+ * ever left pointing at a slot that has been cleared or reused. */
 static void widow_partner(Resident r[], int count, int idx)
 {
     int sp = r[idx].spouse;
@@ -143,21 +115,7 @@ static void widow_partner(Resident r[], int count, int idx)
     r[idx].spouse = -1;
 }
 
-/* A FOUNDER arrives grown, aged 20-31 and spread. The spread is the
- * anti-cohort invariant from resident.h; the CEILING is new in Phase
- * 6b and is the other half of the same concern. Founders used to
- * arrive at 20-45, which was harmless when a house was five unrelated
- * strangers and growth came off a boat. Now the founding pair are the
- * only fertile couple a house will ever have, so a mother who lands at
- * 44 has one year of fertility and the household never fills. Twenty
- * to thirty-one leaves fifteen-odd years of it: several children, and
- * still a decade of spread between two neighbouring houses.
- *
- * A NEWBORN is age zero, with no jitter, because a baby's age is not a
- * sample of anything — it is the one age a person is genuinely known
- * to be.
- *
- * Returns the slot used, or -1 if the island is full. */
+/* A FOUNDER arrives grown, aged 20-31 and spread. The spread is. */
 static int spawn_resident(Resident r[], int *count, uint32_t *next_id,
                           int home_idx, uint32_t world_seed,
                           int newborn, int sex)
@@ -270,11 +228,7 @@ int residents_mouths_at(const Resident r[], int count, int home_idx)
 
     for (i = 0; i < count; i++) {
         if (!r[i].active || r[i].home_idx != home_idx) continue;
-        /* A WHOLE RATION FOR ANYONE WHO WORKS (Phase 7b), which now
-         * includes a twelve-year-old. You eat what you burn, and a
-         * youth doing a shift is not a half-ration dependant. This
-         * gives back part of what the lower working age wins, which is
-         * the honest arithmetic rather than the flattering one. */
+        /* A WHOLE RATION FOR ANYONE WHO WORKS (Phase 7b), which now */
         if (of_working_age(&r[i])) adults++;
         else                       others++;
     }
@@ -344,54 +298,14 @@ static int marriageable(const Resident *r)
     return r->active && r->spouse < 0 && resident_stage(r) == LIFE_ADULT;
 }
 
-/* Two people who were born in the same house are brother and sister.
- *
- * THIS GUARD IS WHY birth_house EXISTS. Phase 6 paired within a house
- * on the reasoning that a house was six unrelated lodgers; Phase 6b
- * makes a house a family, and the very same rule would marry siblings
- * the month they both turned eighteen. Founders carry -1 and are
- * therefore never siblings of anyone, which is correct: they arrived
- * from somewhere else and from nobody here. */
+/* Two people who were born in the same house are brother and sister. */
 static int siblings(const Resident *a, const Resident *b)
 {
     return a->birth_house >= 0 && a->birth_house == b->birth_house;
 }
 
-/* Could these two live together after marrying?
- *
- * CROSS-HOUSEHOLD MARRIAGE (Phase 6c) exists because a house is a
- * family: everybody under one roof is either a parent or a sibling, so
- * a rule that only paired housemates left every child of the house
- * unmarried for life. Somebody therefore has to move, and a marriage is
- * only allowed when somebody CAN — a married couple who cannot share a
- * roof would be a couple that never conceives, which is a worse answer
- * than not marrying them.
- *
- * A MARRIAGE WITH NOWHERE TO GO IS STILL A MARRIAGE (Phase 7). When no
- * house on the island has room, the couple leave their parents' roofs
- * and join the reserve TOGETHER — which is where the reserve comes
- * from. It is not a queue of the homeless in general; it is a queue of
- * young couples who have married and have nowhere to live, and the
- * player clears it by building.
- *
- * Returns the house they would share, or RESIDENT_HOMELESS when the
- * answer is the reserve. There is no longer a refusal. */
-/* ---- inheritance (LIFE_PLAN Phase 7b) ----------------------
- * A HOUSE IS A LINE, NOT A TENANCY. When the couple who founded a
- * household are dead, the eldest of their children still living there
- * keeps the house and brings a spouse INTO it; the younger ones marry
- * out. That is what makes the hundred founder places buy a hundred
- * lines rather than a hundred marriages, and it is why an unmarried
- * sibling still under the roof is a member of a household rather than
- * something the model has to dispose of.
- *
- * THE ELDERS ARE WHOEVER WAS NOT BORN HERE — the founding pair, and any
- * spouse who married in. While one of them is alive the house is
- * theirs and the children marry out as normal. Only when the last of
- * them is gone does the eldest child born here become the heir.
- *
- * Returns that heir's index, or -1 while the house still has an elder
- * in it, or has nobody born there. */
+/* Could these two live together after marrying? */
+/* ---- inheritance (LIFE_PLAN Phase 7b) ---------------------- */
 /* ---- what a worker is worth (LIFE_PLAN Phase 8) ------------
  * See resident.h for the band, the four inputs and why the floor sits
  * where it does.
@@ -403,12 +317,7 @@ int resident_productivity(const Resident *r, int happiness)
     if (!r || !r->active) return PRODUCTIVITY_BASE;
     stage = resident_stage(r);
 
-    /* 1. PRIME. A youth of twelve works, and works at the baseline; an
-     * adult is worth more. Stated as a bonus for being grown rather
-     * than a penalty for being young, so the floor of the band belongs
-     * to somebody in a bad way rather than to every child on the
-     * island — and so a young island is not punished twice for the same
-     * fact it is already paying for in dependants. */
+    /* 1. PRIME. A youth of twelve works, and works at the baseline. */
     if (stage == LIFE_ADULT) p += PROD_PRIME_BONUS;
     if (stage == LIFE_RETIRED) p -= PROD_TIRED_PENALTY;
 
@@ -483,16 +392,7 @@ static int where_they_would_live(const Resident r[], int count, int a, int b,
         return RESIDENT_HOMELESS;
     if (ha == hb) return ha;                      /* already housemates */
 
-    /* THE HEIR KEEPS THE HOUSE, AND CAPACITY DOES NOT APPLY TO THEIR
-     * SPOUSE. This is the one exception to "capacity is enforced
-     * against arrivals", and without it inheritance does not work: a
-     * family home with a dozen people in it could never take anybody's
-     * husband or wife, so the heir would have to move out and the line
-     * would end in the one house it was supposed to continue in.
-     *
-     * Both checked; the lower index wins if both are heirs, so the
-     * outcome does not depend on which of the pair the scan reached
-     * first. */
+    /* THE HEIR KEEPS THE HOUSE, AND CAPACITY DOES NOT APPLY TO THEIR */
     {
         int ah = residents_heir_of(r, count, ha);
         int bh = residents_heir_of(r, count, hb);
@@ -537,13 +437,7 @@ void residents_marry(Resident r[], int count, PopData pop_data[],
 {
     int i, j, pass;
 
-    /* TWO PASSES, AND THE ORDER IS THE "PRIORITISE SOMEONE FROM ANOTHER
-     * HOUSEHOLD" RULE MADE LITERAL. Pass 0 considers only partners from
-     * a different household; pass 1 allows housemates. Siblings are
-     * refused in both, so the effect is that a young adult looks abroad
-     * first and settles for the house next door only if nothing came of
-     * it — rather than the scan order deciding, which is what a single
-     * pass would have meant. */
+    /* TWO PASSES, AND THE ORDER IS THE "PRIORITISE SOMEONE FROM ANOTHER */
     for (pass = 0; pass < 2; pass++)
     for (i = 0; i < count; i++) {
         if (!marriageable(&r[i])) continue;
@@ -560,22 +454,13 @@ void residents_marry(Resident r[], int count, PopData pop_data[],
             home = where_they_would_live(r, count, i, j, pop_data,
                                          building_count);
 
-            /* Salted with BOTH ids and the tick. Both, so the question
-             * is about this pair rather than about whoever happens to
-             * be scanning; the tick, so a pair that is refused this
-             * month is asked afresh next month instead of being
-             * refused forever by one unlucky draw — the same reason
-             * resident_dies is salted. */
+            /* Salted with BOTH ids and the tick. Both, so the question */
             draw = resident_hash(world_seed,
                                  r[i].id ^ (r[j].id * 2654435761u),
                                  0x6666u ^ (uint32_t)(tick & 0xFFFFFFFFu));
             if (draw % 1000u >= MARRY_PERMILLE_PER_MONTH) continue;
 
-            /* Whoever is not already living there moves. A marriage in
-             * this model IS a change of address — including when the
-             * address is nowhere: a couple with no room on the island
-             * leaves both parental roofs and enters the reserve, and
-             * their wait starts now. */
+            /* Whoever is not already living there moves. A marriage. */
             move_house(r, i, home, pop_data, building_count);
             move_house(r, j, home, pop_data, building_count);
             if (home == RESIDENT_HOMELESS) {
@@ -623,11 +508,7 @@ int residents_reserve_ration(const Resident r[], int count)
     return (residents_reserve_count(r, count) + 1) / 2;
 }
 
-/* The longest-waiting person in the reserve, or -1. Ordered on
- * reserve_since, which never resets — so a house laid for somebody else
- * does not send anybody back to the end of the queue, and neither does
- * being moved to another island. Ties break on slot index, which is
- * stable and therefore deterministic. */
+/* The longest-waiting person in the reserve, or -1. Ordered. */
 static int longest_waiting(const Resident r[], int count, int sex, int not_kin_of)
 {
     int i, best = -1;
@@ -721,15 +602,7 @@ int residents_emigrate(Resident r[], int count, uint64_t tick,
                    * (int64_t)CALENDAR_MONTH_TICKS)
             continue;
 
-        /* Either way they leave THIS island, so the slot is vacated
-         * either way. Relocation copies them somewhere else first; it
-         * does not mean they stay. Getting that wrong would have the
-         * same person standing on two islands at once, counted twice
-         * and eating twice.
-         *
-         * Widowed before the slot goes, for the reason widow_partner
-         * gives: a spouse left behind must not point into a slot the
-         * next arrival will reuse. */
+        /* Either way they leave THIS island, so the slot is vacated */
         if (relocate) relocate(ctx, i);
 
         widow_partner(r, count, i);
@@ -785,22 +658,7 @@ void residents_breed(Resident r[], int *count, uint32_t *next_id,
         if (!r[i].active || r[i].pregnancy <= 0) continue;
         if (--r[i].pregnancy > 0) continue;
 
-        /* A CHILD IS NEVER HOMELESS (Phase 7). It is born where its
-         * mother lives and stays there, and the house may exceed
-         * HOUSE_CAPACITY while its own children are young — capacity is
-         * enforced against people ARRIVING from elsewhere, never
-         * against a family's own.
-         *
-         * An earlier draft sent the overflow to the reserve, and it was
-         * wrong twice over: a newborn does not go and sleep in a field,
-         * and a reserve full of infants is a queue nothing can be done
-         * with for eighteen years. The reserve holds GROWN CHILDREN WHO
-         * HAVE LEFT HOME (residents_marry_ex), which is a queue the
-         * player can actually clear by building.
-         *
-         * A mother in the reserve is the one case with no house to be
-         * born into. Her child joins her there and carries her
-         * birth_house, so it still knows its siblings. */
+        /* A CHILD IS NEVER HOMELESS (Phase 7). It is born where. */
         {
             int home = r[i].home_idx;
             int at_home = home >= 0 && home < building_count
@@ -837,11 +695,7 @@ void residents_breed(Resident r[], int *count, uint32_t *next_id,
         int her;
 
         if (!pop_data[i].active) continue;
-        /* A FULL HOUSE STILL CONCEIVES (Phase 6c). This is the gate the
-         * reserve exists to remove: while it stood, a household stopped
-         * having children the month it filled its sixth bed, no child
-         * ever overflowed, and the reserve was permanently empty — which
-         * is precisely what the first run of this model measured. */
+        /* A FULL HOUSE STILL CONCEIVES (Phase 6c). This is the gate. */
         her = who_could_conceive(r, *count, i);
         if (her < 0) continue;
 
@@ -901,26 +755,8 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
         have   = live_counts[i];
         target = pop_data[i].residents;
 
-        /* THE ONLY PEOPLE THIS FUNCTION STILL CREATES ARE FOUNDERS
-         * (LIFE_PLAN Phase 6b). Growth inside an existing house is a
-         * birth now and belongs to residents_breed; what is left here
-         * is the moment a house first appears with pop_init's two
-         * residents in it, and the reconciliation that removes people
-         * when a starving house empties.
-         *
-         * The pair are spawned as one woman and one man and married to
-         * each other on the spot. Leaving them to the ordinary monthly
-         * draw would have worked, but it would have meant a new
-         * household waiting a random handful of months before it could
-         * begin — a delay with nothing to teach the player, since there
-         * is nobody else in the house either of them could have
-         * married instead. */
-        /* NOTHING IS SPAWNED HERE ANY MORE (Phase 6c). A household is
-         * founded by island_settle_house — from the founder allowance
-         * while it lasts, and out of the reserve after that — and grown
-         * by residents_breed. What is left is the downward
-         * reconciliation: a house that starved has to lose the people
-         * pop_update said it lost. */
+        /* THE ONLY PEOPLE THIS FUNCTION STILL CREATES ARE FOUNDERS */
+        /* NOTHING IS SPAWNED HERE ANY MORE (Phase 6c). A household. */
         (void)next_id; (void)world_seed;
         for (k = have; k > target; k--)
             despawn_one_for_home(residents, *count, i);

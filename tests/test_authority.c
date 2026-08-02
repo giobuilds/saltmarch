@@ -1,29 +1,5 @@
-/*  test_authority.c  --  the server's word is final
- *                        (SERVER_AUTHORITY.md Phase 1)
- *
- * Lockstep asked every client to reach the same answer independently
- * and checked that they had. Server authority does not ask: the server
- * pushes the world on a cadence and whatever a client believed is
- * replaced.
- *
- * That inverts what a test should look for. Under lockstep the thing
- * to prove was that the two worlds NEVER diverge. Here they are
- * expected to — a client predicts ahead between pushes, and being
- * briefly wrong is the design working. What has to be true is that
- * divergence is always TEMPORARY: however wrong a client gets, by
- * whatever means, the next push puts it back.
- *
- * So the tests here corrupt the client on purpose. SERVER_AUTHORITY.md
- * asks for adversarial tests "from the first commit, not after CI
- * complains", on the grounds that divergence between predicted and
- * authoritative state is a timing bug by nature and those do not show
- * up on a green local run. This is that.
- *
- * Uses net_pair_mem() like test_lockstep, so the protocol runs in full
- * over a deterministic transport.
- *
- * Built and run by tests/run.sh.
- */
+/* test_authority.c  --  the server's word is final
+ * (SERVER_AUTHORITY.md Phase 1) */
 
 #include "game.h"
 #include "net.h"
@@ -93,11 +69,7 @@ int main(void)
         /* Let them settle so a push has certainly landed. */
         for (i = 0; i < 40; i++) step(hn, hg, gn, gg, 1);
 
-        /* Corrupt an island the client OWNS. A foreign one would come
-         * back redacted rather than corrected (SERVER_AUTHORITY.md
-         * Phase 3), which is a different property and has its own
-         * test — asserting equality on somebody else's books here
-         * would be asserting that concealment does not work. */
+        /* Corrupt an island the client OWNS. A foreign one would come */
         for (i = 0; i < MAX_ISLANDS; i++)
             if (gg->islands[i].owner == 2u) { mine = i; break; }
         if (mine < 0) { printf("  FAIL: the client owns nothing\n"); return 1; }
@@ -129,11 +101,7 @@ int main(void)
     {
         int corrected = 0;
 
-        /* Once could be luck — a single push that happened to land
-         * after the damage. Do it repeatedly at different offsets
-         * within the push cadence, because a correction that only
-         * works when the damage falls in the right part of the cycle
-         * is a correction that works in tests and not in play. */
+        /* Once could be luck — a single push that happened to land */
         for (i = 0; i < 6; i++) {
             int j;
 
@@ -192,11 +160,7 @@ int main(void)
             g->islands[1].owner   = 2u;
             stockpile_init(&g->islands[1].stockpile);
 
-            /* Both islands need something that actually TICKS, or the
-             * test proves nothing: a bare island's stockpile is
-             * unchanged whether it was simulated or skipped, and an
-             * assertion that cannot tell the two apart passes happily
-             * against no implementation at all. Houses eat. */
+            /* Both islands need something that actually TICKS, or. */
             for (k = 0; k < 2; k++) {
                 Island *isl = &g->islands[k];
                 int     bi  = isl->building_count++;
@@ -242,11 +206,7 @@ int main(void)
 
     printf("\n=== and the flag is off everywhere it must be ===\n");
     {
-        /* The hazard this field carries is not that it might be wrong,
-         * it is that it might be SET somewhere it must not be: on the
-         * server, in a replay, or offline. Any of those stops the sim
-         * being a pure function of (seed, log), which is the sentence
-         * the whole codebase is built on. */
+        /* The hazard this field carries is not that it might be. */
         GameState *offline = game_init();
 
         if (!offline) { printf("game_init failed\n"); return 1; }

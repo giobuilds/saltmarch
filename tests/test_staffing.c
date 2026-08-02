@@ -1,28 +1,5 @@
-/*  test_staffing.c  --  a workplace holds a crew
- *                       (LIFE_PLAN Phase 1)
- *
- * WHAT WAS WRONG
- * ==============
- * agents_assign_jobs() kept a `claimed[]` FLAG and skipped any building
- * another agent had taken, so Building.worker_count was 0 or 1 and could
- * never be anything else. Production was therefore a step function of
- * labour: nothing at zero workers, full rate at one, and identical at
- * six. The gap between 0 and 1 was infinite and everything above it was
- * flat — an island with thirty idle residents and one Fisher's Hut
- * produced exactly what an island with one resident did.
- *
- * WHAT IS TRUE NOW
- * ================
- * A hut holds a crew, the def's rate is the PER-WORKER rate, and the
- * production clock advances by the headcount. Five hands land five fish.
- *
- * The assertions below are about the two halves separately — who gets
- * hired (agent.c) and what that buys (island.c) — because they fail for
- * different reasons and a test that only checked the fish would not say
- * which half broke.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_staffing.c  --  a workplace holds a crew
+ * (LIFE_PLAN Phase 1) */
 
 #include "game.h"
 #include "agent.h"
@@ -59,12 +36,7 @@ static void test_the_rule(void)
           "heavy industry holds more than one artisan's bench");
 }
 
-/* ---- 1b. what a FULL crew is worth (LIFE_PLAN Phase 2) -----
- * One worker alone pays the overhead; the second arrives to find it
- * paid. So a filled workplace beats the same people spread across
- * several — which is what makes where labour goes a decision at all,
- * rather than a slider that is always worth maxing and never worth
- * thinking about. */
+/* ---- 1b. what a FULL crew is worth (LIFE_PLAN Phase 2) ----- */
 static void test_a_full_crew_is_worth_more(void)
 {
     const BuildingDef *hut = &BUILDING_DEFS[BUILDING_FISHERS_HUT];
@@ -124,15 +96,7 @@ static int build_village(GameState *gs, int houses)
              * rather than building a village that can never fish. */
             if (!building_can_place(&isl->map, BUILDING_FISHERS_HUT, fr, wc))
                 continue;
-            /* A ROW OF PAVEMENT, NOT ONE TILE. The houses used to sit in
-             * the road's own row, so only the first of them touched it
-             * and every other house on the island was unreachable —
-             * which went unnoticed while one house held five people and
-             * one connected house was still a crew. With a couple to a
-             * house it stopped being enough, and the fixture was
-             * measuring an unreachable village rather than an
-             * understaffed hut. Same trap, same fix, as the one recorded
-             * in test_ageing's build_village. */
+            /* A ROW OF PAVEMENT, NOT ONE TILE. The houses used to sit. */
             for (h = 0; h < houses; h++) {
                 if (!building_can_place(&isl->map, BUILDING_ROAD,
                                         rr, wc + 1 + h)) ok = 0;
@@ -165,19 +129,7 @@ static int build_village(GameState *gs, int houses)
 }
 
 /* Runs `ticks` and reports the BUSIEST the hut ever got, plus what it
- * landed.
- *
- * The peak, not the instant. Building.worker_count is retallied every
- * tick from agents currently AGENT_WORKING, and an agent's cycle is
- * 60s of work, a commute, 15s of rest and a commute back — so reading
- * it on one arbitrary tick can say 0 about a hut that is plainly
- * fishing. That is not a defect this phase introduces; it is what
- * worker_count has always meant, and a test that sampled it once would
- * fail intermittently for reasons having nothing to do with hiring.
- *
- * (It is also why an island's real output is roughly four fifths of its
- * headcount: shifts and rest do not divide into the needs tick. The
- * calendar phase retunes 60+15 to 24+6 for exactly this reason.) */
+ * landed. */
 static int run_and_peak(GameState *gs, int hut, int ticks, int *landed)
 {
     Island *isl   = game_cur_island(gs);
@@ -195,14 +147,7 @@ static int run_and_peak(GameState *gs, int hut, int ticks, int *landed)
 
 /* ---- 2. who gets hired -------------------------------------
  * THE HEADLINE. Several houses' worth of residents against one hut;
- * before this phase exactly one of them would ever have had a job.
- *
- * FOUR HOUSES, NOT TWO, SINCE LIFE_PLAN Phase 6b. A house opens with a
- * COUPLE in it now rather than five grown strangers, so two houses is
- * four people and this test would be measuring an understaffed hut
- * rather than a crewed one. The village has to be laid wide enough that
- * the hut's five berths are the scarce thing, which is the whole point
- * of the assertion. */
+ * before this phase exactly one of them would ever have had a job. */
 static void test_a_crew_is_hired(void)
 {
     GameState *gs = game_init();
@@ -249,11 +194,7 @@ static void test_a_crew_is_hired(void)
     game_free(gs);
 }
 
-/* ---- 3. what that buys -------------------------------------
- * The production clock advances by the headcount, so the same hut over
- * the same interval lands more fish with more hands in it. Measured by
- * running the same world twice rather than asserting a number: the rate
- * is a content decision and this test is about the SHAPE of it. */
+/* ---- 3. what that buys ------------------------------------- */
 static void test_production_scales(void)
 {
     GameState *gs = game_init();
@@ -278,11 +219,7 @@ static void test_production_scales(void)
 
     CHECK(landed > 0, "the hut lands fish at all");
 
-    /* A minute of a crew of N is worth appreciably more than a minute of
-     * one. The comparison is against what a single worker could have
-     * managed over the same 60 seconds at the def's own rate — computed,
-     * not a recorded number, so retuning the Fisher's Hut does not make
-     * this test wrong. */
+    /* A minute of a crew of N is worth appreciably more than a minute. */
     {
         float secs = 600.0f / (float)SIM_TICKS_PER_SEC;
         int   solo = (int)(secs

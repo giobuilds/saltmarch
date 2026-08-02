@@ -1,9 +1,4 @@
-/*  vitals.c  --  The alert strip's rules (UI_PLAN Phase 4)
- *
- *  Each rule reads the snapshot and either produces one row or says
- *  nothing. See vitals.h for why this is a module rather than a few
- *  lines in the renderer.
- */
+/* vitals.c  --  The alert strip's rules (UI_PLAN Phase 4) */
 
 #include "vitals.h"
 #include "building.h"
@@ -83,32 +78,7 @@ static void rule_no_workers(RuleOutput *o, const UiIsland *isl)
         emit(o, VITAL_WARN, n, "%d without workers", n);
 }
 
-/* NAME THE GOOD, AND SAY WHICH KIND OF TROUBLE IT IS.
- *
- * This said "%d houses going hungry", which is the fact a player can
- * already see happening and not the one they need. A Marsh Cottage
- * wants Fish and Grain to live and Oilskins and Marsh Gin to be glad of
- * it — and the intuitive opening supplies one of the four, so the first
- * thing that happens in a new game is residents leaving for a reason
- * nothing on screen states. The tier's lists are right there in
- * TierDef; there was no reason to keep them to ourselves.
- *
- * NEEDS_PLAN Phase 4 splits the sentence in two, because the two
- * situations want different things from the player and one of them is
- * not urgent at all:
- *
- *   STARVING    below neutral: a BASIC is short, happiness is falling,
- *               and when it reaches the floor people start leaving.
- *   DISCONTENT  at neutral or above but below GROW: everybody is fed
- *               and nobody is arriving. A luxury is missing. This is a
- *               growth problem, not an emergency, and saying it in the
- *               same words as starvation taught players to ignore both.
- *
- * The good named is the one the most houses are short of, because the
- * strip has one row for each and a player fixes one chain at a time.
- * `tier_def_for` is the sim's own, not a copy: a screen with its own
- * idea of what a house eats would be a second answer to a question the
- * simulation already answers. */
+/* NAME THE GOOD, AND SAY WHICH KIND OF TROUBLE IT IS. */
 static int most_wanted(const int want[RES_COUNT], int known)
 {
     int i, best = -1;
@@ -218,12 +188,7 @@ static void rule_no_houses(RuleOutput *o, const UiIsland *isl)
         emit(o, VITAL_INFO, 0, "No houses — nobody works here");
 }
 
-/* ---- housing and the people waiting for it (Phase 7) -------
- * Three rules for one mechanic, because the player has no other way to
- * learn any of it. The Founder category is deliberately invisible, so
- * when the allowance runs out a newly laid house simply stays empty and
- * NOTHING on screen says why — a cliff that reads as a bug rather than
- * as a rule. These are that explanation. */
+/* ---- housing and the people waiting for it (Phase 7) ------- */
 
 static void rule_housing(RuleOutput *o, const UiIsland *isl)
 {

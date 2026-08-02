@@ -1,36 +1,4 @@
-/*  test_chart_view.c  --  the passages screen (UI_PLAN N4)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui, so this drives the real
- * layout, the real fold and the real hit-test rather than a copy of them.
- *
- * Two assertions carry the phase.
- *
- * The first is the expiry clock. A chart that quietly stops working is
- * worse than no chart, so the screen counts down to the tick a passage
- * goes out of use — and this runs the world to that tick and checks the
- * sim rotates ON it, not a minute either side. The countdown and the
- * event now come from one function in sea.c; before N4 the schedule
- * existed only inside game.c's update loop, where a screen could only
- * have copied it.
- *
- * The second is retention across a rotation. When a passage retires, the
- * pair's variant-1 slot starts naming DIFFERENT WATER — so a screen
- * rebuilt from the sea alone would swap the row under the cursor and a
- * click meant for one map would buy another. The retired row stays where
- * it was, marked, and its replacement is appended below.
- *
- * Also checked:
- *   - a passage you have not learned is a row like any other, with marks
- *     where its name and numbers would be (UI_PLAN N2) — the layout does
- *     not change shape with what you know;
- *   - what it saves is measured against the pair's own patrolled lane;
- *   - a Buy click emits a CMD_PLACE_ORDER naming a ROUTE, at the price
- *     the row was displaying — the route picker N3 could not be;
- *   - the panel fits 1920x1080 and pagination reaches every row;
- *   - a foreign harbour is a screen you can read and not act on.
- *
- * Built and run by tests/run.sh.
- */
+/* test_chart_view.c  --  the passages screen (UI_PLAN N4) */
 
 #include "chart_view.h"
 #include "ui_kit.h"
@@ -578,11 +546,7 @@ static void test_expeditions(void)
           w->reason == (uint8_t)REJ_NOTHING_TO_FIND,
           "knowing them all reads as 'you have charted this crossing'");
 
-    /* THE ASSERTION THIS SECTION EXISTS FOR: the button's reason and
-     * the sim's refusal are the same value, in every state — not two
-     * opinions that happen to agree today. Decision 3 says the message
-     * shown IS the reason the sim refused, and the only way to hold
-     * that without a shared validator is to check it. */
+    /* THE ASSERTION THIS SECTION EXISTS FOR: the button's reason. */
     {
         int trial;
 

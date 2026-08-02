@@ -1,36 +1,8 @@
 #ifndef UI_SNAPSHOT_H
 #define UI_SNAPSHOT_H
 
-/* =========================================================
- * ui_snapshot.h  --  What the UI is allowed to see
- *                    (UI_PLAN Phase 0, decision 1)
- *
- * A UiSnapshot is a copy of the world taken once per frame, AFTER the
- * tick accumulator has finished — so every overlay in a frame sees the
- * same tick, and none of them can observe the world mid-tick.
- *
- * The point is what it makes impossible. An overlay builder takes
- *
- *     *_build(UiList *, const UiSnapshot *, const UiState *)
- *
- * and never a GameState*, so "the UI mutated the stockpile" and "the UI
- * stepped the RNG" stop being review comments and become compile
- * errors. MMO_PLAN's risk register puts "a mutation path escapes the
- * funnel" at number one, and the UI is where those paths live.
- *
- * The second payoff is that a snapshot does not say where it came from.
- * Live sim, a replayed past tick, a remote server's state — the UI
- * cannot tell, which is what makes a time-travel scrubber or a
- * spectator view a matter of choosing a source rather than rewriting
- * overlays.
- *
- * Cost: ~20 KB memcpy'd per frame at MAX_BUILDINGS=600 across four
- * islands. Negligible beside a single frame of rendering, and the
- * alternative (handing out live pointers "just for reading") is how the
- * discipline erodes.
- *
- * SDL-free, like everything the UI kit touches.
- * ========================================================= */
+/* ui_snapshot.h  --  What the UI is allowed to see
+ * (UI_PLAN Phase 0, decision 1) */
 
 #include <stdint.h>
 #include "building.h"    /* MAX_BUILDINGS, BuildingType                */
@@ -63,20 +35,7 @@ typedef struct {
     uint8_t  docking_allowed;
     uint32_t owner;              /* player id, PLAYER_NONE if unowned  */
 
-    /* Is this island's detail KNOWN, or merely absent (UI_PLAN N1)?
-     *
-     * The most important byte in this struct, and the one it is easiest
-     * to do without and be wrong. Since SERVER_AUTHORITY Phase 3 a
-     * foreign island arrives with an empty building list and a zeroed
-     * stockpile — and those mean "you were not told", not "there is
-     * nothing there". A screen that renders the second reading is
-     * telling the player something false about a rival, and they will
-     * act on it: 0 Planks reads as a market to sell into rather than as
-     * an island you know nothing about.
-     *
-     * It is one flag for the whole island rather than one per field,
-     * because redaction is all-or-nothing per island and a per-field
-     * version would invite a UI that guesses which zeros are real. */
+    /* Is this island's detail KNOWN, or merely absent (UI_PLAN N1)? */
     uint8_t  detail_known;
 
     int32_t  stock[RES_COUNT];
@@ -114,13 +73,7 @@ typedef struct {
 
 /* The snapshot-side twin of island_has_building() (island.h): is an
  * active, road-connected building of `type` on this island?
- * BUILDING_NONE answers 1.
- *
- * Two copies of a six-line predicate, deliberately — the sim reads
- * Island and the UI reads UiIsland, and threading one function through
- * both would mean handing UI code a GameState, which is the thing this
- * whole header exists to prevent. tests/test_confirm.c asserts the two
- * agree over a real world, which is the safeguard that matters. */
+ * BUILDING_NONE answers 1. */
 int snapshot_has_building(const UiIsland *isl, BuildingType type);
 
 /* The tier-upgrade rule as the UI sees it: reads the house at `idx`,
@@ -136,12 +89,7 @@ typedef struct {
     float    progress;           /* 0..1, derived; cosmetic only       */
     int32_t  cargo[RES_COUNT];
 
-    /* What kind of hull, and how much of it is left (UI_PLAN N6). The
-     * guns-versus-hold trade is made at the yard and then invisible
-     * for the rest of the ship's life, which is most of the reason
-     * nobody ever built anything but a merchantman. `hull_max` rides
-     * along so a condition can be shown as a fraction without the UI
-     * holding a copy of the class table's numbers. */
+    /* What kind of hull, and how much of it is left (UI_PLAN N6). */
     int32_t  klass;              /* ShipClass                          */
     int32_t  guns, hull, hull_max;
     int32_t  hold;               /* per-resource capacity of this hull */
@@ -149,18 +97,8 @@ typedef struct {
     uint8_t  mine;               /* the local player commands it       */
 } UiShip;
 
-/* How the simulation itself is doing. Not world state — these are
- * facts about THIS CLIENT's run: whether the last determinism check
- * passed, whether the tick loop is keeping up, how stale the shared
- * feed is. UI_PLAN Phase 4 renders them through the same alert
- * machinery as "this farm has no worker", on the principle that the
- * player is the monitoring system: a stall should be visible seconds
- * after it starts rather than at the next desync. */
-/* ---- the maritime world, in UI terms (UI_PLAN N1) ---------
- * Bounds mirror the sim's so a full world always fits; they are named
- * separately so a UI file never has to include the sim's headers to
- * know how big an array is. Static asserts in ui_snapshot.c keep them
- * honest. */
+/* How the simulation itself is doing. Not world state — these. */
+/* ---- the maritime world, in UI terms (UI_PLAN N1) --------- */
 #define UI_MAX_ORDERS    256
 #define UI_MAX_BOOKINGS   64
 #define UI_MAX_ROUTES    512
@@ -273,29 +211,13 @@ typedef struct {
     ConfirmState confirm;
 } UiSnapshot;
 
-/* ---- client-side view state -------------------------------
- * Everything about how the world is being LOOKED at, as opposed to what
- * it is. Never hashed, never saved, never sent: two clients disagreeing
- * about which page of the trade screen is open is not a desync.
- *
- * It is also a pure fold over the input stream, which is what lets a
- * recorded session replay through the real UI in CI (UI_PLAN M1). */
+/* ---- client-side view state ------------------------------- */
 typedef struct {
     int32_t   hud_category;      /* HUD tab (UI_PLAN Phase 3)          */
     int32_t   exchange_page;     /* trade screen page (Phase 1)        */
     int32_t   inventory_page;    /* inventory overlay page (Phase 4)   */
 
-    /* The order book's page, and the draft order being composed on it
-     * (UI_PLAN N3). Everything above is a page index; this is the first
-     * COMPOSED state the UI has ever held, and it is here rather than
-     * on GameState for the same reason the pages are: two clients
-     * disagreeing about a half-written order is not a desync, and a
-     * draft that never becomes a Command never touches the world.
-     *
-     * It stays a pure fold over the input stream — book_hit() returns
-     * the value each click produces and the caller assigns it — which
-     * is what lets a recorded session replay the composer click by
-     * click rather than replaying its result. */
+    /* The order book's page, and the draft order being composed on. */
     int32_t   book_page;
     int32_t   book_side;         /* OrderSide: 0 buy, 1 sell           */
     int32_t   book_res;          /* ResourceType being composed        */
@@ -306,11 +228,7 @@ typedef struct {
     int32_t   yard_page;         /* the shipyard overlay (UI_PLAN N6)  */
 } UiState;
 
-/* Note: which overlay is OPEN is not here. Phase 0 sketched a
- * UiOverlay enum on this struct; Phase 4 gave the question a single
- * real owner instead — game_topmost_overlay() in game.h, reading the
- * flags that already exist on GameState. Two enums naming the same
- * thing is how they drift. */
+/* Note: which overlay is OPEN is not here. Phase 0 sketched. */
 
 /* Fill `out` from the live world. The one function in the UI layer that
  * is allowed to see a GameState — everything downstream takes the

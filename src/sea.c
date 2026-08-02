@@ -1,19 +1,5 @@
-/*  sea.c  --  Generating the water between the islands
- *             (MARITIME_PLAN Phase 1: sea geometry)
- *
- *  See sea.h for what a Sea is and why it is regenerated rather than
- *  saved. This file is the generator, and it is integer-only on
- *  purpose — every number it produces is one the simulation may later
- *  depend on, and a float that rounds differently on two machines
- *  would surface as a desync rather than as a wrong answer.
- *
- *  It draws its randomness from a hash of (seed, purpose, index)
- *  rather than from a running generator, the same technique map.c uses
- *  for its deposit and crop passes. That means generating waypoint 7
- *  never depends on how many times anything else was generated first,
- *  so adding a pass here cannot silently move everything downstream of
- *  it.
- */
+/* sea.c  --  Generating the water between the islands
+ * (MARITIME_PLAN Phase 1: sea geometry) */
 
 #include "sea.h"
 
@@ -77,12 +63,7 @@ uint32_t sea_distance(SeaPos a, SeaPos b)
     return isqrt32((uint32_t)sq);
 }
 
-/* ---- names ------------------------------------------------
- * Waypoints are places, so they have names rather than coordinates —
- * a lane described as "by the Gullet" reads as somewhere a person has
- * been. Authored content, like the island names: PRIVACY.md's rule is
- * about text a PLAYER supplies reaching world state, and this is not
- * that. */
+/* ---- names ------------------------------------------------ */
 static const char *const WAYPOINT_NAMES[] = {
     "the Gullet",      "Widow's Reach",   "Harrow Shoal",   "the Kelp Gate",
     "Drownman's Bar",  "the Bellows",     "Silt Narrows",   "Cormorant Rock",
@@ -94,12 +75,7 @@ static const char *const WAYPOINT_NAMES[] = {
 #define WAYPOINT_NAME_COUNT \
     ((int)(sizeof WAYPOINT_NAMES / sizeof WAYPOINT_NAMES[0]))
 
-/* ---- placement --------------------------------------------
- * Rejection sampling with a minimum separation, bounded so generation
- * always terminates. If the attempts run out the last candidate is
- * taken: a slightly crowded sea is a far better failure than a hang,
- * and the bound is generous enough that it does not happen at the
- * counts this uses. */
+/* ---- placement -------------------------------------------- */
 #define PLACE_ATTEMPTS 64
 
 static int too_close(SeaPos p, const SeaPos *taken, int count, int32_t min_d)
@@ -134,35 +110,16 @@ static SeaPos place_one(uint32_t seed, uint32_t purpose, uint32_t index,
     return p;
 }
 
-/* ---- routes -----------------------------------------------
- * A route from A to B threads the waypoint nearest the midpoint of the
- * crossing, so a path bends towards somewhere real rather than being a
- * straight line with a name. A waypoint too far off the line is
- * ignored — a detour past the far corner of the sea is not a route,
- * it is a mistake. */
+/* ---- routes ----------------------------------------------- */
 #define ROUTE_DETOUR_LIMIT 3   /* max detour, as a fraction: dist/N */
 
-/* The public lane is slower than the water alone requires: it is a
- * patrolled convoy route with mandated calls, not a straight run. This
- * is what MAKES public slow and private fast, and it is applied as a
- * duration penalty rather than left to the geometry because geometry
- * cannot promise it. A pair whose waypoints all happened to sit almost
- * on the direct line would otherwise generate three routes of nearly
- * identical length, and the entire risk/speed trade-off of Phase 3
- * would quietly not exist for that pair.
- *
- * Expressed as a numerator/denominator so it stays integer: hashed
- * state, so no floats (see sea.h). */
+/* The public lane is slower than the water alone requires: it is. */
 #define ROUTE_CONVOY_NUM   9
 #define ROUTE_CONVOY_DEN   8   /* the public lane takes 9/8 the time */
 
 /* Waypoints, ranked by how far off the direct line they sit. Fills
  * `out` with waypoint indices, nearest detour first, and returns how
- * many were within `limit_div` (a detour of at most direct/limit_div).
- * Ties break on the lower index so the ranking is total — two clients
- * that ordered a tie differently would generate different routes from
- * the same seed, which is the failure this whole file is written to
- * avoid. */
+ * many were within `limit_div` (a detour of at most direct/limit_div). */
 static int rank_waypoints(const Sea *sea, SeaPos a, SeaPos b,
                           int limit_div, int *out, int max_out)
 {
@@ -255,32 +212,7 @@ static void add_route(Sea *sea, int a, int b, int variant, int wp,
     sea->route_count++;
 }
 
-/* The three routes joining one pair.
- *
- *   variant 0, public   -- the patrolled convoy lane: a wider detour,
- *                          and slowed on top of it.
- *   variant 1, private  -- the open reach. Straight water, fastest.
- *   variant 2, private  -- a shortcut past the nearest waypoint.
- *
- * Two properties have to hold for EVERY pair, not merely for most, and
- * both are arranged by construction rather than hoped for:
- *
- *   The three are different water. Variant 1 threads no waypoint at
- *   all, and variants 0 and 2 are given different ones. Two routes
- *   through the same waypoint would be one route sold twice, and a
- *   chart for the second would buy nothing.
- *
- *   Every private passage beats the lane. The waypoints are ranked by
- *   how far off the direct line they sit and the lane always takes one
- *   ranked no nearer than the shortcut's, so the lane's path is at
- *   least as long BEFORE the convoy penalty is applied. If this ever
- *   stops holding, charts become a cost with no benefit.
- *
- * Both are asserted across seeds in test_sea, which is what caught the
- * first version of this function: it drew the two waypoints from
- * differently-limited rankings, and pairs with no waypoint near enough
- * to qualify fell back to open water for the lane as well — three
- * routes, two of them the same crossing, the "private" one slower. */
+/* The three routes joining one pair. */
 static void build_routes(Sea *sea, int a, int b)
 {
     enum { RANK_MAX = SEA_PRIVATE_POOL + 2 };
@@ -294,30 +226,13 @@ static void build_routes(Sea *sea, int a, int b)
     n = rank_waypoints(sea, sea->island[a], sea->island[b], 0,
                        rank, RANK_MAX);
 
-    /* The lane threads the FURTHEST waypoint any of this pair's routes
-     * uses, so that every private passage's path is shorter than the
-     * lane's before the convoy penalty is even applied. That is what
-     * keeps "every private passage beats the lane" true for the whole
-     * pool and not merely for the two that happen to be in play today
-     * — a passage that rotated in and turned out to be the long way
-     * round would be a chart that made you slower.
-     *
-     * It is the furthest of a BOUNDED set, not the furthest in the
-     * sea: the pool is small, and the ranking is by how far off the
-     * direct line a waypoint sits, so rank[SEA_PRIVATE_POOL - 1] is
-     * still a route rather than a tour. An early version took the
-     * furthest available anywhere and the mean public crossing went
-     * from ~200 ticks to 429. */
+    /* The lane threads the FURTHEST waypoint any of this pair's routes */
     if (n > SEA_PRIVATE_POOL - 1) lane_wp = rank[SEA_PRIVATE_POOL - 1];
     else if (n > 0)               lane_wp = rank[n - 1];
 
     add_route(sea, a, b, 0, lane_wp, ROUTE_CONVOY_NUM, ROUTE_CONVOY_DEN);
 
-    /* Then the pool of private passages. The first is the open reach —
-     * straight water, and the fastest thing between two islands. The
-     * rest thread the nearest waypoints, cheapest detour first, so a
-     * passage that rotates in later is a little slower than the one it
-     * replaced rather than arbitrarily different. */
+    /* Then the pool of private passages. The first is the open reach — */
     for (i = 0; i < SEA_PRIVATE_POOL; i++) {
         int wp = -1;
 
@@ -461,12 +376,7 @@ int sea_rotate_pair(Sea *sea, int pair)
 
 /* Pairs do NOT all turn over together: each is staggered by its own
  * index across one lifetime, so the sea changes shape continuously
- * rather than voiding every chart in the world on the same tick.
- *
- * The first rotation is a full lifetime in, not at the offset —
- * otherwise every pair whose stagger works out to zero would rotate on
- * tick 0, voiding charts in a world that has not had time to issue
- * any. */
+ * rather than voiding every chart in the world on the same tick. */
 uint64_t sea_pair_next_rotation(int island_count, int pair, uint64_t now)
 {
     uint64_t pairs = (island_count > 1)
@@ -498,13 +408,7 @@ SeaPos sea_route_point(const Sea *sea, const Route *route, uint32_t elapsed)
 
     if (!route) { from.x = 0; from.y = 0; return from; }
 
-    /* Seeded with the crossing's ends before the walk, so the tail
-     * `return to` is right by construction rather than because the
-     * loop is guaranteed to have run at least once. It is guaranteed —
-     * legs is waypoint_count + 1, so never zero — but MSVC cannot see
-     * that and warned, and it was right to: a function whose result
-     * depends on a loop having executed is one refactor away from
-     * returning a stack value. */
+    /* Seeded with the crossing's ends before the walk, so the tail */
     from = sea->island[route->from_island];
     to   = sea->island[route->to_island];
 

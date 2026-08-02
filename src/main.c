@@ -41,20 +41,12 @@ typedef struct {
     Feed          feed;
     NetSession   *net;   /* NULL when playing offline */
 
-    /* UI_PLAN Phase 0/1. The snapshot is rebuilt once per frame after
-     * the tick loop; overlays read it instead of GameState. `ui` is
-     * view state (which page you are on), never world state. The
-     * exchange view and its widget list are rebuilt each frame so the
-     * list that is hit-tested is the list that was drawn. */
+    /* UI_PLAN Phase 0/1. The snapshot is rebuilt once per frame. */
     UiSnapshot    snap;
     UiState       ui;
     ExchangeView  exchange;
     UiList        exchange_list;
-    /* The book's view is the one overlay state that PERSISTS between
-     * frames rather than being rebuilt from the snapshot: it remembers
-     * the rows it drew so an order that fills can be struck through
-     * where it stood instead of vanishing under the cursor
-     * (UI_PLAN N3). Reset when the panel opens, not when it is built. */
+    /* The book's view is the one overlay state that PERSISTS between */
     BookView      book;
     UiList        book_list;
     /* And the passages, retained for the same reason: a route that goes
@@ -93,21 +85,7 @@ typedef struct {
     uint16_t      join_port;
     int           joined;
 
-    /* --screenshot: draw N frames, save the last one, exit.
-     *
-     * The game takes its own picture because on a modern Wayland
-     * compositor nothing else can: GNOME refuses the screenshot D-Bus
-     * API to anything but its own portal, and X11 grabbers cannot see a
-     * Wayland surface at all. SDL_RenderReadPixels reads the renderer
-     * this program owns, so it works under any compositor and under
-     * none — SDL_VIDEODRIVER=offscreen included, which is what makes it
-     * usable from a script and from CI.
-     *
-     * This is the missing half of UI_PLAN's verification story. Every
-     * phase since Phase 0 has ended with "whether it READS well needs a
-     * human at the keyboard", and that is still true — but a human
-     * cannot look at what cannot be captured, and until now nothing
-     * could capture it. */
+    /* --screenshot: draw N frames, save the last one, exit. */
     char          shot_path[512];
     int           shot_frames;      /* frames to draw before saving     */
     int           shot_overlay;     /* GameOverlay to open, or 0        */
@@ -187,11 +165,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
-    /* Parsed before the window exists, because --screenshot decides
-     * what kind of window to make: a capture wants the logical
-     * resolution exactly, and a fullscreen window is whatever the
-     * display is — 1024x768 under the offscreen driver, which returns a
-     * downscaled picture that makes text look worse than it is. */
+    /* Parsed before the window exists, because --screenshot decides */
     for (i = 1; i < argc; i++) {
         if (SDL_strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             SDL_strlcpy(shot_path, argv[++i], sizeof(shot_path));
@@ -263,14 +237,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
      * session (or defaults to player 1 offline). */
     feed_init(&app->feed, SDL_getenv("SALTMARCH_PLAYER"));
 
-    /* Co-op (Phase 5): --host [port] listens for players; --join
-     * host[:port] connects to a host or to saltmarch_host, the dedicated
-     * server (Phase 6) — the client cannot tell the two apart, which is
-     * the point. --as N asks to resume the identity a previous session
-     * was given, so your island is still yours after a reconnect; the id
-     * to pass is the one the join logged and the HUD shows. The session
-     * lives in App; gs->net is the routing pointer command_submit and
-     * the tick gate consult. */
+    /* Co-op (Phase 5): --host [port] listens for players; --join */
     app->net = NULL;
     {
         uint32_t resume_id = PLAYER_NONE;
@@ -318,13 +285,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     *appstate = app;
 
-    /* A missing font is not cosmetic: every resource count, price and
-     * menu label is text, so without it the game renders but cannot be
-     * played. We still start (so the map is at least inspectable) but
-     * log at ERROR severity, and the CI smoke test asserts the
-     * "Fonts loaded:" line — otherwise this fails silently and green,
-     * which is exactly how it went unnoticed that the font path only
-     * ever existed on Fedora. */
+    /* A missing font is not cosmetic: every resource count, price. */
     if (!fonts_init())
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Fonts unavailable — no text will render, and the game "
@@ -635,13 +596,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
             case WORLD_HIT_ISLAND:
                 if (gs->world_selected_ship >= 0) {
-                    /* A ship is selected, so an island click is an
-                     * order to sail there rather than a view change —
-                     * the same select-then-click grammar the HUD uses
-                     * for placing buildings. Routed through the command
-                     * funnel like every other mutation (Phase 1a); the
-                     * depart's own validation handles "not docked" and
-                     * "already there". */
+                    /* A ship is selected, so an island click is. */
                     game_ship_depart(gs, gs->world_selected_ship, target);
                 } else if (target >= 0) {
                     game_set_current_island(gs, target);
@@ -661,12 +616,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 if (gs->world_selected_ship >= 0) {
                     int at = gs->ships[gs->world_selected_ship].at_island;
                     game_colonise(gs, gs->world_selected_ship, at);
-                    /* Colonisation applies at the next tick boundary, so
-                     * its result is not known here. Optimistically show
-                     * the target island: the world map only offers this
-                     * action for a ship docked at an unsettled island
-                     * with the founding gold aboard, and nothing can
-                     * change that before the next tick. */
+                    /* Colonisation applies at the next tick boundary. */
                     if (at >= 0) {
                         game_set_current_island(gs, at);
                         isl = game_cur_island(gs);
@@ -792,11 +742,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
-        /* The order book (UI_PLAN N3). Most of these clicks compose the
-         * draft rather than submitting anything: book_hit() returns the
-         * draft as it is AFTER the click and the assignment below is
-         * the whole of the fold, which is what keeps UiState derivable
-         * from the input stream alone. */
+        /* The order book (UI_PLAN N3). Most of these clicks compose. */
         } else if (gs->book_open) {
             BookHit bh = book_hit(&app->book_list, &app->book, &app->ui,
                                   (float)gs->input.logical_x,
@@ -1073,11 +1019,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                                                       gs->hovered_col);
                     if (found >= 0) game_confirm_demolish(gs, found);
                 } else if (gs->selected_building == BUILDING_NONE) {
-                    /* Nothing selected, so a map click means "interact
-                     * with whatever building is here". Every case needs
-                     * the building to be road-connected, so that check
-                     * is hoisted out of the switch rather than repeated
-                     * per branch. */
+                    /* Nothing selected, so a map click means "interact */
                     int found = game_find_building_at(gs, gs->hovered_row,
                                                       gs->hovered_col);
                     if (found >= 0 && isl->buildings[found].connected) {
@@ -1106,11 +1048,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                         }
                     }
                 } else if (gs->selected_building == BUILDING_ROAD) {
-                    /* Roads are exempt from the confirm popup — also
-                     * placeable by dragging (client_update()'s per-frame
-                     * drag check), and a per-tile confirmation would
-                     * make that gesture unusable. A single click
-                     * behaves the same way a 1-tile drag does. */
+                    /* Roads are exempt from the confirm popup — also */
                     if (game_try_place_road(gs, gs->hovered_row,
                                             gs->hovered_col))
                         fx_reject_expect(&app->fx, gs->cmd_seq_last,
@@ -1139,11 +1077,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         intent_record(gs, &app->intent);
     }
 
-    /* Right click closes the topmost overlay, else deselects. The
-     * order comes from game_topmost_overlay() rather than a second
-     * hand-maintained list of flags (UI_PLAN Phase 4) — the two used to
-     * be written out separately here and in the click cascade, which is
-     * how they drift. */
+    /* Right click closes the topmost overlay, else deselects. */
     if (gs->input.right_click) {
         switch (game_topmost_overlay(gs)) {
         case UI_OVERLAY_MENU:      gs->menu_open      = 0; break;
@@ -1180,12 +1114,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                      gs->hovered_row, gs->hovered_col,
                      gs->placement_valid);
 
-        /* Why the ghost is red, said at the cursor (UI_PLAN Phase 0.5).
-         * Localized rather than a corner toast: the answer belongs to
-         * the tile being pointed at, and a player scanning for a legal
-         * spot reads it without moving their eyes. The string comes
-         * from the rejection vocabulary the sim itself uses, so it
-         * cannot drift from the actual verdict. */
+        /* Why the ghost is red, said at the cursor (UI_PLAN Phase 0.5). */
         if (!gs->placement_valid &&
             gs->placement_reason != (int)REJ_OK) {
             SDL_Color warn = { 235, 120, 110, 255 };
@@ -1430,14 +1359,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     SDL_RenderPresent(app->r);
 
-    /* --screenshot: one frame, off the renderer this program owns.
-     *
-     * Read AFTER present rather than before, because present is what
-     * puts the frame on the backbuffer every driver agrees about;
-     * reading first works on some and returns the previous frame on
-     * others. A few frames of warm-up first so the world has ticked and
-     * the HUD has something in it — frame zero of any game is a picture
-     * of nothing having happened yet. */
+    /* --screenshot: one frame, off the renderer this program owns. */
     if (app->shot_path[0] && --app->shot_frames <= 0) {
         SDL_Surface *shot = SDL_RenderReadPixels(app->r, NULL);
         int          ok   = 0;

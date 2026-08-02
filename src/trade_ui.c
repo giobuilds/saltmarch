@@ -1,9 +1,4 @@
-/*  trade_ui.c  --  Painting the exchange screen (UI_PLAN Phase 1)
- *
- *  Consumes the UiList that exchange_build() produced. Nothing here
- *  decides where anything goes; if a rect looks wrong, the bug is in
- *  exchange_view.c and there is a headless test that can prove it.
- */
+/* trade_ui.c  --  Painting the exchange screen (UI_PLAN Phase 1) */
 
 #include "trade_ui.h"
 #include "fonts.h"
@@ -259,11 +254,7 @@ void trade_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     }
 
     /* The refusal, just above the cursor — where the eye already is,
-     * rather than off at the widget it belongs to.
-     *
-     * Kept on screen by budgeting a fixed box rather than measuring the
-     * string: layout may not consult font metrics (ui_kit.h's hard
-     * rule), so the clamp assumes the widest reason in the table. */
+     * rather than off at the widget it belongs to. */
     if (hover_reason != REJ_OK) {
         const float TIP_W = 200.0f, TIP_H = 18.0f;
         UiRect      screen = { 0.0f, 0.0f, (float)screen_w, (float)screen_h };

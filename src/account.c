@@ -1,34 +1,8 @@
-/*  account.c  --  The sidecar (AUTH_PLAN Phase 1)
- *
- *  Line-oriented text with hex fields, on purpose. This is an
- *  administrative surface read once at startup, not a hot path, and an
- *  admin who has to ban or reset somebody at 2am should be able to do
- *  it with an editor rather than with a tool that does not exist yet.
- *  The security-sensitive part is the credential, not the container.
- *
- *  SDL-free, like everything the server links.
- */
+/* account.c  --  The sidecar (AUTH_PLAN Phase 1) */
 
 #ifdef _WIN32
 /* Before any CRT header, which is the only place either of these has an
- * effect.
- *
- * _CRT_RAND_S exposes rand_s (see account_random below).
- *
- * _CRT_SECURE_NO_WARNINGS turns off MSVC's C4996 deprecation of fopen
- * and sscanf, which /WX makes fatal. The "secure" replacements it
- * suggests — fopen_s, sscanf_s — are MSVC-only, and this file compiles
- * as C99 on three compilers; taking the advice would mean maintaining
- * the sidecar's parser in two dialects for a file that is read once at
- * startup. The warning is also not about the risk it sounds like: what
- * makes fopen "unsafe" in Microsoft's sense is the absence of a
- * returned error code, and every call here is checked.
- *
- * Scoped to this file rather than added to CMakeLists, deliberately.
- * The rest of the tree calls fopen without tripping this on MSVC —
- * game.c has done so through every green Windows build — so whatever
- * the difference is, suppressing it project-wide would switch off a
- * warning nothing else is asking to have switched off. */
+ * effect. */
 #  define _CRT_RAND_S
 #  define _CRT_SECURE_NO_WARNINGS
 #endif
@@ -205,11 +179,7 @@ AccountResult account_verify(AccountStore *s, uint32_t id,
 
     if (out_player) *out_player = 0u;
 
-    /* An unknown id is refused without touching a hash, which is
-     * observable — but what it reveals ("that id does not exist") is
-     * already enumerable from ids being small integers, and pretending
-     * otherwise would mean hashing against a fake salt for every
-     * garbage id an attacker sends. Named rather than hidden. */
+    /* An unknown id is refused without touching a hash, which. */
     if (!a) return ACCOUNT_UNKNOWN;
 
     if (a->locked_until_ms > now_ms) return ACCOUNT_LOCKED;

@@ -1,23 +1,5 @@
-/*  test_charts.c  --  route knowledge and the maps that buy it
- *                     (MARITIME_PLAN Phase 3b)
- *
- * Phase 3a put three routes between every pair and left all of them
- * usable. This is the half that makes two of them secret, and the
- * properties worth asserting are the ones a player would notice going
- * wrong:
- *
- *   - a passage you have no map for is not a passage you can sail,
- *     however fast it is;
- *   - a map you hold gets spent, so the advantage is bought and not
- *     granted;
- *   - knowing outlives holding, because a trader who has sailed a
- *     strait does not forget where it was;
- *   - and a chart is a THING — it can be bought and sold like cargo,
- *     which is what the (kind, id) trade identity was built for two
- *     phases ago.
- *
- * Built and run by tests/run.sh. Linked without SDL: this is sim.
- */
+/* test_charts.c  --  route knowledge and the maps that buy it
+ * (MARITIME_PLAN Phase 3b) */
 
 #include "game.h"
 #include "knowledge.h"
@@ -66,11 +48,7 @@ static GameState *two_traders(uint32_t seed)
     gs->islands[1].stockpile.amount[RES_GOLD]   = 1000000;
     gs->islands[0].stockpile.amount[RES_PLANKS] = 1000;
 
-    /* Aim the market maker at goods these tests never trade, as
-     * test_orderbook does: it quotes the six it is furthest from
-     * baseline on, so overstocking six others keeps Planks out of its
-     * book and the counts below are the test's own. Its chart offers
-     * are harmless here — nobody bids on them. */
+    /* Aim the market maker at goods these tests never trade. */
     {
         static const ResourceType DECOY[FACTION_QUOTE_GOODS] = {
             RES_WOOD, RES_FISH, RES_GRAIN, RES_WOOL, RES_CLOTH, RES_FISH_OIL
@@ -225,11 +203,7 @@ int main(void)
         if (!gs) { printf("game_init failed\n"); return 1; }
         fastest_private(&gs->sea, 0, 1, &rid);
 
-        /* Player 1 has two maps and sells one to player 2. This is the
-         * whole reason a trade identity is a (kind, id) pair rather
-         * than a ResourceType: a chart for THIS passage is a different
-         * object from a chart for any other, and neither could ever
-         * have had an enum slot. */
+        /* Player 1 has two maps and sells one to player 2. This is. */
         knowledge_add_charts(&gs->knowledge, 1u, rid, 2);
 
         place(gs, 1u, 0, TRADE_ROUTE_CHART, (uint16_t)rid, -1, 100);
@@ -317,11 +291,7 @@ int main(void)
         priv = fastest_private(&gs->sea, 0, 1, &rid);
         lane = sea_route_between(&gs->sea, 0, 1);
 
-        /* Since Phase 5b a raid is not a chance, it is a place: cargo
-         * is taken because a fleet was lying in the water it passed
-         * through. So what "dangerous" means is now measurable — how
-         * much of a route runs within strike range of somewhere a
-         * fleet can be. */
+        /* Since Phase 5b a raid is not a chance, it is a place: cargo */
         for (w = 0; w < gs->sea.waypoint_count; w++) {
             SeaPos   here = gs->sea.waypoint[w].pos;
             uint32_t t;
@@ -342,14 +312,7 @@ int main(void)
               "and the water between two islands passes somewhere one "
               "could be");
 
-        /* The trade-off survives the mechanism change, and it very
-         * nearly did not. Danger used to be a per-route CHANCE and
-         * "public are slow but protected" was that number being
-         * smaller; when a raid became a matter of where a cargo
-         * sailed, that number stopped doing anything — and the lane
-         * threads a WIDER waypoint than any private passage, so on
-         * geography alone the safe route had become the exposed one.
-         * The escort is what puts it back. */
+        /* The trade-off survives the mechanism change, and it very */
         {
             int taken_lane = 0, taken_priv = 0, t;
             for (t = 0; t < 400; t++) {
@@ -405,11 +368,7 @@ int main(void)
         CHECK(slot >= 0, "a shipment is on the water");
         bk = &gs->book.booking[slot];
 
-        /* Put a fleet exactly where this cargo is going to be. That is
-         * a fair thing for a test to do now: a raid is caused by a
-         * position, so arranging the position IS arranging the raid —
-         * where before the only way in was to search for a tick whose
-         * hash came out the right way. */
+        /* Put a fleet exactly where this cargo is going to be. That. */
         {
             SeaPos       mid;
             const Route *r = &gs->sea.route[bk->route_id];
@@ -582,17 +541,7 @@ int main(void)
               survey_succeeds(4242u, 7, 11u, 1u),
               "the same expedition always has the same fate");
 
-        /* And the odds must hold for EVERY passage over the SPAN THE
-         * GAME ACTUALLY ASKS ABOUT — low route ids, early ticks — not
-         * merely on average across a large sample. The first version
-         * of this derivation passed every other test here while giving
-         * one route a 0% loss rate over two hundred consecutive ticks.
-         * Widen the sample and it looked fine; that is exactly why the
-         * sample here is narrow.
-         *
-         * A derived outcome that is deterministic but visibly lumpy is
-         * worse than a random one: it reads to a player as the game
-         * having decided something about them. */
+        /* And the odds must hold for EVERY passage over the SPAN. */
         {
             int r, worst = 100000, best = 0;
 
@@ -647,11 +596,7 @@ int main(void)
         CHECK(isl->scholars_out == 0 && isl->research_boats_out == 0,
               "the crew is released either way");
 
-        /* A pair has TWO private passages, so charting one leaves
-         * something still worth looking for — the next expedition aims
-         * at the other. Only when both are known is there nothing left
-         * to find, and then the survey is refused rather than quietly
-         * burning the paper. */
+        /* A pair has TWO private passages, so charting one leaves */
         {
             int v, remaining = 0;
             for (v = 0; v < SEA_ROUTES_PER_PAIR; v++) {
@@ -686,11 +631,7 @@ int main(void)
     {
         int attempt, seen = 0;
 
-        /* A fresh world per attempt, each dispatching at a different
-         * tick. One world cannot supply enough samples: an expedition
-         * that succeeds charts its passage, a pair has only two, and
-         * after fourteen the player knows every private route out of
-         * their island and nothing further can sail at all. */
+        /* A fresh world per attempt, each dispatching at a different */
         for (attempt = 0; attempt < 60 && !seen; attempt++) {
             GameState *gs = two_traders(4242u);
             Island    *isl;
@@ -723,29 +664,14 @@ int main(void)
 
                 seen = 1;
 
-                /* Measure across the tick that RESOLVES the mission,
-                 * not across the whole voyage: residents rise and fall
-                 * on their own over nine hundred ticks, and a
-                 * before-and-after spanning all of it would be
-                 * measuring the food supply instead. */
+                /* Measure across the tick that RESOLVES the. */
                 while (gs->sim_tick_no + 1 < finish) sim_run_one_tick(gs);
                 boats_before     = isl->research_boats;
-                /* THE ISLAND'S TOTAL, not one house's. game_take_scholar
-                 * takes from whichever house is largest so it cannot
-                 * empty a small one, and since households stopped being
-                 * uniform (Phase 7) that is rarely the house this test
-                 * happens to hold an index to. What the rule actually
-                 * promises is that the island is one person lighter. */
+                /* THE ISLAND'S TOTAL, not one house's. game_take_scholar */
                 residents_before = pop_total(isl->pop_data,
                                              isl->building_count);
                 {
-                    /* SINCE LIFE_PLAN Phase 7 the two ticks below may
-                     * cross a calendar month, and a month is when
-                     * births, deaths, marriages and the reserve all
-                     * move. Exactness is only available when they do
-                     * not, so the assertion says what it can prove:
-                     * the house is smaller, and by exactly one when
-                     * nothing else was allowed to happen. */
+                    /* SINCE LIFE_PLAN Phase 7 the two ticks below may */
                     uint64_t t0 = gs->sim_tick_no;
                     int      crosses = 0;
                     uint64_t k;

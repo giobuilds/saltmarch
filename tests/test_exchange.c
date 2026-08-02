@@ -1,28 +1,4 @@
-/*  test_exchange.c  --  the exchange screen (UI_PLAN Phase 1)
- *
- * The phase exists to retire a capacity cliff: the old trade overlay
- * derived its height from the number of goods, so at six goods it was
- * 722px tall and at ten it would have been 1130px on a 1080px screen.
- * The headline assertion here is therefore the boring-looking one —
- * at 6, 10, 25 and 40 goods, every rect still lies inside 1920x1080.
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui, so this drives the real
- * layout and the real hit-test rather than a copy of them.
- *
- * Also checked:
- *   - pagination arithmetic against the real panel geometry;
- *   - the hit round trip: clicking where a button was drawn yields the
- *     resource and quantity that button meant;
- *   - IDENTITY, not position: the same click on page 2 resolves to the
- *     resource that is actually there, which is the property that stops
- *     an old recorded click replaying as a trade in the wrong good;
- *   - buttons are refused with the right reason (no stock, no gold, no
- *     room, counterparty broke);
- *   - a scripted click sequence produces the expected sequence of
- *     (kind, resource, qty) — the miniature version of the M1 harness.
- *
- * Built and run by tests/run.sh.
- */
+/* test_exchange.c  --  the exchange screen (UI_PLAN Phase 1) */
 
 #include "exchange_view.h"
 #include "ui_kit.h"

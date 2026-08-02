@@ -1,14 +1,5 @@
-/*  orderbook.c  --  Posting, cancelling and matching
- *                   (MARITIME_PLAN Phase 2: the order book)
- *
- *  See orderbook.h for why a trade identity is a kind and an id, and
- *  why goods are reserved at posting rather than at filling.
- *
- *  This file holds only the container operations. The rules that move
- *  goods and gold live in game.c beside the other sim_* mutators,
- *  because they touch stockpiles and must run inside the same funnel
- *  as everything else that changes the world.
- */
+/* orderbook.c  --  Posting, cancelling and matching
+ * (MARITIME_PLAN Phase 2: the order book) */
 
 #include "orderbook.h"
 

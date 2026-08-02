@@ -1,25 +1,4 @@
-/*  test_sea_view.c  --  the sea as a place (UI_PLAN N5)
- *
- * Linked WITHOUT SDL, against libsaltmarch_ui. Before N5 none of this
- * could be tested at all: the map's geometry lived inside a function
- * that also called SDL, so "is that route on screen" was a question only
- * a human at the keyboard could answer.
- *
- * What is asserted:
- *   - every path, waypoint and cargo marker lands inside 1920x1080,
- *     including the islands at the very corners of the sea;
- *   - a route is drawn as a PATH — harbour, its waypoints in order,
- *     harbour — not as a straight line between two nodes;
- *   - a passage this player has not learned is not plotted, and buying
- *     the chart is what puts it on the map;
- *   - a shipment's marker advances monotonically along its route and
- *     arrives at the destination harbour on the tick the cargo lands;
- *   - a fleet's lair is marked at the waypoint it lies at, which is the
- *     only way "this passage is fast but unsafe" is visible before the
- *     cargo is lost.
- *
- * Built and run by tests/run.sh.
- */
+/* test_sea_view.c  --  the sea as a place (UI_PLAN N5) */
 
 #include "sea_view.h"
 #include "game.h"

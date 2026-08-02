@@ -1,13 +1,4 @@
-/*  render.c  --  SDL rendering  (Phase 6: sprite rendering)
- *
- *  CHANGED Phase 6:
- *  - render_map() uses SDL_RenderTexture() when sprites are loaded,
- *    falls back to draw_diamond() if sprites unavailable
- *  - render_buildings() renders the composited building texture,
- *    positioned so the base sits on the tile's diamond face
- *  - draw_diamond() kept for fallback and ghost/hover overlay
- *  - screen_to_iso() centroid offset updated for new TILE_W/H
- */
+/* render.c  --  SDL rendering  (Phase 6: sprite rendering) */
 
 #include "render.h"
 #include "calendar.h"
@@ -45,9 +36,7 @@ static const SDL_Color DEPOSIT_COLOURS[DEPOSIT_COUNT] = {
     [DEPOSIT_PEARLS]   = { 245, 235, 240, 255 },
 };
 
-/* =========================================================
- * Coordinate conversion
- * ========================================================= */
+/* Coordinate conversion */
 void iso_to_screen(float row, float col, const Camera *cam,
                    float *out_x, float *out_y)
 {
@@ -71,9 +60,7 @@ void screen_to_iso(int sx, int sy, const Camera *cam,
     *out_row = (int)floorf( (py / hh - px / hw) / 2.0f );
 }
 
-/* =========================================================
- * Fallback diamond drawing (no sprites)
- * ========================================================= */
+/* Fallback diamond drawing (no sprites) */
 void render_draw_diamond(SDL_Renderer *renderer,
                          float bx, float by, float zoom,
                          SDL_Color top_col, SDL_Color bot_col)
@@ -133,9 +120,7 @@ void render_draw_diamond_outline(SDL_Renderer *renderer,
     SDL_RenderLine(renderer, bx+tw, by+hh, bx+hw, by);
 }
 
-/* =========================================================
- * Public render functions
- * ========================================================= */
+/* Public render functions */
 
 void render_clear(SDL_Renderer *renderer)
 {
@@ -145,12 +130,7 @@ void render_clear(SDL_Renderer *renderer)
 
 /* ---- render_map ----------------------------------------
  * CHANGED Phase 6: use SDL_RenderTexture when sprites ready,
- * fall back to coloured diamonds otherwise.
- *
- * Terrain sprites are TILE_W x TILE_H (256x128).
- * We position them so the top-left of the bounding box
- * matches iso_to_screen() — identical to the diamond fallback.
- * -------------------------------------------------------- */
+ * fall back to coloured diamonds otherwise. */
 void render_map(SDL_Renderer *renderer,
                 const Map *map, const Camera *cam)
 {
@@ -171,13 +151,7 @@ void render_map(SDL_Renderer *renderer,
                          TILE_COLOURS[t->type],
                          TILE_DARK[t->type]);
 
-            /* SUPPLY_CHAIN Phase 1: a small centred diamond where
-             * something can be dug up. Deliberately a marker rather
-             * than a recolour of the tile — a seam is a thing ON the
-             * ground, and the tile still has to read as the grass or
-             * beach it is when you are looking for somewhere to put a
-             * farm. Drawn at 40% scale, which is small enough to
-             * ignore and large enough to spot at min zoom. */
+            /* SUPPLY_CHAIN Phase 1: a small centred diamond. */
             if (t->deposit != DEPOSIT_NONE) {
                 const float f  = 0.4f;
                 SDL_Color   dc = DEPOSIT_COLOURS[t->deposit];
@@ -190,18 +164,7 @@ void render_map(SDL_Renderer *renderer,
     }
 }
 
-/* ---- render_deposit_label ------------------------------
- * The hovered tile's seam, named, in a small box sitting just above
- * the marker. Anchored to the TILE rather than to the cursor: a label
- * that follows the mouse says "the pointer is here", and the question
- * being answered is "what is under that patch of ground" — so it holds
- * still over the thing it names while the cursor moves inside the
- * diamond.
- *
- * ui_tooltip_rect does the placement, exactly as the HUD's tooltip
- * does, which is what keeps a label near the top or the edge of the
- * window from being drawn off it (UI_PLAN M1's clipping fix — a tip
- * merely centred on its anchor hangs off the screen). */
+/* ---- render_deposit_label ------------------------------ */
 void render_deposit_label(SDL_Renderer *renderer, const Map *map,
                           const Camera *cam, int row, int col,
                           int screen_w, int screen_h)
@@ -263,16 +226,7 @@ void render_hovered_tile(SDL_Renderer *renderer,
 }
 
 /* ---- render_buildings ----------------------------------
- * CHANGED Phase 6: draw composited building texture.
- *
- * Building sprites are 256x192 (TILE_W x TILE_H*1.5).
- * The base of the building (where walls meet the ground)
- * sits at TILE_H from the top of the sprite, so we offset
- * the y position upward by the roof height above the base:
- *   sprite_y = tile_y - (COMP_H - TILE_H)
- *            = tile_y - 64
- * This makes the wall base align with the tile diamond top.
- * -------------------------------------------------------- */
+ * CHANGED Phase 6: draw composited building texture. */
 void render_buildings(SDL_Renderer *renderer,
                       const Building buildings[], int count,
                       const Camera *cam)
@@ -348,33 +302,11 @@ void render_ghost(SDL_Renderer *renderer,
 
 /* ---- render_resources ----------------------------------
  * The corner panel is THE GLANCE; the stores overlay (`I`) is the look.
- * That division was stated when the overlay was built (UI_PLAN Phase 4)
- * and then only half-implemented: the overlay arrived, and the panel
- * went on drawing every good there is.
- *
- * By 43 goods that is 950 pixels of list starting 16 from the top —
- * straight through the HUD and off the bottom of a 1080p screen, with
- * every label overlapping its own bar. It is the third capacity cliff
- * v1 measured ("the resource panel at ~43"), and it had arrived: a
- * screenshot of the running game is nine tenths unreadable list.
- *
- * So the panel shows WHAT YOU HAVE — the goods with something in them,
- * plus Gold, which is always worth knowing — capped, with the overflow
- * counted and the key that shows the rest named. An empty warehouse is
- * one row rather than forty-three rows of zero, which is also the more
- * honest picture of an empty warehouse.
- */
+ * That division was stated when the overlay was built (UI_PLAN Phase 4) */
 #define RES_PANEL_MAX_ROWS 12
 
 /* A swatch for every good, not for the seven that existed when this was
- * written.
- *
- * The hand-picked entries stay because they are what a player already
- * associates with those goods. Everything else is derived from its
- * CATEGORY, shaded by index so neighbours differ — related goods look
- * related, and nothing is invisible. The old table left 36 of 43 as
- * {0,0,0,0}: black swatches on a black panel, which is the same bug its
- * own comment warns about, one supply chain later. */
+ * written. */
 static SDL_Color resource_swatch(int res)
 {
     static const SDL_Color NAMED[RES_COUNT] = {
@@ -519,22 +451,7 @@ void render_population(SDL_Renderer *renderer,
 }
 
 /* ---- render_date -----------------------------------------
- * The date, BESIDE the population box on the same row.
- *
- * It was under it in the first version, which put it at y=38..60 —
- * straight through the vitals strip, which starts at y=44 and is 300
- * wide against the same right edge. Found by taking a screenshot and
- * looking at it, which is the only way that class of defect is ever
- * found: both boxes drew correctly and the composition did not.
- *
- * A pure function of the sim tick — see calendar.h. Nothing is stored,
- * nothing is hashed, and the tick is the one the frame's snapshot was
- * drawn from, so the date on screen cannot disagree with the world the
- * rest of the frame is showing.
- *
- * The season is drawn beside the date rather than under it: it changes
- * four times a year and a player wants it at a glance, but it is not
- * worth a row of its own on a screen this crowded. */
+ * The date, BESIDE the population box on the same row. */
 void render_date(SDL_Renderer *renderer, uint64_t tick, int screen_w)
 {
     Calendar  c;
@@ -565,13 +482,7 @@ void render_date(SDL_Renderer *renderer, uint64_t tick, int screen_w)
     }
 }
 
-/* ---- render_agents ---------------------------------------
- * Phase 5: one small filled square per active agent, projected
- * through iso_to_screen() (now widened to accept the fractional
- * row/col an agent mid-walk actually has) and centred on the tile
- * diamond's centroid. Same small-square technique already used for
- * the HUD's building-size dot-grid annotation in ui.c — no new
- * drawing primitive needed. */
+/* ---- render_agents --------------------------------------- */
 void render_agents(SDL_Renderer *renderer,
                    const Agent agents[], int count,
                    const Camera *cam)
@@ -681,11 +592,7 @@ void render_reject_flashes(SDL_Renderer *renderer, const Camera *cam,
         col.r = 240; col.g = 120; col.b = 105;
         col.a = (Uint8)(alpha * 255.0f);
 
-        /* "Not your island" gets a border pulse in the owner's colour
-         * as well as the words (UI_PLAN M5). Privacy here is enforced
-         * by validation rather than by hiding state, so the rejection
-         * channel is where the boundary gets taught — and it is taught
-         * only to the person who probed it. */
+        /* "Not your island" gets a border pulse in the owner's colour */
         if (f->reason == (uint8_t)REJ_NOT_OWNER &&
             f->anchor.kind == FX_ANCHOR_TILE) {
             uint8_t hr, hg, hb;

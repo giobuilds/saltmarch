@@ -1,33 +1,5 @@
-/*  test_tax.c  --  the treasury, and the loop it could fall into
- *                  (LIFE_PLAN Phase 7)
- *
- * Gold no longer appears because people exist. A building earns what
- * its output is worth, pays its crew, and the player taxes both halves
- * at a rate they set.
- *
- * THE REASON THIS FILE EXISTS is one paragraph in
- * docs/new-happiness-design.md:
- *
- *   "Businesses and residents are taxed. Sustained unhappiness reduces
- *    tax compliance. THIS CLOSES A POSITIVE FEEDBACK LOOP AND WILL
- *    DEATH-SPIRAL WITHOUT DAMPING." — and, in the same section,
- *   "Write a test that runs a district into sustained unhappiness and
- *    asserts recovery is reachable."
- *
- * That is the last test below, and it is the one that matters. The
- * others check the three damping rules individually, because a spiral
- * is much easier to diagnose as "the floor was wrong" than as "the
- * island died".
- *
- * THERE ARE TWO LOOPS, NOT ONE. The document describes unhappiness ->
- * compliance. The tax rate adds rate -> unhappiness -> compliance,
- * which is the player's own hand on the spiral, and it is damped the
- * same way: island_tax_happiness is capped so the rate can make a
- * comfortable island uncomfortable but cannot on its own empty a fed
- * house.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_tax.c  --  the treasury, and the loop it could fall into
+ * (LIFE_PLAN Phase 7) */
 
 #include "game.h"
 #include "island.h"

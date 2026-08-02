@@ -1,15 +1,5 @@
-/*  survey.c  --  Sending a scholar to find the fast water
- *                (MARITIME_PLAN Phase 3d)
- *
- *  See survey.h for what a survey costs and why the outcome is derived
- *  rather than rolled.
- *
- *  This file holds the container and the two outcome functions. The
- *  rules that commit a scholar, spend a chart and hand back a passage
- *  live in game.c beside the other sim_* mutators, because they touch
- *  stockpiles, population and knowledge and must run inside the same
- *  funnel as everything else that changes the world.
- */
+/* survey.c  --  Sending a scholar to find the fast water
+ * (MARITIME_PLAN Phase 3d) */
 
 #include "survey.h"
 
@@ -31,20 +21,7 @@ int survey_active_count(const SurveyBoard *b, uint32_t player)
 }
 
 /* FNV-1a over the mission's identity, with a different salt per
- * question so "did it succeed" and "was it lost" are independent.
- * Integer-only and identical on every platform, which rules out
- * anything touching floating point or the C library's rand.
- *
- * The salt goes in LAST and the result gets a finishing avalanche.
- * Plain FNV-1a over five words, with the salt folded into the first,
- * is not well enough mixed for this: the surrounding code asks the
- * question only for a narrow band of route ids and a narrow band of
- * ticks, and measured over that band one route came back with a 0%
- * loss rate across two hundred consecutive ticks while another sat at
- * 36%. Both should have been near 14%. A derived outcome that is
- * deterministic but visibly lumpy is worse than a random one, because
- * it reads to a player as the game having decided something about
- * them. Re-measure if this function changes. */
+ * question so "did it succeed" and "was it lost" are independent. */
 static uint32_t survey_hash(uint32_t world_seed, int route_id,
                             uint64_t start_tick, uint32_t owner,
                             uint32_t salt)

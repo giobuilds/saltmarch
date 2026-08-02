@@ -394,11 +394,7 @@ void stockpile_init(Stockpile *s)
 }
 
 /* stockpile_add -------------------------------------------
- * We clamp to zero rather than allowing negative stock.
- * If a building tries to consume more than is available it
- * simply does nothing — in Phase 5 this will trigger a
- * "needs not met" penalty on population happiness.
- * -------------------------------------------------------- */
+ * We clamp to zero rather than allowing negative stock. */
 void stockpile_add(Stockpile *s, ResourceType res, int delta)
 {
     s->amount[res] += delta;

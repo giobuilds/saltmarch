@@ -51,13 +51,7 @@ typedef struct {
      * phases). */
     int scrub_toggle;
 
-    /* Level-triggered: 1 while the left button is physically held,
-     * 0 otherwise. Unlike left_click (an edge fired once on release,
-     * cleared every frame by input_clear_clicks()), this persists
-     * across frames for as long as the button is actually down — it's
-     * what drives road drag-placement (see client_update()'s per-frame
-     * drag check in client.c). Set by SDL_EVENT_MOUSE_BUTTON_DOWN/UP,
-     * NOT reset by input_clear_clicks(). */
+    /* Level-triggered: 1 while the left button is physically. */
     int left_down;
 } InputState;
 

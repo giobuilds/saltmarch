@@ -84,11 +84,7 @@ void confirm_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
          * button — the flag that keeps it out of the hit-test is the
          * same one that says so here. */
         if (w->flags & UI_W_HEADER) {
-            /* value packs both facts: bit 0 is "in stock", bit 1 is
-             * "this is a luxury" (NEEDS_PLAN Phase 4). A missing BASIC
-             * is why the upgrade is refused; a missing luxury is merely
-             * something they will want once they are in, so it is not
-             * drawn in the colour of a problem. */
+            /* value packs both facts: bit 0 is "in stock", bit 1. */
             int met = w->value & 1;
             int lux = (w->value & 2) != 0;
 

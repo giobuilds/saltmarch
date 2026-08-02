@@ -1,62 +1,22 @@
 #ifndef AGENT_H
 #define AGENT_H
 
-/* =========================================================
- * agent.h  --  Population agents and real labor supply  (Phase 5)
- *
- * One Agent per resident (PopData.residents), synced every frame
- * by agents_sync(). Agents are purely visible/derived state — not
- * saved (see agents_sync()'s doc comment) — but they DO gate
- * production: a Fisher's Hut/Farm/Lumberjack only ticks while at
- * least one assigned agent is physically AGENT_WORKING there (see
- * Building.worker_count, tallied by agent_update()).
- *
- * Lifecycle, one agent at a time:
- *   AGENT_IDLE_HOME       -- at home; unemployed, or resting between shifts
- *   AGENT_COMMUTING_WORK  -- walking home -> workplace
- *   AGENT_WORKING         -- at workplace; counts toward worker_count
- *   AGENT_COMMUTING_HOME  -- walking workplace -> home
- *
- * Job assignment (agent_assign_jobs) is periodic, not per-frame: open
- * jobs mostly only change when a producer is placed, a house's
- * population grows, or one is demolished (game_demolish_building,
- * game.c, immediately snaps any agent working there back to
- * unemployed — the next periodic pass just picks up the resulting
- * reassignment, no urgency).
- * ========================================================= */
+/* agent.h  --  Population agents and real labor supply  (Phase 5) */
 
 #include "building.h"
 #include "population.h"
 #include "connectivity.h"   /* Pt */
 
 /* Agent is ~1060 bytes (path[] below is 1KB of it), so this cap
- * dominates memory: at 2000 it was 2.1MB, i.e. ~96% of GameState.
- * 512 allows 85 fully-grown houses (HOUSE_CAPACITY 6) and keeps the
- * upcoming per-island allocation affordable — four islands land at
- * roughly today's total footprint. find_free_agent_slot() already
- * returns -1 and drops silently at the cap, so this is a soft ceiling. */
+ * dominates memory: at 2000 it was 2.1MB, i.e. ~96% of GameState. */
 #define MAX_AGENTS         512
 
-/* Do NOT shrink this to save memory: build_commute_path() passes
- * MAX_AGENT_PATH - 1 to connectivity_path_to(), which returns 0 for a
- * longer route. Too small a cap silently yields agents that never
- * reach work, surfacing as "my Brewery stopped producing" with no
- * error anywhere. Cap MAX_AGENTS instead. */
+/* Do NOT shrink this to save memory: build_commute_path() passes */
 #define MAX_AGENT_PATH     128
 
 #define AGENT_SPEED_ROAD     3.0f   /* tiles/sec while on a road waypoint */
 #define AGENT_SPEED_OFFROAD  1.0f   /* tiles/sec for the home/work "last mile" */
-/* ---- one work cycle is one month (LIFE_PLAN Phase 4) ------
- * These were 60 and 15, which is a 75-second cycle beating against a
- * 30-second needs tick for no reason anybody chose — two unrelated
- * periods drifting past each other, a wart that predates the calendar.
- * It is also why an island's real output was about four fifths of its
- * headcount: shifts and rest did not divide into the interval that
- * decides whether anyone ate.
- *
- * 24 + 6 is 30 seconds, which is CALENDAR_MONTH_TICKS, which is one
- * needs tick. A resident now works one shift and rests once per month,
- * and every clock in the game is the same clock. */
+/* ---- one work cycle is one month (LIFE_PLAN Phase 4) ------ */
 #define AGENT_SHIFT_DURATION 24.0f  /* seconds spent AGENT_WORKING per shift */
 #define AGENT_REST_DURATION   6.0f  /* seconds spent AGENT_IDLE_HOME before recommuting */
 #define AGENT_ASSIGN_INTERVAL 3.0f  /* seconds between job-assignment passes */
@@ -84,19 +44,8 @@ typedef struct {
     int        path_pos;    /* index of the next waypoint to walk toward */
 } Agent;
 
-/* Reconciles agents[] against every active House's pop_data.residents:
- * spawns new AGENT_IDLE_HOME agents (reusing inactive slots first) if
- * residents grew since the last sync, despawns surplus agents
- * (preferring an AGENT_IDLE_HOME one, so a walking agent is never cut
- * off mid-stride) if residents shrank. Called once per frame after
- * pop_update(), and once after a successful game_load() to rebuild the
- * agent population from the freshly-restored pop_data instead of
- * trying to serialize agents at all. */
-/* `adults_at(ctx, house_idx)` answers how many people in that house are
- * old enough to work — LIFE_PLAN Phase 5's labour gate, passed as a
- * callback so agent.c never learns what an age is. Pass NULL and every
- * resident counts, which is the pre-Phase-5 behaviour and what the
- * headless tests that predate ages rely on. */
+/* Reconciles agents[] against every active House's pop_data.residents: */
+/* `adults_at(ctx, house_idx)` answers how many people in that house. */
 /* `workers[h]` is how many agents house h should have; `live_agents[h]`
  * how many it has. Both are per-house tallies the caller builds in one
  * pass, rather than this scanning every resident and agent per house. */
@@ -109,12 +58,7 @@ void agents_sync(Agent agents[], int *agent_count,
 void agents_tally(const Agent agents[], int agent_count,
                   int building_count, int out[]);
 
-/* Periodic (see AGENT_ASSIGN_INTERVAL): assigns every unemployed,
- * AGENT_IDLE_HOME agent to the nearest still-open job (by road-network
- * distance) among active, connected buildings with tick_seconds > 0
- * (the same generic "this building type produces on a tick" signal
- * game_tick_buildings already uses) that no other agent has already
- * claimed. */
+/* Periodic (see AGENT_ASSIGN_INTERVAL): assigns every. */
 void agents_assign_jobs(Agent agents[], int agent_count,
                         const Building buildings[], int building_count);
 

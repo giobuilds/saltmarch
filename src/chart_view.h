@@ -1,63 +1,8 @@
 #ifndef CHART_VIEW_H
 #define CHART_VIEW_H
 
-/* =========================================================
- * chart_view.h  --  The passages, and the maps of them
- *                   (UI_PLAN N4)
- *
- * Three routes have joined every pair of islands since MARITIME_PLAN
- * Phase 3a — one patrolled lane and two private passages — and a player
- * has had no way to see any of them. The sim knows which water is fast,
- * which the player has learned, how many maps of it they hold and when
- * it silts up; the screen knew none of it. This is that screen, on `C`.
- *
- * WHAT IT ANSWERS, in the plan's own four words: what you know, what you
- * hold, what a passage saves, what a chart costs on the book. Plus the
- * expiry clock, because a chart that quietly stops working is worse than
- * no chart.
- *
- * IT IS ALSO N3's ROUTE PICKER. The order book can show and cancel a
- * chart order but not post one, because choosing which passage to sell a
- * map of needs somewhere that a passage has a name. Here it does: a row
- * IS the picker, so Buy and Sell post (TRADE_ROUTE_CHART, route id)
- * orders straight through the funnel and the composer stays a
- * resource-only affair.
- *
- * THE SEA IS READ DIRECTLY, NOT THROUGH THE SNAPSHOT. This is UI_PLAN
- * N1's one recorded exception to decision 1, and this is the screen it
- * was made for: routes are ~200 entries of fixed geometry regenerated
- * from the world seed, so copying them per frame would quadruple the
- * snapshot to say the same thing every time. What IS per-world — which
- * two passages are in play — comes through the snapshot as the pair
- * cursor, and what is per-player — knowledge, charts, orders — was
- * already there. A `const Sea *` is safe here precisely because a Sea is
- * generated rather than owned.
- *
- * ROWS ARE RETAINED, for the reason N3 established and one this screen
- * makes sharper. A passage goes out of use on a schedule (Phase 3e), and
- * when it does the pair's variant-1 slot starts naming DIFFERENT WATER.
- * Rebuild the rows from the sea alone and the row under the cursor
- * silently becomes another passage — the same failure as an order book
- * row sliding up, except the click would buy a map of somewhere else. So
- * the fold keeps a retired passage where it was, marked, and appends the
- * one that replaced it below.
- *
- * WHAT IT DOES NOT DO IS HIDE, and here that needs saying twice. This
- * client's `Sea` holds every passage in the world, named, including the
- * ones this player has never heard of — it is generated, not redacted.
- * Drawing an unlearned passage as the unknown mark is therefore a
- * SCOPING decision about what is useful, exactly like the book showing
- * only your own orders, and never a concealment mechanism. What actually
- * conceals is the sim: a booking may only sail a route its seller knows
- * and holds a chart of. If route geometry should ever be secret it is
- * redacted at the server, not omitted by a drawer.
- *
- * Nor does it refuse what the sim would accept. The market will sell a
- * map of water nobody sails, and a retired row says so in words rather
- * than by greying its buttons: a screen that refuses a click the sim
- * would take is the drift decision 3 exists to prevent, and the reason
- * shown has to be a reason the sim would give.
- * ========================================================= */
+/* chart_view.h  --  The passages, and the maps of them
+ * (UI_PLAN N4) */
 
 #include <stdint.h>
 #include "ui_kit.h"

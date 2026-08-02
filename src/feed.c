@@ -1,9 +1,4 @@
-/*  feed.c  --  The shared voyage feed (MMO_PLAN Phase 4)
- *
- * Plain C stdio throughout: the feed is append-only text, the parser
- * must tolerate a file another process is writing this instant, and
- * none of it may ever block the frame for long (files are tiny).
- */
+/* feed.c  --  The shared voyage feed (MMO_PLAN Phase 4) */
 
 #include "feed.h"
 #include "ui_kit.h"

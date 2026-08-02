@@ -56,11 +56,7 @@ static void footprint_claim(PlannedTiles *p, const BuildingDef *def,
                 p->taken[r][c] = 1;
 }
 
-/* The nearest tile to (row, col) where `type` can legally stand and
- * nothing has been promised yet. Searches in rings of increasing
- * radius, and within a ring in a fixed order, so the answer is a pure
- * function of (map, request) — which is what keeps a seeded world
- * replayable. Returns 0 if the island has no room at all. */
+/* The nearest tile to (row, col) where `type` can legally stand. */
 static int snap_placement(const Island *isl, PlannedTiles *planned,
                           BuildingType type, int *row, int *col)
 {
@@ -129,10 +125,7 @@ int ghost_faction_seed(GameState *gs, const char *path, int island,
         if (!kind_is_island_scoped(c.kind)) continue;
 
         /* Re-address: their island becomes ours, their identity becomes
-         * the neighbour's, and their clock is shifted to start now.
-         * Sequence numbers are cleared — they were the recorder's, and a
-         * ghost's commands must not be mistaken for this client's own
-         * (that would flash rejections at a player who did nothing). */
+         * the neighbour's, and their clock is shifted to start now. */
         if (!have_first) {
             first_tick = c.tick;
             have_first = 1;

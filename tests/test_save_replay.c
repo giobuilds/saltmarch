@@ -1,20 +1,4 @@
-/*  test_save_replay.c  --  headless verification of MMO_PLAN Phase 1d
- *
- * The v5 save is (world seed + command log), and loading reconstructs
- * the world by replaying that log — so "loading IS the F9 test". This
- * checks that round-trip:
- *
- *   1. Seeded new game, a scripted session (a house, trades, a voyage),
- *      run forward. Record hash + tick.
- *   2. Save to a temp file, load into a SECOND world.
- *   3. Assert the loaded world reached the same tick and hashes equal,
- *      and that replay_valid is 1 (F9 works after a load, unlike the old
- *      full-state format).
- *   4. Assert game_verify_determinism() passes on the loaded world.
- *   5. Assert a garbage file is rejected without disturbing the world.
- *
- * Built and run by tests/run.sh.
- */
+/* test_save_replay.c  --  headless verification of MMO_PLAN Phase 1d */
 
 #include "game.h"
 #include "building.h"

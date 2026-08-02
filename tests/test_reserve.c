@@ -1,29 +1,5 @@
-/*  test_reserve.c  --  the people with nowhere to live
- *                      (LIFE_PLAN Phase 7)
- *
- * Phase 6b made a house a family and left the grown children with
- * nobody to marry. This is the queue that fixes it: an adult who
- * marries and cannot be housed, or whose parents' house is over
- * capacity, joins a RESERVE — and leaves the island if nobody roofs
- * them.
- *
- * THREE THINGS HERE ARE LOAD-BEARING AND EASY TO GET SILENTLY WRONG:
- *
- *   1. FIFO, and the clock never resets. Somebody who has waited
- *      twenty-three of their twenty-four months must not be sent to the
- *      back of the queue because a house was laid for somebody else, or
- *      because they were moved to another island.
- *   2. A lone occupant. One person may take a roof and wait for a
- *      spouse, so settling returns 1 as legitimately as 2 — and a house
- *      holding one unmarried adult has to be asked again next month
- *      rather than treated as full.
- *   3. The founder allowance is spent PER HOUSE, once. A house that
- *      starves to empty and is re-settled must draw from the reserve,
- *      never from the island's immigration quota. The prototype got
- *      this wrong and turned a hundred places into sixty-three houses.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_reserve.c  --  the people with nowhere to live
+ * (LIFE_PLAN Phase 7) */
 
 #include "game.h"
 #include "island.h"

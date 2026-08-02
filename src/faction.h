@@ -1,29 +1,8 @@
 #ifndef FACTION_H
 #define FACTION_H
 
-/* =========================================================
- * faction.h  --  The NPC market as a real counterparty
- *                (MMO_PLAN Phase 3)
- *
- * Replaces the infinite-liquidity fixed price tables (SELL_PRICE /
- * BUY_PRICE) with one faction that has finite gold, real inventory, and
- * elastic quotes. Selling a good TO the faction raises its inventory of
- * that good, which lowers what it will pay next time; buying drains its
- * inventory and lifts the price. Inventory slowly mean-reverts toward a
- * baseline, so prices recover when left alone.
- *
- * DETERMINISM: this is world sim state. It lives in GameState, is hashed
- * by sim_hash, mutates only inside sim_apply (trades) and
- * sim_run_one_tick (faction_tick), and every value here is an integer —
- * no float can drift across platforms. The quotes are computed by
- * integer multiply-then-divide so low-priced goods still move.
- *
- * DAY-ONE NEUTRALITY: at the baseline inventory the quotes reproduce
- * exactly today's SELL_PRICE / BUY_PRICE, so introducing the faction
- * changes no prices until the player actually trades.
- *
- * SDL-free (destined for the headless sim library).
- * ========================================================= */
+/* faction.h  --  The NPC market as a real counterparty
+ * (MMO_PLAN Phase 3) */
 
 #include "resource.h"
 #include "sea.h"
@@ -51,67 +30,19 @@
 
 /* ---- price history (UI_PLAN M3) ---------------------------
  * A short ring of past mid-prices per good, sampled on a fixed tick
- * interval. It exists to answer a question the numbers alone cannot:
- * "is this price normal?" A bid of 2 means nothing; a bid of 2 after a
- * week at 3 means you just flooded the market.
- *
- * MMO_PLAN's risk register lists "elastic market reads as a rigged slot
- * machine at tiny scale" — the mitigation is making the elasticity
- * VISIBLE. Sell-Max leaves a scar on the line; mean reversion visibly
- * heals it. The F10 tuning overlay and the player's trade screen both
- * draw this same buffer, so the debug view and the game can never
- * disagree about what the price did.
- *
- * It is sim state: hashed, replayed, integer-only. That costs 6 bytes
- * per good per sample and buys a history that a replayed session
- * reproduces exactly. */
+ * interval. It exists to answer a question the numbers alone cannot: */
 #define FACTION_HIST_LEN            24
 #define FACTION_HIST_INTERVAL_TICKS 50   /* one sample per 5 seconds */
 
-/* ---- home ports and market making (MARITIME_PLAN Phase 2) ----
- * The faction is a trader with a location. It holds the last few
- * islands as home ports — settled, owned by PLAYER_FACTION, and not
- * colonisable — and posts standing orders there like any player, which
- * ship, take time, and tie up its merchants and hulls.
- *
- * That is the whole point of giving it ports rather than letting it
- * trade from nowhere: distance to the market becomes a real cost, its
- * liquidity is finite in THROUGHPUT and not just in stock, and a
- * blockade of its harbour is a thing a player could attempt.
- *
- * ONE COMPANY STOCK, SEVERAL HARBOURS. Its inventory and gold stay
- * global — it is one company with warehouses, not two rival branches —
- * and its quotes stay global with them, so every existing caller of
- * faction_bid/faction_ask is unchanged. That is safe only because
- * posting RESERVES: an order at each port draws down the same stock
- * when it is posted, exactly as a player's several orders draw down one
- * stockpile. (Per-port inventory, and with it price differences between
- * the faction's own harbours, is a separate and larger change.)
- */
+/* ---- home ports and market making (MARITIME_PLAN Phase 2) ---- */
 #define FACTION_PORT_COUNT 2
 
-/* It cannot quote everything: two sides times every good times every
- * port would exhaust the book by itself. It quotes the goods it is
- * furthest from baseline on — where it most wants to trade — which
- * makes the selection economic rather than a blind rotation, and means
- * the market leans against its own imbalance. */
+/* It cannot quote everything: two sides times every good times every */
 #define FACTION_QUOTE_GOODS   6
 #define FACTION_QUOTE_LOT    20   /* units per standing order          */
 #define FACTION_QUOTE_INTERVAL_TICKS 100  /* re-quote every 10 seconds */
 
-/* ---- charts (MARITIME_PLAN Phase 3b) ----------------------
- * The market draws maps as well as moving cargo, so it is where a
- * player gets their first private passage. It offers charts for a few
- * routes at a time, priced by what the passage is WORTH — the ticks it
- * saves over the public lane — rather than by a flat number, so a
- * shortcut that barely helps is cheap and one that halves a crossing
- * is not.
- *
- * That the market sells them at all is the interim answer to "where do
- * charts come from". Survey and research are the intended sources and
- * are a phase away, blocked on what a failed survey costs; without
- * some source the whole mechanic would be unreachable. Looting pirates
- * is the third, and is Phase 5. */
+/* ---- charts (MARITIME_PLAN Phase 3b) ---------------------- */
 #define FACTION_CHART_ROUTES   4    /* routes quoted at once           */
 #define FACTION_CHART_LOT      1    /* charts per standing order       */
 #define FACTION_CHART_GOLD_PER_TICK_SAVED 3
@@ -129,25 +60,10 @@ typedef struct {
 
     /* Per-ROUTE insurance premium, in tenths of a percent of declared
      * cargo value. Moves as an EMA on every insured shipment's outcome,
-     * so the table is a map of where cargo has been lost.
-     *
-     * Indexed by sea route id (MARITIME_PLAN Phase 3c). It used to be
-     * [from][to] — one number for the water between two islands — which
-     * stopped being enough the moment there were three ways across it.
-     * A private passage is faster BECAUSE it runs outside patrolled
-     * water, and a premium that could not tell the two apart priced
-     * that risk at zero. Insurance is where "faster but unsafe" stops
-     * being a sentence in a design document.
-     *
-     * Sim state: hashed and replayed. */
+     * so the table is a map of where cargo has been lost. */
     int16_t  route_premium[SEA_MAX_ROUTES];
 
-        /* Where the faction's standing orders are in the book
-     * (MARITIME_PLAN Phase 2). One id per (port, good, side) it is
-     * currently quoting; 0 for a slot it is not. Kept so a refresh can
-     * withdraw the stale quote instead of posting a second one beside
-     * it, which is how a market maker fills a book with its own
-     * history in about a minute. */
+        /* Where the faction's standing orders are in the book */
     uint32_t quote_order[FACTION_PORT_COUNT][FACTION_QUOTE_GOODS][2];
     uint32_t quote_timer;
 

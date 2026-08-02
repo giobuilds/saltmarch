@@ -1,8 +1,4 @@
-/*  ui_kit.c  --  Layout, widget lists, hit-testing (UI_PLAN Phase 0)
- *
- *  Arithmetic only. See ui_kit.h for the contract and for why this file
- *  links no SDL.
- */
+/* ui_kit.c  --  Layout, widget lists, hit-testing (UI_PLAN Phase 0) */
 
 #include "ui_kit.h"
 #include <string.h>
@@ -300,11 +296,7 @@ size_t ui_clean_label(char *dst, size_t cap, const char *src)
     while (src[n] && n + 1 < cap) {
         unsigned char c = (unsigned char)src[n];
         /* Printable ASCII only. Anything else — control codes, a
-         * newline, the high half of a UTF-8 sequence — becomes '?'.
-         * Rejecting non-ASCII is a real limitation and a deliberate
-         * one: this game's font ships with a Latin subset, and a name
-         * that renders as blank boxes is not more useful than one that
-         * renders as question marks. */
+         * newline, the high half of a UTF-8 sequence — becomes '?'. */
         dst[n] = (c >= 0x20 && c < 0x7F) ? (char)c : '?';
         n++;
     }

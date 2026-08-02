@@ -1,16 +1,8 @@
 #ifndef CONNECTIVITY_H
 #define CONNECTIVITY_H
 
-/* =========================================================
- * connectivity.h  --  Road-network reachability  (Phase 3)
- *
- * A building only produces (see game_tick_buildings, game.c) or
- * has its population needs served (see pop_update, population.c)
- * if it is "connected": reachable via 4-connected BUILDING_ROAD
- * tiles from an active Warehouse. Warehouses and roads themselves
- * are always considered connected — a Warehouse doesn't need a
- * route to itself, and a road segment has no production to gate.
- * ========================================================= */
+/* connectivity.h -- road-network reachability. A building is connected
+ * when a road 4-adjacent to its footprint reaches a warehouse. */
 
 #include "building.h"
 
@@ -21,20 +13,10 @@ typedef struct { int r, c; } Pt;
 /* Recomputes Building.connected for every active building in
  * `buildings[0..count)`. Called once per frame from game_update(),
  * before anything reads the field. */
-/* `sig` caches a signature of the inputs; when nothing that decides
- * reachability has changed, the flood fill is skipped and every
- * `connected` keeps the value it already had. Derived from the
- * buildings themselves, so it cannot go stale the way an invalidation
- * flag can. Pass a zeroed uint32_t to force the first pass. */
+/* `sig` caches a signature of the inputs; when nothing that decides */
 void connectivity_update(Building buildings[], int count, uint32_t *sig);
 
-/* ---- Phase 5: point-to-point pathfinding ----------------
- * Reuses the same road_grid connectivity_update() just built. A
- * single-source BFS answers both "how far" and "what's the route"
- * for any number of candidate destinations without re-running the
- * search per candidate — call connectivity_bfs_from() once per
- * agent (from its home), then connectivity_dist_to()/
- * connectivity_path_to() as many times as needed against it. */
+/* ---- Phase 5: point-to-point pathfinding ---------------- */
 
 /* Single-source BFS (with parent tracking) from the road tile(s)
  * adjacent to from_idx's footprint. Must be called after

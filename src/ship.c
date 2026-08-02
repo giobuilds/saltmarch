@@ -74,12 +74,7 @@ int ship_transfer_escrow(Ship *sh, Island *isl, ResourceType res, int qty)
 }
 
 /* A ship that has just docked and is running a route: drop what it
- * brought, pick up what goes back, and set sail again.
- *
- * Departure is unconditional. Waiting for a full hold — or for any
- * cargo at all — would deadlock the route the first time the supplying
- * island ran dry, and the route would never recover even once
- * production resumed. An empty run costs only time. */
+ * brought, pick up what goes back, and set sail again. */
 static void route_turnaround(Ship *s, Island islands[], int island_count,
                              uint64_t sim_tick_no)
 {
@@ -189,14 +184,7 @@ int intercept_attacker_wins(uint32_t world_seed,
                             int target_ship, uint64_t target_departure,
                             int attacker_guns, int defender_guns)
 {
-    /* Byte-wise FNV with a finishing avalanche, for the reason
-     * survey.c records at length: fed whole words, and read through a
-     * small modulus, FNV's low bits stay correlated across the narrow
-     * ranges this is actually called with. Measured over eight ship
-     * indices the old word-wise version returned between 52% and 61%
-     * for a nominal 55% — not degenerate, but visibly not the number
-     * it claimed, and "some ships are luckier than others" is not a
-     * thing a player should be able to notice. */
+    /* Byte-wise FNV with a finishing avalanche, for the reason */
     uint32_t h = 2166136261u;
     uint32_t parts[6];
     int      i, b;
@@ -263,13 +251,7 @@ void ships_update(const Sea *sea, Ship ships[], int ship_count,
         }
 
         /* At sea. Arrival is an exact integer test on the tick; progress
-         * is only a cached 0..1 derivation for the renderer.
-         *
-         * The crossing's length is the route's, not a constant
-         * (MARITIME_PLAN Phase 1). Every pair of islands has a route,
-         * so the fallback inside sea_crossing_ticks is unreachable in
-         * a generated world -- but it is there rather than an assert
-         * because a ship mid-voyage must never divide by zero. */
+         * is only a cached 0..1 derivation for the renderer. */
         crossing = sea_crossing_ticks(sea, s->from_island, s->to_island);
         elapsed  = sim_tick_no - s->departure_tick;
 
@@ -341,15 +323,7 @@ int ships_cargo_total(const Ship ships[], int ship_count, ResourceType res)
     return total;
 }
 
-/* ---- ship classes (MARITIME_PLAN Phase 5) ----------------
- * Guns cost hold, and that is the whole design. A merchantman moves
- * fifty of a good and cannot stop anyone taking it; a warship stops
- * anyone and moves five. Neither is a good answer to "I want to move
- * cargo through dangerous water" — a merchantman WITH AN ESCORT is,
- * and that is a decision about a fleet rather than about a ship.
- *
- * The merchantman's numbers are exactly what every ship had before
- * this phase, so nothing recorded then changes meaning. */
+/* ---- ship classes (MARITIME_PLAN Phase 5) ---------------- */
 const ShipClassDef SHIP_CLASSES[SHIP_CLASS_COUNT] = {
     { "Merchantman", 0,  4, SHIP_CARGO_CAPACITY, SHIP_BUILD_COST_GOLD },
     { "Cutter",      3,  6, 20,                  SHIP_BUILD_COST_GOLD * 2 },

@@ -1,8 +1,4 @@
-/*  chart_ui.c  --  Painting the passages (UI_PLAN N4)
- *
- *  Consumes the UiList that chart_build() produced. Nothing here decides
- *  where anything goes; see chart_ui.h.
- */
+/* chart_ui.c  --  Painting the passages (UI_PLAN N4) */
 
 #include "chart_ui.h"
 #include "fonts.h"
@@ -55,17 +51,7 @@ static void dur_text(char *buf, size_t n, uint64_t ticks)
                                   (unsigned)((secs % 3600) / 60));
 }
 
-/* One passage's six cells.
- *
- * WHICH CELLS ARE MARKS IS THE WHOLE DESIGN OF THIS FUNCTION. A passage
- * you have not learned hides its name, its crossing and what it saves,
- * because those are what a chart tells you — but its price and its
- * expiry are drawn as plain numbers, because the market's resting offer
- * and the rotation schedule are public facts about water you have never
- * seen. Drawing all six as unknown would be tidier and would be a lie in
- * the other direction: it would say the market has nothing on the
- * counter when it has your map sitting there priced.
- */
+/* One passage's six cells. */
 static void draw_row(SDL_Renderer *r, const ChartRow *row, UiRect rr,
                      SDL_Color text, SDL_Color dim, SDL_Color warn,
                      SDL_Color good, uint64_t now)
@@ -211,14 +197,7 @@ void chart_ui_draw(SDL_Renderer *renderer, int screen_w, int screen_h,
     }
 
     /* Column headings, positioned off the first passage row so they
-     * cannot drift from the cells beneath them.
-     *
-     * Off the first row of the LIST, not the first ROUTE row: a
-     * destination heading comes before the routes under it, so
-     * subtracting a header's height from the first route landed the
-     * column names on top of "Brinehold". Anchoring to whichever row
-     * is first — heading or passage — puts them in the strip above the
-     * list, which is where the layout left room for them. */
+     * cannot drift from the cells beneath them. */
     for (i = 0; i < list->count; i++) {
         const UiWidget *w = &list->items[i];
         UiRect          head;

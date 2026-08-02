@@ -1,22 +1,13 @@
 #ifndef BUILDING_H
 #define BUILDING_H
 
-/* =========================================================
- * building.h  --  Building types, definitions, instances
+/* building.h -- building types, their static definitions and placement.
  *
- * There are two distinct concepts here, keep them separate
- * in your mind:
- *
- *   BuildingDef  – static data about a TYPE of building.
- *                  One entry per building type, never changes.
- *                  (like a class definition)
- *
- *   Building     – a placed INSTANCE on the map.
- *                  Has a position and refers to its def.
- *                  (like an object / instance)
- * 
- *                 (Phase 4: production fields added)
- * ========================================================= */
+ * Split class/instance: BUILDING_DEFS[type] holds what is true of every
+ * building of a kind (footprint, placement rules, colour, production);
+ * Building holds one placed instance. A new type is a new enum value
+ * plus a row in the table -- placement and rendering are generic over
+ * it. */
 
 #include "map.h"      /* Tile, TileType, Fertility, MAP_* */
 #include "resource.h"
@@ -24,11 +15,7 @@
 #include "command.h"  /* RejectReason (UI_PLAN Phase 0.5) */
 #include <stddef.h>   /* size_t */
 
-/* ---- How many buildings can be placed at once ----------
- * Raised from 64 (Phase 2, roads): a road is a BUILDING_ROAD
- * entry like any other building, so a real road network shares
- * this same budget instead of getting its own cap. 600 is
- * generous for a 64x64 map's buildable tile count. */
+/* ---- How many buildings can be placed at once ---------- */
 #define MAX_BUILDINGS 600
 
 /* Storage capacity added to every non-gold resource by each
@@ -63,11 +50,7 @@ typedef enum {
      * way to reach another island. Coastal by necessity. */
     BUILDING_SHIPYARD     = 11,
 
-    /* MMO Phase 5: the harbor is the inter-player airlock. A FOREIGN
-     * player's ship may transfer goods at this island only if an active
-     * Harbor stands here (and docking is allowed) — and only into/out of
-     * the island's escrow, never its stockpile. Coastal like the
-     * Shipyard. Clicking a placed one opens the escrow panel. */
+    /* MMO Phase 5: the harbor is the inter-player airlock. A FOREIGN */
     BUILDING_HARBOR       = 12,
 
     /* ---- SUPPLY_CHAIN Phase 3: the northern base economy ----
@@ -114,11 +97,7 @@ typedef enum {
      * the only way to one is game_upgrade_house on a Marsh Cottage. */
     BUILDING_HOUSE_ARTISAN  = 42,
 
-    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ----
-     * The four that close Artisans' fifth need. Deferred out of Phase
-     * 4 precisely because Cloth has no northern source, which is what
-     * now makes a southern colony a prerequisite rather than an
-     * ornament. */
+    /* ---- SUPPLY_CHAIN Phase 5: the southern islands ---- */
     BUILDING_COTTON_FIELD   = 43, /* cotton soil     -> Cotton        */
     BUILDING_SPINNING_MILL  = 44, /* Cotton          -> Cloth         */
     BUILDING_TRAPPERS_LODGE = 45, /* beside forest   -> Pelts         */
@@ -167,11 +146,7 @@ typedef enum {
     BUILDING_HOUSE_MERCHANT   = 82, /* the third line's base           */
     BUILDING_HOUSE_INVESTOR   = 83, /* upgrade of a Merchant House     */
 
-    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ----
-     * The Academy is a PREREQUISITE, not an action: it converts
-     * nobody by itself, and demolishing it demotes nobody. While one
-     * stands, road-connected, every house on the island gains a
-     * second possible future. */
+    /* ---- SUPPLY_CHAIN Phase 8: the Academy and Scholars ---- */
     BUILDING_INK_WORKS        = 84, /* Shellac        -> Ink           */
     BUILDING_PAPER_MILL       = 85, /* Wood           -> Paper         */
     BUILDING_BINDERY          = 86, /* Ink + Paper    -> Books         */
@@ -198,44 +173,21 @@ typedef enum {
 
 /* Production inputs a building can consume per tick. Raised from 2 in
  * SUPPLY_CHAIN Phase 2: the Watchmaker's takes Gold Ore + Glass +
- * Springs and the Gramophone Works takes Planks + Brass + Shellac.
- *
- * NOTE for anyone adding a def: RES_WOOD is 0, so a `consumes` slot
- * left out of an initialiser reads as Wood rather than as "unused".
- * Write all MAX_BUILDING_INPUTS slots explicitly; tests/test_defs.c
- * asserts every unused one is RES_COUNT. */
+ * Springs and the Gramophone Works takes Planks + Brass + Shellac. */
 #define MAX_BUILDING_INPUTS 3
 
 /* ---- Static definition of one building type ------------ */
 /* ---- Building categories (UI_PLAN Phase 2) ---------------
  * What KIND of thing this is, for grouping in the interface: the HUD's
- * category tabs (Phase 3) and any list long enough to want sections.
- *
- * Deliberately about function rather than era or cost, because that is
- * the question a player asks the HUD ("where do I get planks?"), and
- * because it stays answerable as buildings are added.
- *
- * BCAT_NONE is 0 so a row that forgets to declare one is not silently
- * filed under a real category — tests/test_defs.c asserts no def is
- * left at NONE. */
-/* Widened from five to seven in SUPPLY_CHAIN Phase 2, before the
- * content that needs it arrives. Gathering split into what you grow
- * and what you dig, Production into what a workshop makes and what a
- * factory does — at roughly 21 slots per tab and ~60 buildings coming,
- * five categories would have overflowed and the split would have had
- * to happen mid-content, renumbering tabs a player had learned. */
+ * category tabs (Phase 3) and any list long enough to want sections. */
+/* Widened from five to seven in SUPPLY_CHAIN Phase 2, before. */
 typedef enum {
     BCAT_NONE = 0,
     BCAT_FARMING,        /* grown or caught: fields, pastures, boats  */
     BCAT_EXTRACTION,     /* dug or felled: mines, pits, the forest    */
     BCAT_WORKSHOP,       /* one artisan's worth of processing         */
     BCAT_FACTORY,        /* heavy industry: furnaces, machine shops   */
-    /* Split out of Workshops in SUPPLY_CHAIN Phase 7, which would
-     * otherwise have put thirty buildings on a bar that shows
-     * twenty-one. The line is what a building is FOR, not how big it
-     * is: a Refinery turns one raw good into bulk stock that other
-     * buildings consume; a Luxury workshop makes a finished thing a
-     * household asks for and nothing else uses. */
+    /* Split out of Workshops in SUPPLY_CHAIN Phase 7, which. */
     BCAT_REFINERY,       /* raw good -> bulk stock for other buildings */
     BCAT_LUXURY,         /* the finished things the upper tiers want   */
     BCAT_HOUSING,        /* where residents live                      */
@@ -255,27 +207,7 @@ typedef struct {
     PlacementFlags placement_flags;
 
     /* Terrain this type needs under EVERY tile of its footprint, on
-     * top of placement_flags (SUPPLY_CHAIN Phase 1):
-     *
-     * needs_fertility – a mask of Fertility bits; the tile must have
-     *                   all of them. 0 means "no crop requirement".
-     *                   Distinct from PLACE_NEEDS_FERTILE, which asks
-     *                   only that the soil grow *something*.
-     * needs_deposit   – a Deposit every tile must hold. DEPOSIT_NONE
-     *                   means "no mineral requirement".
-     * needs_adjacent_deposit
-     *                 – a Deposit at least one tile ALONGSIDE the
-     *                   footprint must hold. For the deposit you work
-     *                   rather than stand on: pearl beds lie in
-     *                   shallow water, where nothing can be built, so
-     *                   the station stands on the shore beside them.
-     *                   Same shape as PLACE_NEEDS_COAST, which is the
-     *                   Fisher's Hut standing on land next to the sea
-     *                   it fishes.
-     *
-     * Fields rather than flags because the answer is which crop, not
-     * whether: a Potato Field and a Hop Farm differ by one constant
-     * here and by nothing in the validator. */
+     * top of placement_flags (SUPPLY_CHAIN Phase 1): */
     uint32_t      needs_fertility;
     uint8_t       needs_deposit;
     uint8_t       needs_adjacent_deposit;
@@ -283,18 +215,7 @@ typedef struct {
     /* Colour for the placeholder rectangle (R, G, B) */
     unsigned char col_r, col_g, col_b;
 
-    /* CHANGED Phase 4: production fields.
-     * produces      – which resource this building outputs
-     *                 (RES_COUNT means "produces nothing"). Stays a
-     *                 single output — no planned chain needs 2.
-     * produce_amt   – units produced per tick
-     * consumes      – up to MAX_BUILDING_INPUTS inputs required per
-     *                 tick (RES_COUNT in a slot means "unused" — same
-     *                 sentinel convention as produces, just per-slot).
-     *                 All-or-nothing: a tick only fires if every
-     *                 non-RES_COUNT slot has enough stock.
-     * consume_amt   – units consumed per tick, parallel to consumes[]
-     * tick_seconds  – real-time seconds between production ticks */
+    /* CHANGED Phase 4: production fields. */
     ResourceType  produces;
     int           produce_amt;
     ResourceType  consumes[MAX_BUILDING_INPUTS];
@@ -302,18 +223,12 @@ typedef struct {
     float         tick_seconds;
 
     /* One-time cost deducted from the stockpile when this
-     * building is placed, indexed like Stockpile.amount[].
-     * Unlike produces/consumes (a per-tick flow), this is a
-     * lump sum paid once at building_place() time. Irrelevant for a
-     * building that's never placed directly (hud_placeable == 0) —
-     * see BUILDING_HOUSE_WORKER, reached only via game_upgrade_house(). */
+     * building is placed, indexed like Stockpile.amount[]. */
     int           cost[RES_COUNT];
 
     /* 1 if this type gets a HUD slot the player can select and place
      * directly; 0 if it's only ever reached some other way (currently
-     * just BUILDING_HOUSE_WORKER, via upgrading a BUILDING_HOUSE).
-     * ui.c's HUD loop filters on this rather than assuming every
-     * BuildingType maps 1:1 to a placeable slot. */
+     * just BUILDING_HOUSE_WORKER, via upgrading a BUILDING_HOUSE). */
     int           hud_placeable;
 } BuildingDef;
 
@@ -329,157 +244,50 @@ typedef struct {
     int          col;
     int          active; /* 1 = placed, 0 = empty slot     */
 
-    /* Phase 1b: integer tick accumulator. Counts whole sim ticks since
-     * this building last produced; when timer reaches the building's
-     * period (tick_seconds * SIM_TICKS_PER_SEC) a tick fires and it
-     * resets to 0. Integer, not float, so the F9 desync hash never reads
-     * an accumulating float. */
+    /* Phase 1b: integer tick accumulator. Counts whole sim ticks. */
     uint32_t     timer;
 
-    /* Phase 3: derived, not meaningfully persisted — recomputed
-     * every frame by connectivity_update() from the current road
-     * network, before it's read by game_tick_buildings()/
-     * pop_update(). 1 for a Warehouse or Road (neither needs a
-     * route to itself), otherwise 1 iff a road path reaches an
-     * active Warehouse. (It does get written byte-for-byte into
-     * save files along with the rest of the struct, but that's
-     * harmless: it's overwritten by the next connectivity_update()
-     * before anything reads it.) */
+    /* Phase 3: derived, not meaningfully persisted — recomputed */
     int          connected;
 
-    /* Phase 5: derived like `connected` above — zeroed and retallied
-     * every frame by agents_update() (agent.c) from currently
-     * AGENT_WORKING agents. game_tick_buildings() requires
-     * worker_count >= 1 (for any building with tick_seconds > 0) on
-     * top of `connected`: the "physically present" labor-supply gate. */
+    /* Phase 5: derived like `connected` above — zeroed and retallied */
     int          worker_count;
 } Building;
 
 /* ---- Placement validation ----------------------------- */
 
-/* Why this building cannot go here — REJ_OK if it can (UI_PLAN Phase
- * 0.5). This replaces the old (char *reason, size_t) out-parameter,
- * which every caller in the codebase passed NULL for: the message was
- * written, never read, and the strings could not be tested. A returned
- * enum is checkable headlessly, survives into the sim's rejection
- * vocabulary (command.h), and leaves the wording to the UI.
- *
- * Checks the map only — bounds, terrain, adjacency. Affordability
- * (building_can_afford) and occupancy (building_place) are separate
- * questions asked by separate callers. */
+/* Why this building cannot go here — REJ_OK if it can (UI_PLAN Phase */
 RejectReason building_place_check(const Map *map,
                                   BuildingType type,
                                   int row, int col);
 
 /* The same check against an arbitrary def rather than a table row.
- * building_place_check() is a one-line wrapper over this.
- *
- * Split out in SUPPLY_CHAIN Phase 1 so the terrain rules can be tested
- * against a def written by the test, instead of only against whatever
- * buildings happen to exist. Phase 1 adds terrain and no content, so
- * without this seam the crop and deposit rules would have had to wait
- * for a building to want them before anything could prove they work —
- * and the def table is about to quadruple, which is exactly when you
- * want the rules pinned down independently of it. */
+ * building_place_check() is a one-line wrapper over this. */
 RejectReason building_place_check_def(const Map *map,
                                       const BuildingDef *def,
                                       int row, int col);
 
-/* The boolean form, for the many call sites that only branch on it.
- * Deliberately kept rather than making everyone write
- * `== REJ_OK`: REJ_OK is 0, so a mechanical conversion of
- * `if (building_can_place(...))` to the enum would have inverted every
- * one of those conditions silently. */
+/* The boolean form, for the many call sites that only branch on it. */
 int building_can_place(const Map *map,
                        BuildingType type,
                        int row, int col);
 
 /* How many workers `def` can hold at once, or 0 for a building that
- * employs nobody (LIFE_PLAN Phase 1).
- *
- * Until this existed a building's labour was a light switch:
- * agents_assign_jobs() let exactly one agent claim each workplace, so
- * Building.worker_count was 0 or 1 and production was a step function
- * of labour — nothing at zero, full rate at one, and identical at six.
- * The gap between 0 and 1 was infinite and everything above it flat.
- *
- * DERIVED FROM THE CATEGORY, NOT STORED PER DEF. The categories already
- * say how big a thing is — BCAT_WORKSHOP is documented as "one artisan's
- * worth of processing" and BCAT_FACTORY as heavy industry — so a table
- * here states the rule once instead of scattering ninety numbers no one
- * can compare across the def rows. Footprint deliberately does NOT enter
- * it: only 1x1 and 2x2 exist, and a fishing crew is bigger than the hut
- * it lands its catch at.
- *
- * A producing def whose category names no crew falls back to 1, which is
- * exactly today's behaviour rather than a building that suddenly employs
- * nobody. tests/test_defs.c asserts none actually take that path.
- *
- * Takes a def rather than a type for the same reason
- * building_place_check_def() does: a test can drive the rule with a def
- * it wrote itself, instead of only through whatever buildings happen to
- * exist. */
+ * employs nobody (LIFE_PLAN Phase 1). */
 int building_worker_cap(const BuildingDef *def);
 
 /* How far `workers` advance this building's production clock in one sim
  * tick — 1 per worker would be linear; this is deliberately more
- * (LIFE_PLAN Phase 2).
- *
- * ONE WORKER ALONE PAYS THE WHOLE OVERHEAD. Somebody has to haul, tend
- * the nets, keep the fire in. Working alone you do all of it yourself
- * and fish in what is left; the second pair of hands arrives to find
- * every fixed cost already paid, and is worth two. So:
- *
- *     advance(w) = 2w - 1        1, 3, 5, 7, 9, 11 ...
- *
- * which lands a full Fisher's Hut of five on NINE fish where five lone
- * workers in five huts would land five. At one worker it returns 1, so
- * a half-empty island is exactly as productive as it was before this
- * phase and nothing is taken away — the bonus is only ever a reward for
- * filling a workplace.
- *
- * It also means bigger workplaces reward filling MORE, because the one
- * worker's overhead is spread further: (2c-1)/c is 1.67 at a workshop's
- * three and 1.83 at a factory's six. That falls out of the rule rather
- * than being a second table, and it is the right direction — economies
- * of scale belong to the large.
- *
- * WHY THIS IS THE PHASE THAT MOVES THE CLOSURE NUMBERS. Phase 1 was
- * ratio-neutral by construction: five workers landing five fish leaves
- * output per worker alone. This does not, and must not — the headroom
- * it buys is what pays for the residents who cannot work once ageing
- * arrives (LIFE_PLAN Phase 5). tests/test_closure.c models it at FULL
- * staffing, which is the best case and therefore the right one for a
- * guard: a tier that cannot close with every workplace full cannot
- * close at all. */
+ * (LIFE_PLAN Phase 2). */
 int building_work_advance(const BuildingDef *def, int workers);
 
-/* The first input slot `def` cannot pay for out of `s`, or -1 when it
- * can run. All-or-nothing: a building ticks only when every
- * non-RES_COUNT slot has enough, so nothing half-consumes one input
- * while short of another.
- *
- * Lives here rather than inside island_tick_buildings() so a test can
- * drive it with a def of its own — MAX_BUILDING_INPUTS went to 3 in
- * SUPPLY_CHAIN Phase 2 and no building uses the third slot until
- * Phase 6, which would otherwise leave the widening unproven. */
+/* The first input slot `def` cannot pay for out of `s`, or -1 when. */
 int building_missing_input(const BuildingDef *def, const Stockpile *s);
 
-/* Returns 1 if `s` holds enough of every resource in
- * BUILDING_DEFS[type].cost[] to afford placing it. Deliberately
- * separate from building_can_place() (which only knows about the
- * map) so "can't afford" and "can't place here" stay distinct
- * reasons a caller can tell apart. */
+/* Returns 1 if `s` holds enough of every resource. */
 int building_can_afford(const Stockpile *s, BuildingType type);
 
-/* Total Gold cost to place `type` paying entirely in Gold: the
- * building's own Gold cost plus every other resource's cost[] amount
- * converted at the faction's current ask (Phase 3 — the elastic market
- * price, so the gold-pay option tracks what those goods actually cost
- * right now). For a Gold-only building type (nothing to convert) this
- * equals its existing Gold cost exactly. Used by the build-confirmation
- * popup's "pay Gold" option. Pricing only — it does not move faction
- * state; paying Gold for a building is a sink, like paying in resources. */
+/* Total Gold cost to place `type` paying entirely in Gold:. */
 int building_gold_equivalent_cost(BuildingType type, const Faction *f);
 
 /* Place a building into the buildings array.

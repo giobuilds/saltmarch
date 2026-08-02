@@ -74,9 +74,24 @@ New building types are added by extending the `BuildingType` enum and adding a m
 
 **Text rendering** goes through `fonts.c` (thin SDL_ttf wrapper, `fonts_init()`/`fonts_quit()`/`font_draw_text()`), not raw SDL_ttf calls — HUD, tooltips, and menu labels all use it.
 
+## Comments
+
+**A comment says WHAT the code does. It does not say why.**
+
+Rationale, history, measurements, rejected alternatives and phase narrative belong in `docs/` and in commit messages — the places that are read deliberately and checked. Putting them in the source too means three copies of the same claim, two of which nothing verifies and all of which rot. This was corrected in a pass that removed 8,000 comment lines and took `src/` from 30% comments to 14%; do not put them back.
+
+Concretely:
+- A file header states what the file owns, in one to three lines. Point at the design doc rather than reproducing it: `Design and history: docs/LIFE_PLAN.md.`
+- A function comment states what it does, what its arguments mean, and what it returns — including the sentinel or error value. `residents_settle_house` is a good length; anything approaching a paragraph is usually rationale in disguise.
+- A comment inside a function explains a step that is not obvious from the code. If the code is obvious, say nothing.
+- **Non-obvious mechanics are worth a line, not an essay.** "Both the period and the advance are scaled by `PRODUCTIVITY_BASE`, so the percentage multiplies and never divides" earns its place; the paragraph explaining which bug that prevented does not.
+- No ALL-CAPS emphasis, no `====` rules, no restating a phase's reasoning. If you want to record why, write it in the commit message — that is what it is for.
+
+Match this when editing existing files. If a file still carries the old style, trim it as you pass through rather than matching it.
+
 ## File responsibilities
 
-Each `src/*.c`/`*.h` pair is a self-contained subsystem; see the header comment block at the top of each file for its specific design notes (several encode non-obvious fixes, e.g. the `screen_to_iso()` centroid offset and the frame-rate-independent camera in camera.h). In file-reading order of typical relevance:
+Each `src/*.c`/`*.h` pair is a self-contained subsystem. In file-reading order of typical relevance:
 - `map.c/h` — tile grid, procedural island generation (two-octave value noise + radial mask + LCG RNG)
 - `camera.c/h` — pan offset + zoom (`ZOOM_MIN`/`ZOOM_MAX`/`ZOOM_STEP` in camera.h)
 - `input.c/h` — held keys, mouse position/clicks/scroll for one frame; `input_clear_clicks()` resets per-frame state

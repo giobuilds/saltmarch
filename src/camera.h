@@ -1,23 +1,9 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-/* =========================================================
- * camera.h  --  Camera / viewport
- *
- * The camera tracks how far we have scrolled the world.
- * offset_x / offset_y are pixel offsets applied before
- * drawing every tile.  When both are 0 the map origin
- * (tile 0,0) sits at the top-centre of the screen.
- *
- * Pan speed is measured in pixels per frame.
- * ========================================================= */
+/* ========================================================= */
 
-/* Logical render resolution. Defined here rather than in game.h
- * because camera_init() is the primary consumer and island.h (which
- * game.h includes, so it can't include game.h back) needs them to
- * centre a newly generated island's camera. Everything that
- * previously got these from game.h still does — game.h includes
- * camera.h. */
+/* Logical render resolution. Defined here rather than in game.h */
 #define SCREEN_W 1920
 #define SCREEN_H 1080
 

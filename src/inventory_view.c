@@ -1,8 +1,4 @@
-/*  inventory_view.c  --  The goods overlay (UI_PLAN Phase 4)
- *
- *  Layout and hit-testing; inventory_ui.c paints it. See the header for
- *  why this exists beside the corner panel rather than replacing it.
- */
+/* inventory_view.c  --  The goods overlay (UI_PLAN Phase 4) */
 
 #include "inventory_view.h"
 #include "island_bar.h"
@@ -163,11 +159,7 @@ void inventory_build(UiList *out, const InventoryView *view,
                      row->name, row->amount, UI_W_HEADER);
     }
 
-    /* ---- the harbour (UI_PLAN N8) ----------------------------
-     * Four capacities and a lever. Committed against capacity, always
-     * as a pair: "2 merchants" cannot say whether that is comfortable
-     * or the whole of what you have, and which it is decides whether to
-     * post another order. */
+    /* ---- the harbour (UI_PLAN N8) ---------------------------- */
     {
         UiRect block = ui_row(&l, INVENTORY_HARBOUR_H);
         UiRect line  = block;
@@ -181,11 +173,7 @@ void inventory_build(UiList *out, const InventoryView *view,
         out_of[0] = view->merchants_out; cap_of[0] = view->merchant_capacity;
         out_of[1] = view->hulls_out;     cap_of[1] = view->hull_capacity;
         out_of[2] = view->scholars_out;  cap_of[2] = view->scholar_capacity;
-        /* A research boat is a hull sitting in the harbour, not a
-         * commitment against a capacity — there is nothing to be "out
-         * of" until one sails, and sim_survey counts them the same
-         * way. So it is shown as a count, with its committed half
-         * folded into the scholars line above it. */
+        /* A research boat is a hull sitting in the harbour, not. */
         out_of[3] = 0;                   cap_of[3] = view->research_boats;
 
         line.h = 24.0f;
@@ -210,14 +198,7 @@ void inventory_build(UiList *out, const InventoryView *view,
         if (!view->yours) ui_list_disable_last(out, REJ_NOT_OWNER);
     }
 
-    /* ---- the treasury (LIFE_PLAN Phase 7) ------------------
-     * Rate, steppers, and the two numbers that say what the rate is
-     * actually doing. Steppers rather than a slider because ui_kit has
-     * no drag handling — see UI_ACTION_TAX.
-     *
-     * Each button carries THE RATE IT WOULD SET, not a delta. So the
-     * end of the range disables itself by the value it holds being out
-     * of bounds, and the hit decoder has nothing to compute. */
+    /* ---- the treasury (LIFE_PLAN Phase 7) ------------------ */
     {
         UiRect line = ui_row(&l, INVENTORY_TAX_H);
         UiRect cell;
@@ -247,10 +228,7 @@ void inventory_build(UiList *out, const InventoryView *view,
                                                   : REJ_NOT_OWNER);
 
         /* What it collected and how much of it is being paid. The
-         * second number is the one that matters when the rate is high:
-         * compliance falling is the island telling you it has had
-         * enough, and without it a shrinking take looks like a
-         * shrinking economy. */
+         * second number is the one that matters when the rate is high: */
         cell.x += 56.0f; cell.w = 240.0f;
         snprintf(label, sizeof(label), "%d/mo   %d%% paid",
                  view->tax_last_month, view->compliance_permille / 10);

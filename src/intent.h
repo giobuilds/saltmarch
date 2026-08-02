@@ -1,33 +1,8 @@
 #ifndef INTENT_H
 #define INTENT_H
 
-/* =========================================================
- * intent.h  --  What the player did, and what they were
- *               looking at when they did it (UI_PLAN M1)
- *
- * A Command records a decision. An Intent records the CLICK that
- * produced it: where the cursor was, which overlay was open, and —
- * the load-bearing field — the exact sim tick whose snapshot the frame
- * was showing.
- *
- * That last one is the whole format decision. Intents happen at frame
- * times; commands apply at tick boundaries. If a recorded click does
- * not carry the tick its frame was drawn from, a replay rebuilds a
- * DIFFERENT snapshot than the player saw — different prices, a
- * different page, possibly a different number of rows — and hit-tests
- * a click against a screen that never existed. The plan calls this out
- * as a thing to get right once, because a log recorded wrongly is not
- * repairable later.
- *
- * What this buys: CI can re-simulate to each intent's tick, take the
- * snapshot, drive the REAL builders and hit-tests, and assert that the
- * command that falls out is the one in the log. A click-through UI
- * regression suite on three platforms, in an environment with no
- * display and no input automation.
- *
- * Intents are cosmetic to the sim. They are never applied, never
- * hashed, and a log with none replays exactly as before.
- * ========================================================= */
+/* intent.h  --  What the player did, and what they were
+ * looking at when they did it (UI_PLAN M1) */
 
 #include <stdint.h>
 
@@ -48,11 +23,7 @@ typedef struct {
     uint16_t exchange_page;
     uint16_t inventory_page;
 
-    /* The order book's page and the draft order on it (UI_PLAN N3).
-     * The draft is recorded for the same reason the pages are: it is
-     * part of the screen the click landed on, and a replay that
-     * rebuilt it from scratch would hit-test a composer showing
-     * different numbers than the one the player was looking at. */
+    /* The order book's page and the draft order on it (UI_PLAN N3). */
     uint16_t book_page;
     uint8_t  book_side;
     uint8_t  book_res;

@@ -1,8 +1,4 @@
-/*  yard_ui.c  --  Painting the yard and the fleet (UI_PLAN N6)
- *
- *  Consumes the UiList that yard_build() produced. Nothing here decides
- *  where anything goes; see yard_ui.h.
- */
+/* yard_ui.c  --  Painting the yard and the fleet (UI_PLAN N6) */
 
 #include "yard_ui.h"
 #include "fonts.h"

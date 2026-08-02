@@ -1,13 +1,5 @@
-/*  test_piracy.c  --  loss mechanics and marine insurance
- *                     (MMO_PLAN later phases)
- *
- * MMO_PLAN is emphatic about the order: piracy first, insurance second,
- * because insuring against a loss that cannot happen is theatre. This
- * covers both, and the property that makes them safe to have at all —
- * a raid is DERIVED from the voyage's identity rather than rolled, so
- * every client, replay and server computes the same one without the
- * feed carrying a word about it.
- */
+/* test_piracy.c  --  loss mechanics and marine insurance
+ * (MMO_PLAN later phases) */
 
 #include "game.h"
 #include "sea.h"

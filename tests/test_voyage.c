@@ -1,22 +1,4 @@
-/*  test_voyage.c  --  headless verification of MMO_PLAN Phase 2
- *
- * A voyage is now defined by its departure tick, not an accumulating
- * float. This checks the three things Phase 2 promises:
- *
- *   1. Arrival is exact: a ship departing at tick D arrives at
- *      D + the crossing's length. That length is the ROUTE's since
- *      MARITIME_PLAN Phase 1 — it used to be the constant
- *      SHIP_VOYAGE_TICKS, and the property being checked is that
- *      arrival is an exact integer tick, not that it is a particular
- *      number.
- *   2. Save mid-voyage, load, and the ship still arrives at the same
- *      tick with the world hashing identically (the record survives a
- *      seed+log round-trip because departure_tick is replayed).
- *   3. VoyageRecord serialises to the expected one-line JSON — the wire
- *      format Phase 4 will publish.
- *
- * Built and run by tests/run.sh.
- */
+/* test_voyage.c  --  headless verification of MMO_PLAN Phase 2 */
 
 #include "game.h"
 #include "ship.h"

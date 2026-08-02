@@ -1,19 +1,4 @@
-/*  fonts.c  --  SDL_ttf wrapper
- *
- *  We keep a static array of two TTF_Font pointers, both loaded from
- *  the font bundled in assets/fonts/ next to the executable.
- *
- *  Resolution order (see font_resolve_path):
- *    1. <exe dir>/assets/fonts/...   — the shipped layout
- *    2. ./assets/fonts/...           — running from the source tree
- *    3. the old Fedora system path   — last-resort fallback
- *
- *  1 and 2 differ because the build puts the binary in build/ while
- *  the assets live at the repo root, so a developer running
- *  ./build/saltmarch from the project directory has a different
- *  relative layout to an installed copy. Trying both means the same
- *  binary works either way with no install step.
- */
+/* fonts.c  --  SDL_ttf wrapper */
 
 #include "fonts.h"
 #include <SDL3/SDL.h>
@@ -29,24 +14,7 @@ static int       fonts_ready = 0;
 /* The path fonts_init() actually succeeded with, for logging. */
 static char      fonts_path[1024];
 
-/* ---- the text cache (UI_PLAN M4) ---------------------------
- * font_draw_text used to rasterise a surface, upload a texture and
- * destroy it again on EVERY call — several hundred times a frame once
- * the exchange screen and the vitals strip are open.
- *
- * SDL_ttf 3.2's TTF_Text objects keep their own prepared geometry, so
- * a string that has not changed costs a draw call and nothing else.
- * That was always worth doing; it became a scheduled prerequisite when
- * the shared feed started supplying strings, because at that point the
- * worst case stops being "the UI is chatty" and becomes "a peer chose
- * how much text we rasterise per frame" (see UI_PLAN's risk list).
- *
- * The cache is a small open-addressed table keyed by (size, string).
- * Eviction is "overwrite whatever was there": the working set is the
- * text currently on screen, and a collision costs one re-creation
- * rather than a leak. Colour is NOT part of the key — TTF_SetTextColor
- * is cheap, so the same string in two colours shares one entry.
- */
+/* ---- the text cache (UI_PLAN M4) --------------------------- */
 #define TEXT_CACHE_SLOTS 256
 
 typedef struct {
@@ -130,11 +98,7 @@ void fonts_cache_stats(int *hits, int *misses)
 
 
 
-/* Fill `out` with the first candidate path that exists, returning 1,
- * or 0 if none do. SDL_GetBasePath() is what makes this portable: it
- * returns the executable's directory on Linux, macOS and Windows
- * alike, so the bundled asset is found regardless of the working
- * directory the game was launched from. */
+/* Fill `out` with the first candidate path that exists, returning. */
 static int font_resolve_path(char *out, size_t out_len)
 {
     const char *base = SDL_GetBasePath();   /* SDL-owned, do not free */
@@ -213,15 +177,7 @@ void fonts_quit(void)
     fonts_ready = 0;
 }
 
-/* ---- font_draw_text ------------------------------------
- * Renders a UTF-8 string using TTF_RenderText_Blended
- * (anti-aliased, RGBA surface) then uploads it as a
- * temporary SDL_Texture and draws it at (x, y).
- *
- * We create and destroy a texture per call.  This is not
- * the fastest approach — a glyph cache is the Phase 6
- * optimisation — but it is simple and correct for now.
- * -------------------------------------------------------- */
+/* ---- font_draw_text ------------------------------------ */
 int font_draw_text(SDL_Renderer *renderer,
                    FontSize size,
                    const char *text,

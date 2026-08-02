@@ -1,29 +1,5 @@
-/*  test_lockstep.c  --  headless verification of MMO_PLAN Phase 5's
- *                       net half: the lockstep co-op protocol.
- *
- * Host and guest sessions live in one process, each with its own
- * GameState, joined by net_pair_mem() — the full protocol (handshake,
- * world transfer, grant, command ordering, tick authorisation, hash
- * exchange, disconnect) over the in-memory transport, so the test is
- * deterministic in any environment. Real TCP swaps in the socket layer
- * only (net_host/net_join); the sandbox this repo is developed in
- * emulates loopback TCP unfaithfully, which is exactly why the
- * transport is swappable. The loop mimics both main loops: pump, tick
- * (host freely, guest up to its authorisation horizon), after-update.
- *
- * Proves the plan's claims:
- *   - joining transfers the world (seed+log) and assigns player 2;
- *   - the host grants a landless guest a starting island THROUGH THE
- *     LOG (both sides see it);
- *   - commands from both sides apply on both sides, identically;
- *   - privacy by validation holds end-to-end (a guest order against
- *     the host's island is rejected on both);
- *   - when the guest catches up to the host's tick, the worlds hash
- *     IDENTICALLY — the lockstep invariant;
- *   - disconnect degrades to single-player continuation on both sides.
- *
- * Built and run by tests/run.sh.
- */
+/* test_lockstep.c  --  headless verification of MMO_PLAN Phase 5's
+ * net half: the lockstep co-op protocol. */
 
 #include "game.h"
 #include "net.h"

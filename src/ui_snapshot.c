@@ -1,13 +1,4 @@
-/*  ui_snapshot.c  --  Taking the picture (UI_PLAN Phase 0)
- *
- *  The only file in the UI layer that sees a GameState. Everything
- *  downstream — every overlay builder, every hit-test — takes the
- *  snapshot instead, which is what makes UI code structurally unable to
- *  mutate the world or step its RNG.
- *
- *  Still SDL-free: this compiles into libsaltmarch_ui, which links no
- *  SDL, so the headless harness can drive real UI code.
- */
+/* ui_snapshot.c  --  Taking the picture (UI_PLAN Phase 0) */
 
 #include "ui_snapshot.h"
 #include "sea.h"
@@ -74,11 +65,7 @@ static void snapshot_island(UiIsland *out, const Island *isl,
         out->escrow[i] = isl->escrow[i];
     }
 
-    /* Buildings are copied in slot order, INCLUDING inactive slots.
-     * Compacting them here would renumber every building whenever one
-     * was demolished, and UI ids are identities — a widget id that
-     * shifts when an unrelated building is destroyed is exactly the
-     * positional-id bug UI_PLAN decision 2 bans. */
+    /* Buildings are copied in slot order, INCLUDING inactive slots. */
     out->building_count = isl->building_count;
     for (i = 0; i < isl->building_count && i < MAX_BUILDINGS; i++) {
         const Building *b = &isl->buildings[i];
@@ -100,11 +87,7 @@ static void snapshot_island(UiIsland *out, const Island *isl,
     }
 }
 
-/* The bounds this header declares must actually hold the sim's world,
- * and the two sets of constants live in different files on purpose —
- * a UI file should not have to include orderbook.h to know how many
- * rows a list can have. These make "on purpose" checkable rather than
- * a comment somebody keeps in step by hand. */
+/* The bounds this header declares must actually hold the sim's. */
 typedef char ui_snapshot_bounds_check[
     (UI_MAX_ORDERS   >= ORDERBOOK_MAX_ORDERS   &&
      UI_MAX_BOOKINGS >= ORDERBOOK_MAX_BOOKINGS &&
@@ -113,20 +96,7 @@ typedef char ui_snapshot_bounds_check[
      UI_MAX_SURVEYS  >= MAX_SURVEYS            &&
      UI_MAX_PIRATES  >= MAX_PIRATES) ? 1 : -1];
 
-/* ---- the maritime world (UI_PLAN N1) ----------------------
- * THE SEA IS NOT COPIED. Routes are about two hundred entries of fixed
- * geometry — positions, names, per-leg durations — regenerated from
- * the world seed and identical on every client. Copying them every frame
- * would take this snapshot from under 10 KB to about 60 KB to say the
- * same thing every time.
- *
- * So the UI reads `Sea` directly, and takes through here only the one
- * part of it that is world state: the per-pair cursor saying which two
- * private passages are currently in play. That is a deliberate,
- * recorded exception to UI_PLAN decision 1, and it is safe precisely
- * because a Sea is GENERATED rather than owned — there is nothing in
- * it a UI could mutate that would not be rebuilt identically.
- */
+/* ---- the maritime world (UI_PLAN N1) ---------------------- */
 static void snapshot_market(UiSnapshot *out, const struct GameState *gs)
 {
     int i, n;
@@ -279,10 +249,7 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
 }
 
 /* ---- reading a snapshot ------------------------------------
- * The two queries an overlay needs that are not a plain field read.
- * Both live here rather than in the overlay that first wanted them,
- * so a second overlay asking the same question gets the same answer.
- */
+ * The two queries an overlay needs that are not a plain field read. */
 
 int snapshot_has_building(const UiIsland *isl, BuildingType type)
 {

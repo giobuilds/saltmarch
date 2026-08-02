@@ -1,9 +1,4 @@
-/*  yard_view.c  --  The yard, and the fleet it launches (UI_PLAN N6)
- *
- *  Layout and hit-testing. No SDL, no drawing, no GameState — see
- *  yard_view.h for why a hull is a choice worth a screen, why condition
- *  is the other half of it, and why there is no refit button.
- */
+/* yard_view.c  --  The yard, and the fleet it launches (UI_PLAN N6) */
 
 #include "yard_view.h"
 #include "island_bar.h"
@@ -32,14 +27,7 @@ static int32_t next_escort(const UiSnapshot *snap, int me, int32_t current)
     int cand;
 
     /* Ascending from whoever is guarded now, and off the end into
-     * "nobody" — rather than modulo arithmetic round the fleet.
-     *
-     * The modular version was written first and could not release: with
-     * two ships, stepping twice from the one you are guarding lands back
-     * on it, so the button cycled between one target and the same target
-     * for ever and a convoy could never be dissolved. Walking off the
-     * end terminates by construction, and -1 is a real state rather than
-     * a wrap-around that happens to be free. */
+     * "nobody" — rather than modulo arithmetic round the fleet. */
     for (cand = (int)current + 1; cand < snap->ship_count; cand++) {
         if (cand == me) continue;                  /* not itself       */
         if (!snap->ships[cand].active) continue;

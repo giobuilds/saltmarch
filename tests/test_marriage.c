@@ -1,23 +1,5 @@
-/*  test_marriage.c  --  households, and the children that follow
- *                      (LIFE_PLAN Phase 6)
- *
- * Phase 5 gave people ages and deaths, and left an island peopled
- * entirely by adult immigrants. This is where an island starts making
- * its own people.
- *
- * THE ONE STRUCTURAL RISK IN THIS PHASE is `spouse`: it is a residents[]
- * INDEX, and slots are reused. A marriage that outlives its partner's
- * slot is a widow married to whoever moves in next — a bug that would
- * never crash, would never fail a hash, and would simply produce quiet
- * nonsense. Half the assertions below exist for that one hazard.
- *
- * THE OTHER THING MEASURED HERE is how much of an island's growth is
- * actually born rather than shipped in. Phase 6 does not add a source of
- * population: it decides WHO fills a slot that pop_update had already
- * opened. So the number to watch is a composition, not a total.
- *
- * Linked against the sim alone: no SDL, no UI.
- */
+/* test_marriage.c  --  households, and the children that follow
+ * (LIFE_PLAN Phase 6) */
 
 #include "game.h"
 #include "island.h"
@@ -35,14 +17,7 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                 \
     } while (0)
 
-/* An adult of `years`, living at `home`.
- *
- * `birth_house` is set to -1 EXPLICITLY and not left to the memset,
- * which is the one trap in building these by hand: zero is a valid
- * building slot, so a founder zeroed rather than initialised claims to
- * have been born in house 0 — and two of them would then read as
- * siblings and refuse to marry, for a reason nothing in the test would
- * show. spawn_resident sets it the same way and for the same reason. */
+/* An adult of `years`, living at `home`. */
 static void person(Resident *r, uint32_t id, int years, int home, int sex)
 {
     memset(r, 0, sizeof(*r));
@@ -57,13 +32,7 @@ static void person(Resident *r, uint32_t id, int years, int home, int sex)
 }
 
 /* Marriage is a monthly draw, so a test that calls it once is testing
- * the draw rather than the pairing. Run a few years of months.
- *
- * The PopData is derived from the residents rather than passed in,
- * because every caller here builds people first and would otherwise
- * have to keep a parallel array in step by hand. Marriage MOVES people,
- * so the counts have to be real: given none, every cross-household
- * match would find no room anywhere and send the couple to the reserve. */
+ * the draw rather than the pairing. Run a few years of months. */
 #define MARRY_HOUSES 8
 static void marry_for_years(Resident r[], int count, int years)
 {
@@ -99,17 +68,7 @@ static void test_pairing(void)
 
     marry_for_years(r, 4, 5);
 
-    /* ACROSS THE STREET, NOT UNDER THE SAME ROOF (LIFE_PLAN Phase 7).
-     * Phase 6 paired housemates because a house was six unrelated
-     * lodgers. A house is a family now, so the rule looks abroad FIRST
-     * — a full pass over partners from other households before it will
-     * consider one from your own — and these four therefore pair
-     * across the two houses rather than within them.
-     *
-     * Which of the two cross-house pairings forms is not asserted: the
-     * scan is ordered but the draw is per pair and per month, so 0-with-3
-     * is as correct as 0-with-1. What must hold is that everybody is
-     * accounted for, mutually. */
+    /* ACROSS THE STREET, NOT UNDER THE SAME ROOF (LIFE_PLAN Phase 7). */
     /* Compared against where they STARTED, not where they ended up: a
      * cross-household marriage moves the couple in together, so their
      * final addresses always match and would prove nothing. */
@@ -155,14 +114,7 @@ static void test_who_is_eligible(void)
           "and neither does an elder — nor the adult left with only those two");
 }
 
-/* Once married, stays married: a second pass must not re-pair anybody.
- *
- * WHO pairs with whom is deliberately not asserted. The scan is in index
- * order but the draw is per pair and per month, so the first pair to
- * come up lucky is the first pair to marry — 0 with 2 is as correct an
- * outcome as 0 with 1. Pinning that down would be asserting the hash
- * rather than the rule. What must hold is that everybody ends up
- * accounted for, mutually, and that it then stops moving. */
+/* Once married, stays married: a second pass must not re-pair anybody. */
 static void test_marriage_is_not_re_drawn(void)
 {
     Resident r[4];
