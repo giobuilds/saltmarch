@@ -116,6 +116,10 @@ void command_describe(const Command *c, char *out, size_t n)
     case CMD_SET_DOCKING:
         snprintf(out, n, "SET_DOCKING  island %d  allow %d", c->a, c->b);
         break;
+    case CMD_SET_TAX_RATE:
+        snprintf(out, n, "SET_TAX  island %d  %d.%d%%",
+                 c->a, c->b / 10, c->b % 10);
+        break;
     case CMD_INTERCEPT:
         snprintf(out, n, "INTERCEPT  ship %d -> ship %d  (departed %d)",
                  c->a, c->b, c->c);

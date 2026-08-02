@@ -155,7 +155,13 @@ typedef struct NetSession NetSession;
  *    born in (LIFE_PLAN Phase 6b). This one IS a format change as well
  *    as a rule change — three int32s per resident — so an older peer
  *    would decode every resident after the first at the wrong offset. */
-#define NET_PROTO_VERSION     26u
+/* 27: households, the reserve and the treasury (LIFE_PLAN Phase 7).
+ *    Both a format change and a rule change — four more int32s per
+ *    island, two per resident and a byte per house, and gold that now
+ *    enters the world through tax rather than through housing. A peer
+ *    on 26 would misread every resident after the first AND disagree
+ *    about how much money the island has. */
+#define NET_PROTO_VERSION     27u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

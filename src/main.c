@@ -924,6 +924,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 fx_reject_expect(&app->fx, gs->cmd_seq_last,
                                  fx_anchor_rect(ihit.rect));
             }
+            else if (ihit.kind == INVENTORY_HIT_TAX) {
+                /* What the treasury takes (LIFE_PLAN Phase 7). The hit
+                 * carries the rate the stepper would set, so this is a
+                 * submission and not a calculation. */
+                game_set_tax_rate(gs, gs->current_island, ihit.on);
+                fx_reject_expect(&app->fx, gs->cmd_seq_last,
+                                 fx_anchor_rect(ihit.rect));
+            }
             else if (ihit.kind == INVENTORY_HIT_CLOSE ||
                      ihit.kind == INVENTORY_HIT_OUTSIDE)
                 gs->inventory_open = 0;

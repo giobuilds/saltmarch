@@ -1,6 +1,8 @@
 # Residents, lives and labour — the design
 
-> Status: **Phases 1-5 done; Phase 6 next.** The calendar is settled — see
+> Status: **Phases 1-7 done; Phase 8 next.** Phase 7 leaves a known
+> economic gap — the island does not fund its own imports; see its
+> entry. The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -748,11 +750,104 @@ births yet — `feed.c` is client-side and the phase's sim work stands on
 its own. Kinship is not modelled at all: nobody has recorded parents, so
 nobody can marry a relative and nobody can inherit anything.
 
-**7 — status modifies productivity.** Slept, ate, married, employed →
+**7 — households, wages and the treasury. DONE, WITH ONE KNOWN GAP.**
+Households of ten, fertility bounded by biology, a reserve of people
+with no roof, and gold that enters the world as taxed wages instead of
+being minted by housing. Save v36, snapshot v15, protocol 27. Fixture
+hash `e07bd51fd2d9ba87` → `86899f082c03924e`.
+
+*Built as one phase against advice.* Landing the economy first and the
+demography second would have kept the game playable throughout; a
+combined phase was chosen instead, and the cost was real — the suite
+went red in six places at once and two genuine bugs (below) hid inside
+that noise for a while.
+
+**The demography.** A house holds ten and is laid EMPTY, settled by
+`island_settle_house` from a hundred-place founder allowance and, after
+that, out of the reserve. Menopause at 60 and twelve months between
+births replace the child cap an earlier draft used: a quota answers
+"how many" with a number nobody can defend, a recovery period answers
+it with a rate. Children never leave home for want of a bed — a
+household may exceed its capacity while its own children are young —
+and an adult leaves when they marry, or when the house is over capacity
+and they are the oldest unmarried child.
+
+*The reserve is young couples with nowhere to live*, not homeless
+infants. It is FIFO on `reserve_since`, which never resets — not when a
+house is laid for somebody else and not when a migration carries them
+to another island. Somebody may take a roof ALONE and wait for a
+spouse, which is why settling returns 1 as legitimately as 2.
+
+*Emigration is the only bound on population.* Without it, eighteen
+children a woman with each daughter doing the same is roughly ninefold
+growth per generation and `MAX_RESIDENTS` is reached in two or three
+generations whatever the player does. After twenty-four months
+unhoused, somebody leaves — to another island of the player's first, to
+another player's second, and out of the world last.
+
+**The money.** `GOLD_PER_RESIDENT` is gone. A building earns its output
+valued at `faction_bid()`, pays `WAGE_PER_WORKER` a head, and the player
+taxes wages and profit at a rate set through `CMD_SET_TAX_RATE`. The
+treasury is the island's existing `RES_GOLD`, so trade income is
+untouched and only the SOURCE of gold changed.
+
+*Tax is levied monthly on an accumulated base, and that is correctness
+rather than flavour.* A single production cycle is a few coins, and a
+few coins times a tenth in integers is zero — an island of ten Fisher's
+Huts collected NOTHING until the base was summed over a month and
+divided once. Two earlier versions of this measured exactly zero
+revenue before the cause was found.
+
+*All four of `new-happiness-design.md`'s damping rules are built* and
+`tests/test_tax.c` asserts each one separately, including the one that
+document asks for by name: an island run into sustained unhappiness at
+the maximum rate recovers to full compliance in eighteen months.
+
+**THE KNOWN GAP: the island does not fund itself.** Measured against
+the faction's own ask prices, a village of twenty-four spends about
+2,950 gold a year on imports and collects about 430 in tax — a sevenfold
+shortfall that bankrupts a ten-thousand-gold treasury in four years, on
+every seed.
+
+The cause is not the tax rule; it is the labour supply. The working
+share is **13%** — two adults in a household of ten, less the third of
+her fertile life a mother spends pregnant, against an island that also
+feeds its reserve. At 13% nothing closes: Marshfolk project at 1.69
+against a wall of 1.00. `tests/test_closure.c` no longer asserts that
+the base tier feeds itself, because it does not; it now measures the
+SIZE of the gap and fails if it grows, which is a watchdog on a known
+imbalance rather than a guarantee.
+
+*The levers, in the order I would try them:* `WAGE_PER_WORKER` (2 is a
+guess and the wage base is what tax multiplies), the faction's bid/ask
+spread (an island importing most of its needs bleeds by construction),
+and `CONCEIVE_PERMILLE_PER_MONTH` (fewer, later children raise the
+working share directly). Letting the reserve work is explicitly NOT on
+the list — it was considered and rejected: it would make homelessness
+free, and it needs an island-wide unhappiness term that feeds the very
+loop §6 warns about.
+
+*Two bugs worth recording.* `island_settle_house` ASSIGNED `live + got`
+back over `pop_data.residents` instead of adding, which silently wrote a
+house of forty down to zero the first month it ran — the counts and the
+residents array are normally in step, and code that assumes they always
+are will one day meet a snapshot where they are not. And
+`residents_marry` kept a short form for tests with no `PopData` to
+offer, which quietly sent every cross-household couple to the reserve
+because with no counts there was never room anywhere; it was deleted
+rather than documented.
+
+*One good surprise.* Raising `HOUSE_CAPACITY` to ten spread every
+per-household bill over two-thirds more people, and the Wrights tier —
+declared import-dependent at Phase 6b — came back under the wall at
+0.86 on today's numbers. The tier that was rescued by a decision got
+rescued by arithmetic instead.
+
+**8 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent
 inputs, so no single shortage moves all of them.
 
-**8 — the wellbeing projection.** The six factors, per resident, floats,
+**9 — the wellbeing projection.** The six factors, per resident, floats,
 entirely above the sim — surfaced as a cast rather than a census.
 
 ## What this does not do

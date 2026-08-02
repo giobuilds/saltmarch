@@ -57,12 +57,28 @@ static void person(Resident *r, uint32_t id, int years, int home, int sex)
 }
 
 /* Marriage is a monthly draw, so a test that calls it once is testing
- * the draw rather than the pairing. Run a few years of months. */
+ * the draw rather than the pairing. Run a few years of months.
+ *
+ * The PopData is derived from the residents rather than passed in,
+ * because every caller here builds people first and would otherwise
+ * have to keep a parallel array in step by hand. Marriage MOVES people,
+ * so the counts have to be real: given none, every cross-household
+ * match would find no room anywhere and send the couple to the reserve. */
+#define MARRY_HOUSES 8
 static void marry_for_years(Resident r[], int count, int years)
 {
-    int m;
+    static PopData pop[MARRY_HOUSES];
+    int m, i;
+
+    memset(pop, 0, sizeof(pop));
+    for (i = 0; i < MARRY_HOUSES; i++) pop[i].active = 1;
+    for (i = 0; i < count; i++)
+        if (r[i].active && r[i].home_idx >= 0 && r[i].home_idx < MARRY_HOUSES)
+            pop[r[i].home_idx].residents++;
+
     for (m = 0; m < years * MONTHS_PER_YEAR; m++)
-        residents_marry(r, count, 12345u, (uint64_t)(m + 1) * CALENDAR_MONTH_TICKS);
+        residents_marry(r, count, pop, MARRY_HOUSES, 12345u,
+                        (uint64_t)(m + 1) * CALENDAR_MONTH_TICKS);
 }
 
 /* ---- 1. who pairs with whom ------------------------------- */
@@ -77,12 +93,38 @@ static void test_pairing(void)
     person(&r[2], 3, 35, 1, SEX_FEMALE);   /* another house entirely */
     person(&r[3], 4, 33, 1, SEX_MALE);
 
+    {
+        int home0[4], i;
+        for (i = 0; i < 4; i++) home0[i] = r[i].home_idx;
+
     marry_for_years(r, 4, 5);
 
-    CHECK(r[0].spouse == 1 && r[1].spouse == 0,
-          "two adults under one roof marry each other");
-    CHECK(r[2].spouse == 3 && r[3].spouse == 2,
-          "and the pair next door marry each other, not across the street");
+    /* ACROSS THE STREET, NOT UNDER THE SAME ROOF (LIFE_PLAN Phase 7).
+     * Phase 6 paired housemates because a house was six unrelated
+     * lodgers. A house is a family now, so the rule looks abroad FIRST
+     * — a full pass over partners from other households before it will
+     * consider one from your own — and these four therefore pair
+     * across the two houses rather than within them.
+     *
+     * Which of the two cross-house pairings forms is not asserted: the
+     * scan is ordered but the draw is per pair and per month, so 0-with-3
+     * is as correct as 0-with-1. What must hold is that everybody is
+     * accounted for, mutually. */
+    /* Compared against where they STARTED, not where they ended up: a
+     * cross-household marriage moves the couple in together, so their
+     * final addresses always match and would prove nothing. */
+        {
+            int all = 1, crossed = 0;
+            for (i = 0; i < 4; i++) {
+                if (r[i].spouse < 0 || r[r[i].spouse].spouse != i) all = 0;
+                else if (home0[i] != home0[r[i].spouse]) crossed = 1;
+            }
+            CHECK(all, "four adults in two houses all find somebody");
+            CHECK(crossed,
+                  "and at least one married out of the house they started "
+                  "in — a house is a family, so looking abroad comes first");
+        }
+    }
 
     /* Reciprocity is the invariant every other read depends on. */
     {

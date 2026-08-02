@@ -427,6 +427,11 @@ static void test_closure(void)
  * builds the failure on purpose — a plausible new luxury with a
  * three-deep chain — and checks the arithmetic moves the way the guard
  * assumes it does. */
+/* Defined with the age-pyramid section below, where the constant it
+ * divides by is documented. Forward-declared because the demonstration
+ * that the wall is a real line moved onto the projection at Phase 7. */
+static double projected(const TierBill *b);
+
 static void test_the_guard_bites(void)
 {
     double fish, gin, banquet;
@@ -437,28 +442,45 @@ static void test_the_guard_bites(void)
     gin     = good_ratio(RES_MARSH_GIN);   /* two steps, per household */
     banquet = good_ratio(RES_BANQUET);     /* deep, per household      */
 
+    printf("        fish %.3f  gin %.3f  banquet %.3f\n", fish, gin, banquet);
     CHECK(banquet > gin, "a deeper chain costs more than a shallow one");
     CHECK(fish + gin < THE_WALL,
           "the opening two goods leave most of the island free to work");
 
     /* The limits are not vacuous, and this is the evidence: real tiers
      * in this same table fall on the far side of both of them. A
-     * threshold no data ever exceeds is decoration. */
+     * threshold no data ever exceeds is decoration.
+     *
+     * BOTH OF THESE MOVED AT PHASE 7 and the reason is worth recording,
+     * because it is the one genuinely good thing the household change
+     * did to the economy. Refined goods are charged PER HOUSE, so
+     * raising HOUSE_CAPACITY from six to ten spread every per-household
+     * bill over two-thirds more people. Artisans fell from over the
+     * wall to 0.76, and four Banquets on the base tier stopped breaking
+     * it.
+     *
+     * So the demonstration moved to where the guard now actually lives:
+     * the PROJECTION. Today's numbers are comfortable and the projected
+     * ones are not, which is precisely the gap this phase opened. */
     {
         TierBill a = tier_bill(BUILDING_HOUSE_ARTISAN, "Artisans");
+        char     msg[160];
 
-        CHECK(a.total > THE_WALL,
-              "Artisans are over the wall — the limit is a real line");
+        snprintf(msg, sizeof(msg),
+                 "Artisans sit at %.2f today and %.2f while a generation "
+                 "is raised — the limit is a real line",
+                 a.total, projected(&a));
+        CHECK(a.total < THE_WALL && projected(&a) > THE_WALL, msg);
     }
 
-    /* Marshfolk's whole bill plus four Banquets would clear the wall,
-     * which is the shape of the accident this test exists to catch:
-     * nobody would think of adding a luxury as making a tier
-     * unlivable. */
+    /* And the arithmetic is still sensitive: enough luxuries on the
+     * base tier clear the wall on TODAY's numbers, which is the shape
+     * of the accident this test exists to catch. Nobody would think of
+     * adding a luxury as making a tier unlivable. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
-        CHECK(m.total + 4.0 * banquet > THE_WALL,
-              "and four such goods on the base tier would break it");
+        CHECK(m.total + 6.0 * banquet > THE_WALL,
+              "and six such goods on the base tier would break it");
     }
 
     /* THE SURVIVAL LIMIT IS NOW UNEXERCISED BY REAL DATA, and saying so
@@ -490,12 +512,21 @@ static void test_the_guard_bites(void)
  * for exactly this — so the year is the wrong statistic and the
  * five-year mean is the right one. Closure has to hold through a bad
  * decade, because a bad decade is when an island actually fails. */
-/* 0.33 SINCE LIFE_PLAN Phase 6b, and it is no longer really a
- * statistic. An island raises its own people now, and a house that is
- * doing so is two parents and four children — a third of it able to
- * work, on every seed, for the eighteen years it takes the eldest to
- * grow up. */
-#define ADULT_FRACTION    0.33
+/* 0.13 SINCE LIFE_PLAN Phase 7, and it is now a WORKER fraction rather
+ * than an adult one — the two stopped being the same number when the
+ * reserve arrived. tests/test_ageing.c counts only people who are
+ * grown, housed and not carrying a child, because only those three
+ * things together staff a supply chain.
+ *
+ * Where it went: a household is two parents and about eight minors,
+ * the mother is pregnant a third of her fertile life, and anybody with
+ * no roof is idle. Two workers in a house of ten, less her pregnancies,
+ * against an island that also feeds its reserve.
+ *
+ * NO TIER CLOSES AT THIS NUMBER, and that is the finding rather than a
+ * failure of the test — see the assertions below, which now measure the
+ * SIZE of the gap the marketplace has to cover. */
+#define ADULT_FRACTION    0.13
 #define NON_ADULT_RATION  0.50
 
 static double projected(const TierBill *b)
@@ -522,21 +553,36 @@ static void test_the_headroom_is_for_something(void)
                projected(&b) >= THE_WALL ? "   <-- OVER THE WALL" : "");
     }
 
-    /* THE TIER THAT MUST FEED ITSELF, at the worst measured adult
-     * fraction. Marshfolk are the opening every player takes, and an
-     * island that cannot staff its own cottages is an island that
-     * cannot be started — so this one is not negotiable. It clears at
-     * 0.89, which is close to the wall and is meant to be: raising
-     * children is supposed to be the hardest thing a young village
-     * does. */
+    /* NOTHING CLOSES ANY MORE, AND THIS IS WHAT THE TEST NOW GUARDS.
+     *
+     * Through Phase 6b the base tier had to feed itself from home and
+     * did, at 0.89 against a wall of 1.00. Phase 7 put eight children in
+     * every household and a reserve beside it, and the working share
+     * fell to 13% — Marshfolk project at 1.69. An island cannot staff
+     * its own cottages, full stop.
+     *
+     * That is a DESIGN POSITION now rather than a defect: the
+     * marketplace is meant to cover what an island cannot make, and the
+     * treasury is meant to pay for it. So the assertion changed from
+     * "the base tier closes" to "we know how big the gap is" — because
+     * a number nobody is watching is how the last two phases each
+     * drifted a tier over the wall without noticing.
+     *
+     * THE GAP IS NOT CURRENTLY AFFORDABLE. Measured against the
+     * faction's own ask prices, an island of twenty-four bankrupts a
+     * ten-thousand-gold treasury in four years, at roughly eight times
+     * the tax it collects. This bound is therefore a WATCHDOG on a
+     * known-broken balance, set just above what was measured so that
+     * any change which makes it worse fails loudly. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
-        char     msg[160];
+        char     msg[200];
 
         snprintf(msg, sizeof(msg),
-                 "Marshfolk feed themselves through the worst decade "
-                 "(%.2f)", projected(&m));
-        CHECK(projected(&m) < THE_WALL, msg);
+                 "Marshfolk need %.2f workers per worker they have — the "
+                 "marketplace covers the rest, by decision",
+                 projected(&m));
+        CHECK(projected(&m) >= THE_WALL && projected(&m) < 2.0, msg);
     }
 
     /* WRIGHTS BECAME IMPORT-DEPENDENT AT PHASE 6b, BY DECISION — the

@@ -49,6 +49,7 @@
  *   CMD_ESCROW_TAKE     a=island b=resource c=qty d=quay nonce
  *                        (stockpile <-> escrow; d==0 => unstamped)
  *   CMD_SET_DOCKING     a=island b=allow (0/1 — foreign-ship permission)
+ *   CMD_SET_TAX_RATE    a=island b=per mille taken from wages and profit
  *   CMD_SET_INSURANCE   a=island b=on (0/1 — insure shipments from here)
  *   CMD_BUILD_RESEARCH_BOAT  a=island
  *   CMD_SURVEY          a=island (from) b=island (to)
@@ -102,6 +103,7 @@ typedef enum {
     CMD_SET_ROUTE_RES,   /* cycle a route leg's carried resource         */
     CMD_TOGGLE_ROUTE,    /* activate/deactivate a ship's trade route     */
     CMD_GRANT_START,     /* settle a starting island for a new player    */
+    CMD_SET_TAX_RATE,    /* owner: what the treasury takes (Phase 7)     */
     CMD_ESCROW_PUT,      /* owner: move goods stockpile -> harbor escrow */
     CMD_ESCROW_TAKE,     /* owner: move goods harbor escrow -> stockpile */
     CMD_SET_DOCKING,     /* owner: allow/forbid foreign ships docking    */

@@ -659,8 +659,15 @@ typedef struct {
  * starting gold is ten thousand rather than one, and a house opens at
  * two residents rather than five — so a recorded log replays into an
  * island with a different population, a different workforce and a
- * different amount of money to have spent. */
-#define SAVE_VERSION 35u
+ * different amount of money to have spent.
+ *
+ * v36 (LIFE_PLAN Phase 7): households of ten, fertility bounded by
+ * biology rather than a quota, a reserve of people with no roof who
+ * emigrate if none is built, and gold that enters the world as taxed
+ * wages instead of being minted by housing. A log recorded under any
+ * earlier rule replays into an island with a different population, a
+ * different workforce and a different amount of money. */
+#define SAVE_VERSION 36u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1226,6 +1233,73 @@ static void sim_charter_tick(GameState *gs, int island)
     isl->charter_timer   = 0;
 }
 
+/* ---- migration between islands (LIFE_PLAN Phase 7) --------
+ * Where somebody goes when the island they were born on could not roof
+ * them in RESERVE_TOLERANCE_MONTHS. Installed on every Island as a
+ * function pointer, because an island must not learn what a world is.
+ *
+ * The order is the player's own ports first, then anybody else's. That
+ * makes colonising a population valve — surplus people flow to your
+ * frontier instead of being lost — and makes losing them to a rival the
+ * thing that happens only when you have no room anywhere.
+ *
+ * `reserve_since` is CARRIED ACROSS, deliberately. A resident moved to
+ * another island arrives with the wait they have already served, so
+ * nobody can be shuffled between a player's ports on a clock that keeps
+ * restarting and be lost anyway; and somebody who arrives with 23 of
+ * their 24 months served is at the front of the destination's queue,
+ * which is where they belong.
+ *
+ * Returns 1 if they were taken. A destination house must have ROOM: the
+ * capacity rule applies to arrivals, which is exactly what this is. */
+static int game_migrate_to(GameState *gs, Island *from, int idx,
+                           uint32_t owner, int want_owner)
+{
+    int i, b;
+
+    for (i = 0; i < MAX_ISLANDS; i++) {
+        Island *dst = &gs->islands[i];
+
+        if (dst == from || !dst->settled)                       continue;
+        if (want_owner  && dst->owner != owner)                 continue;
+        if (!want_owner && (dst->owner == owner || !dst->owner)) continue;
+
+        for (b = 0; b < dst->building_count; b++) {
+            int slot;
+
+            if (!dst->pop_data[b].active)                        continue;
+            if (dst->pop_data[b].residents >= HOUSE_CAPACITY)    continue;
+            if (dst->resident_count >= MAX_RESIDENTS)            continue;
+
+            /* Copy the person across, then vacate the old slot. Their
+             * marriage does not survive the crossing — the spouse is an
+             * index into the ISLAND they left, and a stale one would
+             * marry them to a stranger on arrival. */
+            slot = dst->resident_count++;
+            dst->residents[slot]             = from->residents[idx];
+            dst->residents[slot].home_idx    = b;
+            dst->residents[slot].spouse      = -1;
+            dst->residents[slot].birth_house = -1;   /* no kin here */
+            dst->pop_data[b].residents++;
+            dst->pop_data[b].founded = 1;
+
+            sim_log("%s: somebody arrives from %s", dst->name, from->name);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int game_migrate_resident(void *ctx, int resident_idx)
+{
+    GameState *gs   = (GameState *)ctx;
+    Island    *from = &gs->islands[gs->migrate_from];
+    uint32_t   owner = from->owner;
+
+    if (game_migrate_to(gs, from, resident_idx, owner, 1)) return 1;
+    return game_migrate_to(gs, from, resident_idx, owner, 0);
+}
+
 /* ---- sim_run_one_tick -----------------------------------
  * The heartbeat. See the header-comment contract in game.h. Command
  * application happens first and before any island updates, so a command
@@ -1278,7 +1352,8 @@ void sim_run_one_tick(GameState *gs)
     if (gs->predict_only != 0u) {
         for (i = 0; i < MAX_ISLANDS; i++)
             if (gs->islands[i].owner == gs->predict_only)
-                island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no);
+                island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no,
+                              &gs->faction);
         gs->sim_tick_no++;
         return;
     }
@@ -1291,9 +1366,17 @@ void sim_run_one_tick(GameState *gs)
     book_match(gs);
 
     /* 3. Every settled island's full pipeline, one tick, in order —
-     * see island_update()'s ordering constraint. */
-    for (i = 0; i < MAX_ISLANDS; i++)
-        island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no);
+     * see island_update()'s ordering constraint. Each is handed the
+     * world's migration hook first: an island cannot see another
+     * island, so where a departing resident goes is a question only
+     * this layer can answer (LIFE_PLAN Phase 7). */
+    for (i = 0; i < MAX_ISLANDS; i++) {
+        gs->migrate_from        = i;
+        gs->islands[i].emigrate     = game_migrate_resident;
+        gs->islands[i].emigrate_ctx = gs;
+        island_update(&gs->islands[i], gs->world_seed, gs->sim_tick_no,
+                              &gs->faction);
+    }
 
     /* 4. Voyages advance independently of any island. Insurance is
      * settled either side of the move: what was at sea before, and
@@ -1449,6 +1532,20 @@ uint64_t sim_hash(const GameState *gs)
          * padding, and hashing padding is hashing uninitialised bytes,
          * which is stable within one run and different across machines
          * (the exact failure ci/sanitize.sh's MSan pass exists for). */
+        /* The treasury and the allowance (LIFE_PLAN Phase 7). Every one
+         * of these decides what the island does NEXT — what it collects,
+         * whether a house can be founded, how much of the tax is paid —
+         * so all of them are world state and all of them are hashed.
+         * left_last_month and tax_last_month are not: they are what
+         * happened, kept for the UI to read, and nothing reads them
+         * back into the sim. */
+        fnv_bytes(&h, &isl->founder_allowance, sizeof(isl->founder_allowance));
+        fnv_bytes(&h, &isl->tax_rate_permille, sizeof(isl->tax_rate_permille));
+        fnv_bytes(&h, &isl->compliance_permille,
+                  sizeof(isl->compliance_permille));
+        fnv_bytes(&h, &isl->unhappy_streak, sizeof(isl->unhappy_streak));
+        fnv_bytes(&h, &isl->tax_base, sizeof(isl->tax_base));
+
         fnv_bytes(&h, &isl->next_resident_id, sizeof(isl->next_resident_id));
         fnv_bytes(&h, &isl->resident_count, sizeof(isl->resident_count));
         for (b = 0; b < isl->resident_count; b++) {
@@ -1464,6 +1561,8 @@ uint64_t sim_hash(const GameState *gs)
             fnv_bytes(&h, &p->pregnancy, sizeof(p->pregnancy));
             fnv_bytes(&h, &p->birth_house, sizeof(p->birth_house));
             fnv_bytes(&h, &p->children, sizeof(p->children));
+            fnv_bytes(&h, &p->birth_cooldown, sizeof(p->birth_cooldown));
+            fnv_bytes(&h, &p->reserve_since, sizeof(p->reserve_since));
         }
 
         for (b = 0; b < isl->building_count; b++) {
@@ -2731,6 +2830,24 @@ static RejectReason sim_set_docking(GameState *gs, int island, int allow)
     return REJ_OK;
 }
 
+/* What the treasury takes from wages and from business profit
+ * (LIFE_PLAN Phase 7). CLAMPED RATHER THAN REFUSED: this arrives from a
+ * stepped control that already knows the bounds, and a command that
+ * came from somewhere else should land on a legal rate rather than
+ * bounce — the same reasoning sim_set_docking uses in coercing to 0/1.
+ *
+ * Compliance is deliberately NOT reset here. A player who has taxed an
+ * island into sullenness does not get its goodwill back by moving the
+ * rate; they get it back by leaving the rate alone until the ladder
+ * climbs, which is the hysteresis doing its job. */
+static RejectReason sim_set_tax_rate(GameState *gs, int island, int permille)
+{
+    if (permille < 0)                      permille = 0;
+    if (permille > TAX_RATE_MAX_PERMILLE)  permille = TAX_RATE_MAX_PERMILLE;
+    gs->islands[island].tax_rate_permille = permille;
+    return REJ_OK;
+}
+
 int game_escrow_put_nonce(GameState *gs, int island_idx, ResourceType res,
                           int qty, uint32_t nonce)
 {
@@ -2797,6 +2914,15 @@ int game_set_docking(GameState *gs, int island_idx, int allow)
     c.kind = CMD_SET_DOCKING;
     c.a    = island_idx;
     c.b    = allow;
+    return command_submit(gs, &c);
+}
+
+int game_set_tax_rate(GameState *gs, int island_idx, int permille)
+{
+    Command c = {0};
+    c.kind = CMD_SET_TAX_RATE;
+    c.a    = island_idx;
+    c.b    = permille;
     return command_submit(gs, &c);
 }
 
@@ -3899,6 +4025,9 @@ RejectReason sim_apply_reason(GameState *gs, const Command *c)
     case CMD_SET_DOCKING:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_set_docking(gs, c->a, c->b);
+    case CMD_SET_TAX_RATE:
+        if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
+        return sim_set_tax_rate(gs, c->a, c->b);
     case CMD_PLACE_ORDER:
         if (!owns_island(gs, c->a, c->player_id)) return REJ_NOT_OWNER;
         return sim_place_order(gs, c->a, c->b, c->c, c->d, c->player_id);

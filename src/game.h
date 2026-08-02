@@ -361,6 +361,12 @@ typedef struct GameState {
      * world and replay the log against it. */
     uint32_t  world_seed;
 
+    /* Which island is currently ticking, so the migration hook every
+     * Island carries knows who is asking (LIFE_PLAN Phase 7). Derived
+     * scratch for the duration of one island's update — never hashed,
+     * never saved. */
+    int       migrate_from;
+
     /* ---- the scrubber (MMO_PLAN later phases) --------------
      * A world is (seed, ordered log), so any past tick is reachable by
      * re-simulating to it. While scrubbing, `scrub_live_tick` remembers
@@ -883,6 +889,12 @@ int game_escrow_take_nonce(GameState *gs, int island_idx, ResourceType res,
 /* Owner only: allow (1) or forbid (0) foreign ships transferring at
  * `island_idx`. A ship that can't dock can't deliver — blockade. */
 int game_set_docking(GameState *gs, int island_idx, int allow);
+
+/* Set what this island's treasury takes from wages and business profit,
+ * in per mille (LIFE_PLAN Phase 7). Queues a command like every other
+ * mutation; the rate is clamped to 0..TAX_RATE_MAX_PERMILLE when it
+ * applies. */
+int game_set_tax_rate(GameState *gs, int island_idx, int permille);
 
 /* Owner only: turn this harbour's standing marine policy on or off
  * (MARITIME_PLAN Phase 3c). While on, every shipment dispatched from

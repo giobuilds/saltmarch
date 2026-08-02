@@ -82,8 +82,10 @@ typedef enum {
 #define PREGNANCY_MONTHS 9
 
 /* Per-mille chance that an eligible couple conceives in a given month.
- * Eligible means married, both under AGE_FERTILE_MAX_YEARS, she is not
- * already carrying, and the house has a bed free.
+ * Eligible means married, both under AGE_FERTILE_MAX_YEARS, she is
+ * neither carrying nor recovering from her last. A FULL HOUSE IS NOT A
+ * REASON TO REFUSE — children are never turned away for want of a bed
+ * (see residents_breed).
  *
  * 200 puts the average wait at five months, so a child costs about
  * fourteen months of its parents' time from conception to birth — seven
@@ -92,13 +94,13 @@ typedef enum {
  * second house is a better idea than waiting. */
 #define CONCEIVE_PERMILLE_PER_MONTH 200
 
-/* A person. 36 bytes since Phase 6b — the three fields added there are
- * each a full int32 rather than the byte or two they need, because this
- * struct is hashed field by field and packing it would introduce
- * padding, and hashing padding is hashing uninitialised memory (the
- * exact failure ci/sanitize.sh's MSan pass exists to catch). At
- * MAX_RESIDENTS that is 18 KB an island, against the half-megabyte an
- * Agent-sized record would have cost. */
+/* A person. 48 bytes since Phase 7 — every field added since 6b is a
+ * full int32 rather than the byte or two it needs, because this struct
+ * is hashed field by field and packing it would introduce padding, and
+ * hashing padding is hashing uninitialised memory (the exact failure
+ * ci/sanitize.sh's MSan pass exists to catch). At MAX_RESIDENTS that is
+ * 24 KB an island, against the half-megabyte an Agent-sized record
+ * would have cost. */
 typedef struct {
     int      active;         /* slot in use                            */
     int      home_idx;       /* buildings[] slot of the house          */
@@ -114,17 +116,43 @@ typedef struct {
      * Phase 6 shipped would otherwise marry a brother to his sister the
      * month they both turned eighteen. */
     int32_t  birth_house;
-    /* How many children this woman has borne (Phase 6c). Without a
-     * ceiling on it a couple conceives from marriage to 45 at one child
-     * every fourteen months — about twenty children — which is what the
-     * first run of this model actually produced. */
+    /* How many children this woman has borne. Nothing is gated on it —
+     * fertility is bounded by biology, not by a quota — but it is what
+     * lets the feed say "her fourth" and what a test counts. */
     int32_t  children;
+    /* Months before she can conceive again. Set to BIRTH_COOLDOWN_MONTHS
+     * on delivery and counted down monthly.
+     *
+     * THIS IS WHAT PACES A FAMILY, and it replaces the child cap an
+     * earlier draft of this model used. A cap answers "how many" with a
+     * number nobody can defend; a recovery period answers it with a
+     * rate, and the number of children falls out of how long she is
+     * fertile. */
+    int32_t  birth_cooldown;
+    /* The sim tick she entered the reserve, or 0 when housed. FIFO is
+     * ordered on this and THE CLOCK NEVER RESETS — not when a house is
+     * laid for somebody else, and not when a migration moves her to
+     * another island. Someone who has waited twenty-three months is
+     * twenty-three months in, wherever they are standing. */
+    int32_t  reserve_since;
 } Resident;
 
-/* Children one woman will bear. Six is a large pre-industrial family
- * and still leaves a household overflowing its six beds, which is the
- * point: the reserve has to be fed by something. */
-#define MAX_CHILDREN_PER_MOTHER 6
+/* Months after a birth before she may conceive again. Twelve, which at
+ * a six-minute year is six minutes of play, and which together with the
+ * nine of gestation and the conception draw makes a child cost about
+ * twenty-six months of its mother's fertile life. */
+#define BIRTH_COOLDOWN_MONTHS 12
+
+/* How long somebody waits in the reserve before leaving.
+ *
+ * THIS IS THE ONLY BOUND ON POPULATION. Fertility is limited by
+ * menopause and the recovery period but not by a quota, so a woman
+ * bears something like eighteen children over a full life and each
+ * daughter does the same — roughly ninefold growth per generation. Left
+ * alone that reaches MAX_RESIDENTS in two or three generations whatever
+ * the player does. Emigration is what makes the island's population a
+ * function of how many roofs have been built instead. */
+#define RESERVE_TOLERANCE_MONTHS 24
 
 /* ---- how long a life is (LIFE_PLAN Phase 5) ---------------
  * Stellaris's shape, because it is the one that works: a GUARANTEED
@@ -168,7 +196,11 @@ typedef struct {
 /* Births stop well before work does. Without this a couple would go on
  * having children until the day they retire at 65, which is not a
  * population model so much as an arithmetic accident. */
-#define AGE_FERTILE_MAX_YEARS  45
+/* Menopause. Sixty rather than the forty-five an earlier draft used:
+ * fertility should end because a body ends it, not because the model
+ * needed a brake. The brake is BIRTH_COOLDOWN_MONTHS and, above all,
+ * RESERVE_TOLERANCE_MONTHS. */
+#define AGE_FERTILE_MAX_YEARS  60
 
 /* Which stage `r` is in, from its age alone. */
 int resident_stage(const Resident *r);
@@ -275,16 +307,54 @@ int residents_reserve_count(const Resident residents[], int count);
  * is never fed for free. */
 int residents_reserve_ration(const Resident residents[], int count);
 
-/* Moves one woman and one man out of the reserve and into `home_idx`,
- * marrying them if they are not already married to each other.
- * Siblings are never chosen as a pair. Returns how many were housed
- * (0 or 2) — 0 when the reserve cannot supply a pair, in which case
- * the house stands empty and is asked again next month.
+/* Moves people out of the reserve and into `home_idx`. Returns how many
+ * were housed: 0, 1 or 2.
  *
- * PREFERS A COUPLE ALREADY FORMED IN THE RESERVE, so that two people
- * who found each other while waiting are not split up to satisfy a
- * different roof. */
-int residents_settle_pair(Resident residents[], int count, int home_idx);
+ * FIRST COME, FIRST HOUSED. The longest-waiting person in the reserve
+ * takes the roof, ordered on `reserve_since`, which never resets. Then,
+ * if somebody of the other sex is waiting who is not their sibling,
+ * they come too and the pair are married on moving in.
+ *
+ * ONE IS A VALID ANSWER. If nobody of the other sex is waiting, the
+ * first person moves in ALONE and keeps the house until a spouse
+ * becomes available — which is why this may also be called on a house
+ * that already holds a single unmarried adult, and why it returns 1
+ * rather than refusing. A lone occupant is a worker and a claim on a
+ * roof; they are simply not yet a household. */
+int residents_settle_house(Resident residents[], int count, int home_idx);
+
+/* Grown children move out of a house that is over capacity.
+ *
+ * WITHOUT THIS, CAPACITY MEANS NOTHING. Children are never turned away
+ * for want of a bed and only leave home when they marry — so on an
+ * island with few houses, where there is nobody unrelated to marry,
+ * they simply accumulate. Measured before this existed: two houses
+ * holding twenty people each against a capacity of ten.
+ *
+ * The rule is the narrowest one that fixes it. Only UNMARRIED ADULTS
+ * leave, oldest first, and only from a house that is over capacity. A
+ * minor is never evicted, and neither is a parent — the household
+ * stands; it is the grown children who go and look for a roof.
+ *
+ * They enter the reserve with `tick` as their `reserve_since`, so the
+ * clock they will eventually emigrate on starts the month they leave
+ * home rather than the month they were born. */
+void residents_leave_home(Resident residents[], int count,
+                          PopData pop_data[], int building_count,
+                          uint64_t tick);
+
+/* Everybody who has waited longer than RESERVE_TOLERANCE_MONTHS leaves.
+ *
+ * `relocate(ctx, resident_index)` is asked first, and is the caller's
+ * chance to move somebody to another island with room rather than lose
+ * them — the player's own islands before anybody else's. It returns 1
+ * if it took them. Only when it declines is the person removed from the
+ * world.
+ *
+ * Returns how many left the island (relocated or removed), which is
+ * what the vitals strip reports as "people are leaving". */
+int residents_emigrate(Resident residents[], int count, uint64_t tick,
+                       int (*relocate)(void *ctx, int idx), void *ctx);
 
 /* Pairs unmarried adults who share a house, in index order, each pair
  * on a monthly draw (LIFE_PLAN Phase 6). Call once per needs tick from
@@ -296,16 +366,15 @@ int residents_settle_pair(Resident residents[], int count, int home_idx);
  * slot. Every read of it is still bounds- and reciprocity-checked, so a
  * snapshot from a future that got this wrong degrades to "unmarried"
  * rather than to a stranger's marriage. */
-void residents_marry(Resident residents[], int count,
-                     uint32_t world_seed, uint64_t tick);
-
-/* The same, but able to move somebody between households — which needs
- * the counts, because an address change is two counts changing. This is
- * what the sim calls; the short form above is housemates-only and
- * exists for tests that have no PopData to offer. */
-void residents_marry_ex(Resident residents[], int count, PopData pop_data[],
-                        int building_count, uint32_t world_seed,
-                        uint64_t tick);
+/* THE COUNTS ARE NOT OPTIONAL. A marriage is a change of address —
+ * somebody moves in with somebody else, or the couple join the reserve
+ * — so two pop_data counts move with every match. An earlier draft kept
+ * a short form for tests with no PopData to offer, and it quietly sent
+ * every cross-household couple to the reserve because with no counts
+ * there was never any room anywhere. Better to have one function that
+ * cannot be called wrongly. */
+void residents_marry(Resident residents[], int count, PopData pop_data[],
+                     int building_count, uint32_t world_seed, uint64_t tick);
 
 /* Is there a couple at `home_idx` young enough to have a child? */
 int residents_fertile_couple_at(const Resident residents[], int count,

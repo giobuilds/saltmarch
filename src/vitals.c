@@ -218,6 +218,38 @@ static void rule_no_houses(RuleOutput *o, const UiIsland *isl)
         emit(o, VITAL_INFO, 0, "No houses — nobody works here");
 }
 
+/* ---- housing and the people waiting for it (Phase 7) -------
+ * Three rules for one mechanic, because the player has no other way to
+ * learn any of it. The Founder category is deliberately invisible, so
+ * when the allowance runs out a newly laid house simply stays empty and
+ * NOTHING on screen says why — a cliff that reads as a bug rather than
+ * as a rule. These are that explanation. */
+
+static void rule_housing(RuleOutput *o, const UiIsland *isl)
+{
+    /* The cliff itself: roofs standing empty, nobody to put under them,
+     * and no settlers left to import. */
+    if (isl->homes_empty > 0 && isl->reserve == 0
+        && isl->founder_allowance == 0)
+        emit(o, VITAL_WARN, isl->homes_empty,
+             "%d homes empty — no settlers left", isl->homes_empty);
+    else if (isl->homes_empty > 0 && isl->reserve == 0)
+        emit(o, VITAL_INFO, isl->homes_empty,
+             "%d homes waiting for settlers", isl->homes_empty);
+
+    /* The opposite shortage, and the one the player can fix by
+     * building. Ranked a warning rather than information because
+     * everybody in it is eating and none of them is working. */
+    if (isl->reserve > 0)
+        emit(o, VITAL_WARN, isl->reserve,
+             "%d people have nowhere to live", isl->reserve);
+
+    /* And the failure that follows from ignoring it. */
+    if (isl->left_last_month > 0)
+        emit(o, VITAL_WARN, isl->left_last_month,
+             "%d left for want of a home", isl->left_last_month);
+}
+
 /* ---- the sim's own health --------------------------------- */
 
 static void rule_health(RuleOutput *o, const UiHealth *h)
@@ -272,6 +304,7 @@ void vitals_build(VitalsView *out, const UiSnapshot *snap, int island)
         rule_hungry_houses(&o, isl);
         rule_storage_full(&o, isl);
         rule_no_houses(&o, isl);
+        rule_housing(&o, isl);
     }
 
     /* Stable selection sort by severity: equal severities keep their

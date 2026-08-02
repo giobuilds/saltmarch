@@ -270,33 +270,43 @@ static void test_sync_tracks_the_houses(void)
     b[0].active = 1; b[0].type = BUILDING_HOUSE;
     p[0].active = 1; p[0].residents = 4;
 
+    /* SYNC ONLY REMOVES NOW (LIFE_PLAN Phase 7). It used to spawn
+     * whoever a house was short of, out of nowhere in particular. A
+     * household is founded by island_settle_house — from the island's
+     * immigration allowance, or out of the reserve — and grown by
+     * birth; what is left here is the downward reconciliation, so a
+     * house that starved loses the people pop_update says it lost.
+     *
+     * The first call therefore creates NOBODY, which is the assertion:
+     * an empty house with a count on it stays empty. */
     residents_sync(r, &count, &next, b, p, 1, 12345u);
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
-    CHECK(live == 4, "four residents for a house of four");
-    CHECK(next == 5u, "and four ids were spent");
+    CHECK(live == 0, "a count alone conjures nobody");
+    CHECK(next == 1u, "and spends no ids");
+
+    /* Put four people in by hand, as settling would. */
+    for (i = 0; i < 4; i++) {
+        r[i].active   = 1;
+        r[i].home_idx = 0;
+        r[i].id       = next++;
+        r[i].spouse   = -1;
+        r[i].birth_house = -1;
+        r[i].age_months  = 25 * MONTHS_PER_YEAR;
+    }
+    count = 4;
 
     p[0].residents = 6;
     residents_sync(r, &count, &next, b, p, 1, 12345u);
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
-    CHECK(live == 6, "two more move in");
+    CHECK(live == 4, "a house short of its count gains nobody");
 
     p[0].residents = 1;
     residents_sync(r, &count, &next, b, p, 1, 12345u);
     live = 0;
     for (i = 0; i < count; i++) if (r[i].active) live++;
-    CHECK(live == 1, "and five leave");
-
-    /* Ids are never reused, so a slot recycled for a new arrival is a
-     * new person rather than a returning one — which matters the moment
-     * anything remembers somebody. */
-    {
-        uint32_t before = next;
-        p[0].residents = 3;
-        residents_sync(r, &count, &next, b, p, 1, 12345u);
-        CHECK(next == before + 2, "new arrivals get new ids, never old ones");
-    }
+    CHECK(live == 1, "but a house over its count loses three");
 
     /* A building that is not a house houses nobody. */
     b[1].active = 1; b[1].type = BUILDING_WAREHOUSE;

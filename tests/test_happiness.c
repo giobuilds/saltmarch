@@ -70,7 +70,9 @@ static void stock_luxuries(World *w, int n)
 static void needs_tick(World *w)
 {
     w->p[0].timer = NEEDS_INTERVAL_TICKS - 1;
-    pop_update(w->p, w->b, 1, &w->s, NULL, NULL);
+    /* Zero tax rungs: these tests are about the larder, and the tax
+     * input is exercised in test_tax.c where it belongs. */
+    pop_update(w->p, w->b, 1, &w->s, NULL, NULL, 0);
 }
 
 /* ---- 1. a full larder climbs, and the house grows ---------- */
@@ -99,7 +101,13 @@ static void test_plenty(void)
      * children, which is a different function's business entirely. */
     CHECK(w.p[0].residents == start,
           "and nobody moves in — a house grows by birth or not at all");
-    CHECK(w.s.amount[RES_GOLD] > 0, "a fed house pays its way");
+    /* AND IT PAYS NOTHING (LIFE_PLAN Phase 7). Housing used to mint
+     * gold — `3 x residents` every needs tick — which made a household
+     * of children exactly as good an earner as a household of workers.
+     * Gold comes from taxed wages now, so being fed is what keeps a
+     * house on the ladder and no longer what funds anything. */
+    CHECK(w.s.amount[RES_GOLD] == 0,
+          "and pays nothing — a house is not a mint");
 
     /* It climbed rather than jumping: five steps from neutral. */
     world_init(&w, 3);
@@ -318,7 +326,10 @@ static void test_consumption_scales(void)
         }
         CHECK(w.p[0].residents == 1,
               "forty fat months do not add one person to a house");
-        CHECK(HOUSE_CAPACITY == 6, "the ceiling is still six");
+        /* Ten since Phase 7: a family of two parents and their minor
+         * children needs the room, and a per-house cost spread over ten
+         * people is what pulled the upper tiers back under the wall. */
+        CHECK(HOUSE_CAPACITY == 10, "the ceiling is ten");
     }
 }
 

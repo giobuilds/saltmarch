@@ -230,9 +230,19 @@ static int adult_fraction_for(uint32_t seed, int *sustained, int *mean)
         {
             int i, pop = 0, ad = 0;
             for (i = 0; i < isl->resident_count; i++) {
-                if (!isl->residents[i].active) continue;
+                const Resident *r = &isl->residents[i];
+                if (!r->active) continue;
                 pop++;
-                if (resident_stage(&isl->residents[i]) == LIFE_ADULT) ad++;
+                /* WORKERS, NOT ADULTS (LIFE_PLAN Phase 7). The two
+                 * stopped being the same number when the reserve
+                 * arrived: somebody with no roof is grown and idle, and
+                 * a woman carrying a child is grown and not at work.
+                 * Neither staffs a supply chain, and this measurement
+                 * exists to tell test_closure how many hands an island
+                 * really has. */
+                if (r->home_idx == RESIDENT_HOMELESS) continue;
+                if (r->pregnancy > 0) continue;
+                if (resident_stage(r) == LIFE_ADULT) ad++;
             }
             if (pop < 4 || n >= SAMPLE_CAP) continue;
             hist[n] = ad * 100 / pop;
@@ -281,18 +291,29 @@ static void test_the_adult_fraction(void)
      * children under one roof is a third of the house able to work, and
      * every house that fills does it the same way.
      *
-     * THAT TROUGH LASTS EIGHTEEN YEARS, which is the whole point of
-     * asserting on the five-year mean rather than the worst month. It
-     * is not a bad harvest the happiness ladder can absorb; it is how
-     * long it takes to raise the people who will end it.
+     * PHASE 7 TOOK IT FURTHER, to 12-14%, and the number changed
+     * MEANING as well as value: it counts WORKERS now, not adults.
+     * Somebody with no roof is grown and idle, and a woman carrying a
+     * child is grown and not at work — neither staffs a chain, and
+     * test_closure needs to know how many hands an island really has.
+     *
+     * Where it went: a household is two parents and about eight minors,
+     * she is pregnant a third of her fertile life, and the reserve eats
+     * without working.
+     *
+     * THAT TROUGH IS NOT A TROUGH ANY MORE — it is the steady state, and
+     * no tier closes at it. That is a design position (the marketplace
+     * is meant to cover the gap) and a known-unfunded one: see
+     * test_closure.c, which now measures the SIZE of the gap rather
+     * than asserting it away.
      *
      * Asserted a little below the measured value, not at it, so an
      * unluckier seed does not fail a number that has not moved. */
-    CHECK(worst >= 30,
-          "through the years it is raising children, a third of the "
-          "island works");
-    CHECK(mean_sum / measured >= 70,
-          "and three quarters of it does, taken over a lifetime");
+    CHECK(worst >= 10,
+          "through the years it is raising children, roughly an eighth "
+          "of the island is at work");
+    CHECK(mean_sum / measured >= 15,
+          "and a sixth of it is, taken over a lifetime");
 }
 
 int main(void)

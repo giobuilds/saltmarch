@@ -191,8 +191,11 @@ static int spawn_resident(Resident r[], int *count, uint32_t *next_id,
     r[slot].age_months  = newborn
                         ? 0
                         : (int32_t)(years * MONTHS_PER_YEAR + months);
-    r[slot].spouse      = -1;
-    r[slot].pregnancy   = 0;
+    r[slot].spouse         = -1;
+    r[slot].pregnancy      = 0;
+    r[slot].children       = 0;
+    r[slot].birth_cooldown = 0;
+    r[slot].reserve_since  = 0;
     r[slot].birth_house = newborn ? home_idx : -1;
     /* A founder is told which half of the couple to be; a newborn is
      * asked, and the coin is the id it was just given. */
@@ -274,6 +277,7 @@ void residents_age(Resident r[], int count, PopData pop_data[],
 
         r[i].age_months++;
         if (r[i].tenure_months < 0xFFFFFFFFu) r[i].tenure_months++;
+        if (r[i].birth_cooldown > 0) r[i].birth_cooldown--;
 
         if (!resident_dies(&r[i], world_seed, tick)) continue;
 
@@ -327,11 +331,15 @@ static int siblings(const Resident *a, const Resident *b)
  * roof would be a couple that never conceives, which is a worse answer
  * than not marrying them.
  *
- * Two people in the reserve are always allowed: they move in together
- * when a house is laid for them, which is what the reserve is for.
+ * A MARRIAGE WITH NOWHERE TO GO IS STILL A MARRIAGE (Phase 7). When no
+ * house on the island has room, the couple leave their parents' roofs
+ * and join the reserve TOGETHER — which is where the reserve comes
+ * from. It is not a queue of the homeless in general; it is a queue of
+ * young couples who have married and have nowhere to live, and the
+ * player clears it by building.
  *
- * Returns the house they would share, or RESIDENT_HOMELESS if both are
- * waiting, or -2 for "they cannot". */
+ * Returns the house they would share, or RESIDENT_HOMELESS when the
+ * answer is the reserve. There is no longer a refusal. */
 static int where_they_would_live(const Resident r[], int a, int b,
                                  const PopData pop_data[], int building_count)
 {
@@ -354,7 +362,7 @@ static int where_they_would_live(const Resident r[], int a, int b,
     if (hb >= 0 && hb < building_count && pop_data[hb].active
         && pop_data[hb].residents < HOUSE_CAPACITY)
         return hb;
-    return -2;
+    return RESIDENT_HOMELESS;
 }
 
 /* Moves `who` into `home`, keeping both houses' counts straight. */
@@ -371,8 +379,8 @@ static void move_house(Resident r[], int who, int home, PopData pop_data[],
         pop_data[home].residents++;
 }
 
-void residents_marry_ex(Resident r[], int count, PopData pop_data[],
-                        int building_count, uint32_t world_seed, uint64_t tick)
+void residents_marry(Resident r[], int count, PopData pop_data[],
+                     int building_count, uint32_t world_seed, uint64_t tick)
 {
     int i, j, pass;
 
@@ -397,7 +405,6 @@ void residents_marry_ex(Resident r[], int count, PopData pop_data[],
             if (pass == 0 && r[j].home_idx == r[i].home_idx) continue;
 
             home = where_they_would_live(r, i, j, pop_data, building_count);
-            if (home == -2) continue;
 
             /* Salted with BOTH ids and the tick. Both, so the question
              * is about this pair rather than about whoever happens to
@@ -410,12 +417,16 @@ void residents_marry_ex(Resident r[], int count, PopData pop_data[],
                                  0x6666u ^ (uint32_t)(tick & 0xFFFFFFFFu));
             if (draw % 1000u >= MARRY_PERMILLE_PER_MONTH) continue;
 
-            /* Whoever is not already living there moves. Done before
-             * the vows only in the sense that it happens in the same
-             * breath: a marriage in this model IS a change of address. */
-            if (home != RESIDENT_HOMELESS) {
-                move_house(r, i, home, pop_data, building_count);
-                move_house(r, j, home, pop_data, building_count);
+            /* Whoever is not already living there moves. A marriage in
+             * this model IS a change of address — including when the
+             * address is nowhere: a couple with no room on the island
+             * leaves both parental roofs and enters the reserve, and
+             * their wait starts now. */
+            move_house(r, i, home, pop_data, building_count);
+            move_house(r, j, home, pop_data, building_count);
+            if (home == RESIDENT_HOMELESS) {
+                r[i].reserve_since = (int32_t)tick;
+                r[j].reserve_since = (int32_t)tick;
             }
 
             r[i].spouse = j;
@@ -423,15 +434,6 @@ void residents_marry_ex(Resident r[], int count, PopData pop_data[],
             break;      /* i is spoken for; move to the next person */
         }
     }
-}
-
-/* The old signature, kept so the unit tests that build a house by hand
- * do not need a PopData to ask a question about pairing. Housemates
- * only, which is what those tests are about. */
-void residents_marry(Resident r[], int count, uint32_t world_seed,
-                     uint64_t tick)
-{
-    residents_marry_ex(r, count, NULL, 0, world_seed, tick);
 }
 
 int residents_found_pair(Resident r[], int *count, uint32_t *next_id,
@@ -467,45 +469,153 @@ int residents_reserve_ration(const Resident r[], int count)
     return (residents_reserve_count(r, count) + 1) / 2;
 }
 
-int residents_settle_pair(Resident r[], int count, int home_idx)
+/* The longest-waiting person in the reserve, or -1. Ordered on
+ * reserve_since, which never resets — so a house laid for somebody else
+ * does not send anybody back to the end of the queue, and neither does
+ * being moved to another island. Ties break on slot index, which is
+ * stable and therefore deterministic. */
+static int longest_waiting(const Resident r[], int count, int sex, int not_kin_of)
 {
-    int i, j, her = -1, him = -1;
+    int i, best = -1;
 
-    /* First choice: two people who already found each other while
-     * waiting. Splitting them to satisfy a roof would be perverse, and
-     * they are ready to start a household the month they move in. */
-    for (i = 0; i < count && her < 0; i++) {
-        int sp = r[i].spouse;
+    for (i = 0; i < count; i++) {
         if (!r[i].active || r[i].home_idx != RESIDENT_HOMELESS) continue;
-        if (r[i].sex != SEX_FEMALE) continue;
-        if (sp < 0 || sp >= count || !r[sp].active) continue;
-        if (r[sp].spouse != i || r[sp].home_idx != RESIDENT_HOMELESS) continue;
-        her = i; him = sp;
+        if (sex >= 0 && r[i].sex != sex) continue;
+        if (not_kin_of >= 0 && siblings(&r[i], &r[not_kin_of])) continue;
+        if (best < 0 || r[i].reserve_since < r[best].reserve_since) best = i;
+    }
+    return best;
+}
+
+/* Is there already a lone unmarried adult under this roof? If so this
+ * house does not need a first occupant, it needs a spouse for the one
+ * it has. */
+static int lone_occupant(const Resident r[], int count, int home_idx)
+{
+    int i, who = -1, n = 0;
+
+    for (i = 0; i < count; i++) {
+        if (!r[i].active || r[i].home_idx != home_idx) continue;
+        n++;
+        if (r[i].spouse < 0 && resident_stage(&r[i]) == LIFE_ADULT) who = i;
+    }
+    return n == 1 ? who : -1;
+}
+
+int residents_settle_house(Resident r[], int count, int home_idx)
+{
+    int first, mate, housed = 0;
+
+    /* A house holding one unmarried adult wants a spouse, not a
+     * stranger. Everything else about this is the same question. */
+    first = lone_occupant(r, count, home_idx);
+    if (first >= 0) {
+        mate = longest_waiting(r, count,
+                               r[first].sex == SEX_FEMALE ? SEX_MALE
+                                                          : SEX_FEMALE,
+                               first);
+        if (mate < 0) return 0;
+        r[mate].home_idx      = home_idx;
+        r[mate].reserve_since = 0;
+        r[first].spouse = mate;
+        r[mate].spouse  = first;
+        return 1;
     }
 
-    /* Otherwise any unmarried woman and man in the reserve who are not
-     * each other's sibling. */
-    for (i = 0; i < count && her < 0; i++) {
-        if (!r[i].active || r[i].home_idx != RESIDENT_HOMELESS) continue;
-        if (r[i].sex != SEX_FEMALE || r[i].spouse >= 0) continue;
-        for (j = 0; j < count; j++) {
-            if (!r[j].active || r[j].home_idx != RESIDENT_HOMELESS) continue;
-            if (r[j].sex != SEX_MALE || r[j].spouse >= 0) continue;
-            if (siblings(&r[i], &r[j])) continue;
-            her = i; him = j; break;
+    /* An empty house. First come, first housed. */
+    first = longest_waiting(r, count, -1, -1);
+    if (first < 0) return 0;
+
+    r[first].home_idx      = home_idx;
+    r[first].reserve_since = 0;
+    housed = 1;
+
+    /* And a spouse if one is waiting. If not, they keep the roof alone
+     * and this function is called again for them next month — a lone
+     * occupant is a worker and a claim on a house, just not yet a
+     * household. */
+    mate = longest_waiting(r, count,
+                           r[first].sex == SEX_FEMALE ? SEX_MALE : SEX_FEMALE,
+                           first);
+    if (mate >= 0) {
+        r[mate].home_idx      = home_idx;
+        r[mate].reserve_since = 0;
+        /* Married on moving in unless they already are to each other,
+         * which is the common case: they entered the reserve as a
+         * couple who could not be housed. */
+        if (r[first].spouse != mate) {
+            r[first].spouse = mate;
+            r[mate].spouse  = first;
+        }
+        housed = 2;
+    }
+    return housed;
+}
+
+void residents_leave_home(Resident r[], int count, PopData pop_data[],
+                          int building_count, uint64_t tick)
+{
+    int h;
+
+    for (h = 0; h < building_count; h++) {
+        if (!pop_data[h].active) continue;
+
+        /* One a month at most. Emptying a crowded house in a single
+         * tick would put a whole generation into the reserve on the
+         * same clock, and they would then all emigrate together — the
+         * cohort failure this model spends so much effort avoiding. */
+        while (pop_data[h].residents > HOUSE_CAPACITY) {
+            int i, oldest = -1;
+
+            for (i = 0; i < count; i++) {
+                if (!r[i].active || r[i].home_idx != h) continue;
+                if (r[i].spouse >= 0) continue;              /* a household */
+                if (resident_stage(&r[i]) != LIFE_ADULT) continue;
+                if (r[i].pregnancy > 0) continue;            /* not now */
+                if (oldest < 0 || r[i].age_months > r[oldest].age_months)
+                    oldest = i;
+            }
+            if (oldest < 0) break;      /* nobody who may be asked to go */
+
+            r[oldest].home_idx      = RESIDENT_HOMELESS;
+            r[oldest].reserve_since = (int32_t)tick;
+            pop_data[h].residents--;
+            break;
         }
     }
+}
 
-    if (her < 0 || him < 0) return 0;
+int residents_emigrate(Resident r[], int count, uint64_t tick,
+                       int (*relocate)(void *ctx, int idx), void *ctx)
+{
+    int i, left = 0;
 
-    r[her].home_idx = home_idx;
-    r[him].home_idx = home_idx;
-    /* Married on moving in, exactly as a founding pair is: the house
-     * exists to be a household, and two strangers sharing it who never
-     * paired would be a house that never fills. */
-    r[her].spouse = him;
-    r[him].spouse = her;
-    return 2;
+    for (i = 0; i < count; i++) {
+        int64_t waited;
+
+        if (!r[i].active || r[i].home_idx != RESIDENT_HOMELESS) continue;
+
+        waited = (int64_t)tick - (int64_t)r[i].reserve_since;
+        if (waited < (int64_t)RESERVE_TOLERANCE_MONTHS
+                   * (int64_t)CALENDAR_MONTH_TICKS)
+            continue;
+
+        /* Either way they leave THIS island, so the slot is vacated
+         * either way. Relocation copies them somewhere else first; it
+         * does not mean they stay. Getting that wrong would have the
+         * same person standing on two islands at once, counted twice
+         * and eating twice.
+         *
+         * Widowed before the slot goes, for the reason widow_partner
+         * gives: a spouse left behind must not point into a slot the
+         * next arrival will reuse. */
+        if (relocate) relocate(ctx, i);
+
+        widow_partner(r, count, i);
+        r[i].active = 0;
+        left++;
+    }
+    return left;
 }
 
 /* ---- conception, gestation, birth (Phase 6b) --------------- */
@@ -527,7 +637,7 @@ static int who_could_conceive(const Resident r[], int count, int home_idx)
 
         if (!r[i].active || r[i].home_idx != home_idx) continue;
         if (r[i].sex != SEX_FEMALE || r[i].pregnancy > 0) continue;
-        if (r[i].children >= MAX_CHILDREN_PER_MOTHER) continue;
+        if (r[i].birth_cooldown > 0) continue;   /* still recovering */
         if (!fertile_age(&r[i])) continue;
 
         if (sp < 0 || sp >= count || !r[sp].active) continue;
@@ -554,39 +664,47 @@ void residents_breed(Resident r[], int *count, uint32_t *next_id,
         if (!r[i].active || r[i].pregnancy <= 0) continue;
         if (--r[i].pregnancy > 0) continue;
 
-        /* THE BED IS CHECKED AT DELIVERY, AND A FULL HOUSE NO LONGER
-         * STOPS THE BIRTH (Phase 6c). The child is born into the
-         * RESERVE instead: it has a birth_house, so it knows its
-         * siblings and will not marry them, but it has no roof until
-         * the player lays one. Births never stop for want of a bed —
-         * the bed becomes the thing the player is short of, which is
-         * the whole point of the reserve. */
+        /* A CHILD IS NEVER HOMELESS (Phase 7). It is born where its
+         * mother lives and stays there, and the house may exceed
+         * HOUSE_CAPACITY while its own children are young — capacity is
+         * enforced against people ARRIVING from elsewhere, never
+         * against a family's own.
+         *
+         * An earlier draft sent the overflow to the reserve, and it was
+         * wrong twice over: a newborn does not go and sleep in a field,
+         * and a reserve full of infants is a queue nothing can be done
+         * with for eighteen years. The reserve holds GROWN CHILDREN WHO
+         * HAVE LEFT HOME (residents_marry_ex), which is a queue the
+         * player can actually clear by building.
+         *
+         * A mother in the reserve is the one case with no house to be
+         * born into. Her child joins her there and carries her
+         * birth_house, so it still knows its siblings. */
         {
-            int home    = r[i].home_idx;
-            int has_room = home >= 0 && home < building_count
-                        && pop_data[home].active
-                        && pop_data[home].residents < HOUSE_CAPACITY;
-            int birth_house = home >= 0 ? home : r[i].birth_house;
+            int home = r[i].home_idx;
+            int at_home = home >= 0 && home < building_count
+                       && pop_data[home].active;
 
             slot = spawn_resident(r, count, next_id,
-                                  has_room ? home : RESIDENT_HOMELESS,
+                                  at_home ? home : RESIDENT_HOMELESS,
                                   world_seed, 1, -1);
             if (slot < 0) continue;             /* island full */
 
-            /* spawn_resident sets birth_house from the home it was
-             * given, which is -1 for a child born into the reserve —
-             * so it is set explicitly here instead. Without it every
-             * overflow child would carry -1 and none of them would be
-             * anybody's sibling. */
-            r[slot].birth_house = birth_house;
+            /* spawn_resident derives birth_house from the home it was
+             * given, which is -1 for a child born to a homeless mother.
+             * Set explicitly so such a child is still its siblings'
+             * sibling. */
+            r[slot].birth_house   = at_home ? home : r[i].birth_house;
+            r[slot].reserve_since = at_home ? 0 : (int32_t)tick;
             r[i].children++;
+            r[i].birth_cooldown = BIRTH_COOLDOWN_MONTHS;
 
-            if (has_room) {
+            if (at_home) {
                 pop_data[home].residents++;
                 sim_log("House %d: a child is born, %d residents",
                         home, pop_data[home].residents);
             } else {
-                sim_log("A child is born with no roof to be born under");
+                sim_log("A child is born to somebody with no roof");
             }
         }
     }

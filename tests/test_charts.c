@@ -730,13 +730,42 @@ int main(void)
                  * measuring the food supply instead. */
                 while (gs->sim_tick_no + 1 < finish) sim_run_one_tick(gs);
                 boats_before     = isl->research_boats;
-                residents_before = isl->pop_data[house].residents;
-                run_ticks(gs, 2);
+                /* THE ISLAND'S TOTAL, not one house's. game_take_scholar
+                 * takes from whichever house is largest so it cannot
+                 * empty a small one, and since households stopped being
+                 * uniform (Phase 7) that is rarely the house this test
+                 * happens to hold an index to. What the rule actually
+                 * promises is that the island is one person lighter. */
+                residents_before = pop_total(isl->pop_data,
+                                             isl->building_count);
+                {
+                    /* SINCE LIFE_PLAN Phase 7 the two ticks below may
+                     * cross a calendar month, and a month is when
+                     * births, deaths, marriages and the reserve all
+                     * move. Exactness is only available when they do
+                     * not, so the assertion says what it can prove:
+                     * the house is smaller, and by exactly one when
+                     * nothing else was allowed to happen. */
+                    uint64_t t0 = gs->sim_tick_no;
+                    int      crosses = 0;
+                    uint64_t k;
 
-                CHECK(isl->research_boats == boats_before - 1,
-                      "a lost expedition does not give the boat back");
-                CHECK(isl->pop_data[house].residents == residents_before - 1,
-                      "and the house that sent them is one smaller");
+                    for (k = t0; k < t0 + 2; k++)
+                        if ((k + 1) % CALENDAR_MONTH_TICKS == 0) crosses = 1;
+
+                    run_ticks(gs, 2);
+
+                    CHECK(isl->research_boats == boats_before - 1,
+                          "a lost expedition does not give the boat back");
+                    if (crosses)
+                        CHECK(pop_total(isl->pop_data, isl->building_count)
+                                  < residents_before,
+                              "and the island that sent them is smaller");
+                    else
+                        CHECK(pop_total(isl->pop_data, isl->building_count)
+                                  == residents_before - 1,
+                              "and the island is one person lighter");
+                }
                 CHECK(isl->scholars_out == 0,
                       "the commitment ends even though the scholar did not "
                       "come home");
