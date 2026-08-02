@@ -35,6 +35,9 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
     isl->docking_allowed = 1;
     isl->charter_timer   = 0;
     isl->charter_arrears = 0;
+    /* The settlers an island is allowed to import (LIFE_PLAN Phase 6c).
+     * Everything past this has to be born here. */
+    isl->founder_allowance = FOUNDER_ALLOWANCE;
     /* escrow[] was zeroed by the memset above. */
 
     sim_log("Island '%s' generated (seed=%u, profile=%d, settled=%d)",
@@ -134,6 +137,15 @@ static void island_tick_buildings(Island *isl)
  * timers count integer ticks; agent movement still advances by the
  * constant SIM_TICK_SECONDS, which is deterministic on one machine and
  * outside the F9 hash anyway. */
+/* How many live residents name `idx` as home. */
+static int count_live_at(const Island *isl, int idx)
+{
+    int i, n = 0;
+    for (i = 0; i < isl->resident_count; i++)
+        if (isl->residents[i].active && isl->residents[i].home_idx == idx) n++;
+    return n;
+}
+
 /* Adapts residents_adults_at() to the callback agents_sync takes, so
  * agent.c stays ignorant of what an age is. */
 static int island_adults_at(const void *ctx, int house_idx)
@@ -147,6 +159,36 @@ static int island_mouths_at(const void *ctx, int house_idx)
 {
     const Island *isl = (const Island *)ctx;
     return residents_mouths_at(isl->residents, isl->resident_count, house_idx);
+}
+
+/* ---- founding a household (LIFE_PLAN Phase 6c) -------------
+ * A house laid on the map is an empty house. It becomes a HOUSEHOLD
+ * either by spending one of the island's hundred founder places — a
+ * couple off a boat — or, once those are gone, by taking a woman and a
+ * man out of the reserve.
+ *
+ * A house that can do neither STANDS EMPTY and is asked again next
+ * month. That is deliberate and is the mechanic: laying roofs faster
+ * than the island can raise people leaves you with roofs. */
+int island_settle_house(Island *isl, int idx, uint32_t world_seed)
+{
+    int got;
+
+    if (idx < 0 || idx >= isl->building_count)      return 0;
+    if (!isl->pop_data[idx].active)                 return 0;
+    if (isl->pop_data[idx].residents > 0)           return 0;
+    if (count_live_at(isl, idx) > 0)                return 0;
+
+    if (isl->founder_allowance > 0) {
+        got = residents_found_pair(isl->residents, &isl->resident_count,
+                                   &isl->next_resident_id, idx, world_seed);
+        if (got) isl->founder_allowance--;
+    } else {
+        got = residents_settle_pair(isl->residents, isl->resident_count, idx);
+    }
+
+    isl->pop_data[idx].residents = got;
+    return got;
 }
 
 void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
@@ -184,8 +226,9 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
         /* After ageing, so somebody who died this month does not marry
          * this month — and so this month's new adults are eligible on
          * the month they become adults rather than the one after. */
-        residents_marry(isl->residents, isl->resident_count,
-                        world_seed, tick);
+        residents_marry_ex(isl->residents, isl->resident_count,
+                           isl->pop_data, isl->building_count,
+                           world_seed, tick);
         /* And after marriage, so a couple wed this month may begin one
          * this month. This is the ONLY thing that grows a house now
          * (LIFE_PLAN Phase 6b) — pop_update below can still empty one,
@@ -193,6 +236,32 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
         residents_breed(isl->residents, &isl->resident_count,
                         &isl->next_resident_id, isl->pop_data,
                         isl->building_count, world_seed, tick);
+
+        /* ---- the reserve eats (Phase 6c) ------------------
+         * Half a ration of each staple per unhoused person, taken from
+         * the same stockpile the houses draw on and BEFORE they do, so
+         * a reserve the island cannot feed shows up as houses going
+         * hungry rather than as a free crowd. Nobody in the reserve
+         * works, so this is pure cost until somebody roofs them. */
+        {
+            int want = residents_reserve_ration(isl->residents,
+                                                isl->resident_count);
+            if (want > 0) {
+                stockpile_add(&isl->stockpile, RES_FISH,  -want);
+                stockpile_add(&isl->stockpile, RES_GRAIN, -want);
+            }
+        }
+
+        /* ---- empty roofs are offered the reserve ----------
+         * A house laid when the reserve was empty is asked again every
+         * month, so a player who over-builds is not punished forever —
+         * the houses simply fill as the island grows into them. */
+        {
+            int b;
+            for (b = 0; b < isl->building_count; b++)
+                if (isl->pop_data[b].active && isl->pop_data[b].residents == 0)
+                    island_settle_house(isl, b, world_seed);
+        }
     }
 
     pop_update(isl->pop_data, isl->buildings, isl->building_count,

@@ -114,7 +114,17 @@ typedef struct {
      * Phase 6 shipped would otherwise marry a brother to his sister the
      * month they both turned eighteen. */
     int32_t  birth_house;
+    /* How many children this woman has borne (Phase 6c). Without a
+     * ceiling on it a couple conceives from marriage to 45 at one child
+     * every fourteen months — about twenty children — which is what the
+     * first run of this model actually produced. */
+    int32_t  children;
 } Resident;
+
+/* Children one woman will bear. Six is a large pre-industrial family
+ * and still leaves a household overflowing its six beds, which is the
+ * point: the reserve has to be fed by something. */
+#define MAX_CHILDREN_PER_MOTHER 6
 
 /* ---- how long a life is (LIFE_PLAN Phase 5) ---------------
  * Stellaris's shape, because it is the one that works: a GUARANTEED
@@ -234,6 +244,48 @@ int residents_mouths_at(const Resident residents[], int count, int home_idx);
 void residents_age(Resident residents[], int count, PopData pop_data[],
                    uint32_t world_seed, uint64_t tick);
 
+/* ---- the reserve (LIFE_PLAN Phase 6c, EXPERIMENT) ----------
+ * A resident whose home_idx is this has no roof. They still age, still
+ * marry, still die — and still eat, at half a ration of the two staples
+ * — but they hold no job, because a job is reached from a house.
+ *
+ * They come from ONE place: a birth into a household that is already
+ * full. That is the whole idea. Births never stop for want of a bed;
+ * the bed simply becomes the player's problem, and an unhoused
+ * population is a standing cost that converts into a workforce the
+ * moment somebody roofs it. */
+#define RESIDENT_HOMELESS (-1)
+
+/* Spawns a married founding pair — one woman, one man, both grown —
+ * into `home_idx`. This is IMMIGRATION, and Phase 6c makes it a finite
+ * resource: the island has a founder allowance and this is the only
+ * thing that spends it. Returns 2, or 0 if the island is full.
+ *
+ * The caller sets pop_data[home_idx].residents; this function does not
+ * touch it, because the two callers (a house laid with allowance left,
+ * and the test fixtures) disagree about what should happen next. */
+int residents_found_pair(Resident residents[], int *count, uint32_t *next_id,
+                         int home_idx, uint32_t world_seed);
+
+/* How many people are waiting for a roof. */
+int residents_reserve_count(const Resident residents[], int count);
+
+/* Ration cost of the reserve for one month, in whole units of each of
+ * the two staples: half a ration each, rounded UP so a reserve of one
+ * is never fed for free. */
+int residents_reserve_ration(const Resident residents[], int count);
+
+/* Moves one woman and one man out of the reserve and into `home_idx`,
+ * marrying them if they are not already married to each other.
+ * Siblings are never chosen as a pair. Returns how many were housed
+ * (0 or 2) — 0 when the reserve cannot supply a pair, in which case
+ * the house stands empty and is asked again next month.
+ *
+ * PREFERS A COUPLE ALREADY FORMED IN THE RESERVE, so that two people
+ * who found each other while waiting are not split up to satisfy a
+ * different roof. */
+int residents_settle_pair(Resident residents[], int count, int home_idx);
+
 /* Pairs unmarried adults who share a house, in index order, each pair
  * on a monthly draw (LIFE_PLAN Phase 6). Call once per needs tick from
  * the same calendar trigger as residents_age, and AFTER it: somebody
@@ -246,6 +298,14 @@ void residents_age(Resident residents[], int count, PopData pop_data[],
  * rather than to a stranger's marriage. */
 void residents_marry(Resident residents[], int count,
                      uint32_t world_seed, uint64_t tick);
+
+/* The same, but able to move somebody between households — which needs
+ * the counts, because an address change is two counts changing. This is
+ * what the sim calls; the short form above is housemates-only and
+ * exists for tests that have no PopData to offer. */
+void residents_marry_ex(Resident residents[], int count, PopData pop_data[],
+                        int building_count, uint32_t world_seed,
+                        uint64_t tick);
 
 /* Is there a couple at `home_idx` young enough to have a child? */
 int residents_fertile_couple_at(const Resident residents[], int count,

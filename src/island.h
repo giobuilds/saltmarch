@@ -81,6 +81,13 @@
 #define CHARTER_UPKEEP_TICKS   1200   /* two minutes of world time     */
 #define CHARTER_GRACE_PAYMENTS    3   /* missed payments before lapse  */
 
+/* Houses an island may found by IMMIGRATION before it has to grow its
+ * own people (LIFE_PLAN Phase 6c, EXPERIMENT). A hundred is deliberately
+ * more than a player will lay early and far fewer than a mature island
+ * wants, so the allowance is invisible for the first hour and then
+ * becomes the thing the whole settlement runs on. */
+#define FOUNDER_ALLOWANCE 100
+
 typedef struct {
     Map        map;
     Camera     camera;          /* per-island, so returning to an island
@@ -103,6 +110,12 @@ typedef struct {
     Resident   residents[MAX_RESIDENTS];
     int        resident_count;
     uint32_t   next_resident_id;
+    /* How many more households may be founded by IMMIGRATION (LIFE_PLAN
+     * Phase 6c, EXPERIMENT). Every house laid while this is positive
+     * arrives with a couple off a boat and spends one; after that a
+     * house is filled from the reserve or stands empty until the
+     * reserve can fill it. World state: hashed, saved, snapshotted. */
+    int        founder_allowance;
 
     int        settled;         /* 0 = generated but not colonised     */
     MapProfile profile;
@@ -258,6 +271,12 @@ void island_reset(Island *isl, uint32_t seed, MapProfile profile,
  * the island needs the seed at the moment somebody is born. It is the
  * only thing here that reaches outside the island. */
 void island_update(Island *isl, uint32_t world_seed, uint64_t tick);
+
+/* Tries to put a household into the empty house at `idx` — a founding
+ * couple while the allowance lasts, a pair out of the reserve after
+ * that. Returns how many moved in (0 or 2); 0 leaves the house empty
+ * and it is asked again next month. */
+int island_settle_house(Island *isl, int idx, uint32_t world_seed);
 
 /* Recompute this island's per-resource storage cap from the number of
  * active Warehouses ON THIS ISLAND. Per-island by necessity: otherwise

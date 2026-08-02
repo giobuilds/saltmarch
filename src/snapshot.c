@@ -297,6 +297,7 @@ static void put_resident(W *w, const Resident *p)
     w_i32(w, p->sex);
     w_i32(w, p->pregnancy);
     w_i32(w, p->birth_house);
+    w_i32(w, p->children);
 }
 
 static void get_resident(R *r, Resident *p)
@@ -311,6 +312,7 @@ static void get_resident(R *r, Resident *p)
     p->sex           = r_i32(r);
     p->pregnancy     = r_i32(r);
     p->birth_house   = r_i32(r);
+    p->children      = r_i32(r);
 }
 
 static void put_ship(W *w, const Ship *s)

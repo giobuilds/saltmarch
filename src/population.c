@@ -261,7 +261,10 @@ void pop_init(PopData *p)
      * has to be born here. What the player watches is no longer a
      * number ticking up toward six — it is a household, and the way to
      * have more people is to give more couples a roof. */
-    p->residents = 2;
+    /* ZERO SINCE PHASE 6c: a house is laid empty and becomes a
+     * household when island_settle_house can find it one — from the
+     * founder allowance, or out of the reserve. */
+    p->residents = 0;
     p->timer     = 0;
     /* Neutral, not zero: a house that has just been built is neither
      * delighted nor about to empty, and starting at 0 would mean the

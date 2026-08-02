@@ -1463,6 +1463,7 @@ uint64_t sim_hash(const GameState *gs)
             fnv_bytes(&h, &p->sex, sizeof(p->sex));
             fnv_bytes(&h, &p->pregnancy, sizeof(p->pregnancy));
             fnv_bytes(&h, &p->birth_house, sizeof(p->birth_house));
+            fnv_bytes(&h, &p->children, sizeof(p->children));
         }
 
         for (b = 0; b < isl->building_count; b++) {
@@ -1713,9 +1714,15 @@ static int commit_placement(GameState *gs, int island, BuildingType type,
                          &isl->map, type, row, col);
     if (idx < 0) return -1;
 
-    /* If a house was just placed, activate its PopData. */
-    if (pop_is_house_type(type))
+    /* If a house was just placed, activate its PopData and try to put a
+     * household in it (LIFE_PLAN Phase 6c). It may not get one — the
+     * founder allowance runs out and the reserve may be empty — in
+     * which case the roof stands there and island_update asks again
+     * every month. */
+    if (pop_is_house_type(type)) {
         pop_init(&isl->pop_data[idx]);
+        island_settle_house(isl, idx, gs->world_seed);
+    }
 
     /* Warehouses raise how much of each non-gold resource THIS
      * island's stockpile can hold; recompute so a newly built
