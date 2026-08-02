@@ -985,10 +985,46 @@ out not to be road-connected at all: connectivity is 4-adjacent, and a
 hut diagonal to the pavement lands nothing for a reason that has
 nothing to do with productivity.
 
-**9 — the wellbeing projection.**
+**9 — the wellbeing projection. DONE.** `wellbeing.c/h` in the SDL-free
+UI library: six factors, floats, read-only over the UI snapshot.
+Nothing hashed, saved or sent, so the determinism hash is unchanged at
+`10dc16be1a45550c` — which is the assertion that this phase stayed
+where it said it would.
 
-**9 — the wellbeing projection.** The six factors, per resident, floats,
-entirely above the sim — surfaced as a cast rather than a census.
+*Two of the six have nothing behind them.* There is no corruption in
+this game and no charitable giving, so scoring them would be scoring a
+constant. Their weight (0.9 of 8.0) is **excluded** from the total
+rather than contributed as a fixed amount — contributed, a perfect
+island could never reach the top of the ladder and the missing 0.9
+would read as a balance problem rather than an unbuilt feature.
+`modelled` in `WELLBEING_FACTORS` is the flag, and building either one
+later is a table change plus a case.
+
+*The four that are real:* social support from household size on an
+inverted-U, marriage and tenure; income as log of wage; freedom from
+job variety, housing slack and whether you have work; health from what
+you ate and how much life is left.
+
+**Income is nearly degenerate, and this is worth recording.** Everybody
+earns `WAGE_PER_WORKER`, so the only variation is Phase 8's
+productivity band — real wages span 1.7 to 2.8. That is the near-linear
+foot of `log(1+x)`: the logarithm the design asks for is doing almost
+nothing, and it will not until wages themselves vary. `WB_WAGE_MAX` is
+derived from `WAGE_PER_WORKER * PRODUCTIVITY_MAX` rather than written
+down, so at least the factor spans its range instead of sitting at a
+fixed 0.2 the way a hand-picked constant left it.
+
+*A cast, not a census.* `UiSnapshot` carries ten residents, not five
+hundred, chosen by a notability score — unhoused first, then hungry,
+then the extremes of age and service, ties broken on id so the list
+does not reshuffle under the cursor. `wellbeing_describe()` renders one
+as a sentence: *"Nell Bracken, 20, has nowhere to live"*.
+
+*Which workplace somebody works is approximated*, and honestly: an
+Agent carries no link back to a Resident, so the cast names the first
+workplace staffed from that household. Same limitation Phase 8's
+per-household productivity has, and the same reason — the link would
+mean widening a struct that is snapshotted.
 
 ## What this does not do
 
