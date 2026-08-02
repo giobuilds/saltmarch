@@ -81,9 +81,14 @@ static void island_tick_buildings(Island *isl)
          * `-= period` rather than `= 0`, so a crew that earns more than
          * one unit in a tick keeps the remainder instead of having it
          * thrown away. At one worker the timer lands exactly on `period`
-         * and the two are identical, which is what makes this phase's
-         * only behavioural change the headcount itself. */
-        b->timer += (uint32_t)b->worker_count;
+         * and the two are identical, which is what made Phase 1's only
+         * behavioural change the headcount itself.
+         *
+         * And a FULL crew is worth more than the sum of its hands
+         * (Phase 2): building_work_advance() returns 2w-1, because one
+         * worker alone pays an overhead the second one arrives to find
+         * already paid. Still integer, still no division. */
+        b->timer += (uint32_t)building_work_advance(def, b->worker_count);
 
         produced = 0;
         while (b->timer >= period) {

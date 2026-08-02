@@ -1,6 +1,6 @@
 # Residents, lives and labour — the design
 
-> Status: **Phase 1 done; Phase 2 next.** The calendar is settled — see
+> Status: **Phases 1-2 done; Phase 3 next.** The calendar is settled — see
 > [The calendar](#the-calendar), taken from Stellaris after Cities:
 > Skylines' answer was examined and rejected.
 >
@@ -66,13 +66,18 @@ choose, which is the point.
 
 `tests/test_closure.c` measures **workers per resident** and fails the
 build when a buildable tier cannot be staffed. Every number below comes
-out of it. Today:
+out of it.
 
-| tier | basics | total | headroom to the wall |
+**§1-3 are the arithmetic as it stood when this plan was written**, and
+are kept in that state deliberately: they are why the design has the
+shape it has, and rewriting them to today's numbers would hide the
+reasoning. §4 onward carry what has since been measured.
+
+| tier | basics | total | after Phase 2 |
 |---|---|---|---|
-| Marshfolk | 0.47 | 0.68 | 32% |
-| Wrights | 0.26 | 0.82 | 18% |
-| Merchants | 0.24 | **0.96** | **4%** |
+| Marshfolk | 0.47 | 0.68 | **0.38** |
+| Wrights | 0.26 | 0.82 | **0.47** |
+| Merchants | 0.24 | 0.96 | **0.55** |
 
 ### 1. The rate change alone is free
 
@@ -118,34 +123,61 @@ nine fish. Merchants come out at 0.97, which is under the wall by three
 percent and no more. Merchants are the tightest tier in the game and
 this document does not improve that; it preserves it.
 
-### 4. Age-weighted rations are what buy real headroom
+### 4. Age-weighted rations buy less than this document first claimed
 
-If infants and the retired eat half a raw ration, demand falls to 77.5%
-of today's while supply is unchanged:
+**The original version of this section was wrong, and Phase 2's test
+found it.** It said that if infants and the retired eat half a ration,
+demand falls to 77.5% of today's across the board, giving 0.53 / 0.64 /
+0.75. It applied that factor to the *whole* bill.
 
-| tier | today | with capacity bonus + age-weighted rations |
-|---|---|---|
-| Marshfolk | 0.68 | 0.53 |
-| Wrights | 0.82 | 0.64 |
-| Merchants | 0.96 | **0.75** |
+It cannot. `tier_good_amount()` charges **refined goods per household**,
+so the number of mouths never entered their cost and reducing some of
+those mouths to half rations cannot reduce it. The lever only touches
+goods charged per resident — which is to say, raw ones.
 
-That is *better than today* across the board, and it is the version to
-build. `tier_good_amount()` is already the one place consumption is
-decided (NEEDS_PLAN Phase 5 made it public precisely so the closure test
-charges what the sim charges), so age-weighting is a change to one
-function and its callers.
+And **only Marshfolk eat anything raw.** Measured, at Phase 2's rates:
 
-### 5. Which sets the productivity floor at 0.75
+| tier | today | of which raw | projected under an age pyramid |
+|---|---|---|---|
+| Marshfolk | 0.38 | 0.26 | **0.59** |
+| Wrights | 0.47 | 0.00 | **0.86** |
+| Merchants | 0.55 | 0.00 | **1.00 — on the wall** |
 
-Modifiers multiply the ratio by `1 / p`. Starting from Merchants at
-0.75, the wall is reached at **p = 0.75**. So a worker's productivity
-may never fall below three quarters of nominal, and that floor is not a
-tuning knob — it is the closure guard wearing a different hat.
+Fish and Grain are the only raw goods any tier eats. Sausages, Bread,
+Coffee, Flatbread and every luxury above them are refined, so Wrights
+and Merchants are structurally immune to the ration lever.
 
-**Note what this means without the two levers above: Merchants have 4%
-of headroom today, so ANY modifier able to dip below 1.0 breaks that
-tier immediately.** Status modifiers cannot land before the capacity
-bonus and the age-weighted rations.
+**Merchants project exactly onto the wall, and a tier at the wall cannot
+grow.** That is a Phase 5 blocker, asserted in `tests/test_closure.c` so
+it cannot be forgotten, and it is *not* a defect in the economy as it
+stands — every buildable tier is comfortably clear today. What it means
+is that Phase 5 needs a third lever for the tiers that eat nothing raw.
+The candidates, none chosen:
+
+- **Charge some refined goods per resident after all** — clothing and
+  food-like refined goods scale with mouths more plausibly than a lamp
+  does.
+- **Give the upper tiers a raw basic**, which would also give a home
+  island's first two chains a customer three tiers up.
+- **Raise the crew bonus** above 2w-1 for the categories those chains
+  run through.
+- **Accept it and let Merchants be import-only**, which the sea already
+  supports and which is arguably what a merchant tier *is*.
+
+### 5. Which sets the productivity floor
+
+Modifiers multiply the ratio by `1 / p`. **Measured against Phase 2's
+actual rates rather than the estimate this section first carried:**
+
+- Against *today's* table (0.38 / 0.47 / 0.55), the wall is reached at
+  p = 0.55 — so a floor of 0.6 is safe for the game as it stands.
+- Against the *projected* table (0.59 / 0.86 / 1.00), Merchants are
+  already at the wall with p = 1.0, and Wrights reach it at p = 0.86.
+
+So the floor cannot be fixed until §4's third lever is chosen. What is
+already certain is that **status modifiers must not land before Phase 5
+settles it**: a modifier that can dip below 1.0 is a multiplier on a
+ratio that is not yet known to have room for one.
 
 ### 6. The feedback loop is the dangerous part
 
@@ -400,10 +432,35 @@ takes the peak over a window. It is also why an island's real output is
 about four fifths of its headcount, which is the shift/needs-tick
 misalignment Phase 4 retunes.
 
-**2 — full staffing is worth more.** The super-linear bonus, m ≈ 1.8, as
-integer numerator/denominator per def. Nothing else changes. This is the
-phase that makes where labour goes a decision at all, and the phase that
-buys the headroom Phase 5 spends.
+**2 — full staffing is worth more. DONE.** `building_work_advance()`
+returns **2w-1**: one worker alone pays the overhead — hauling, tending,
+keeping the fire in — and the second arrives to find it paid. A full
+Fisher's Hut of five lands nine fish where five lone workers in five
+huts land five. Save v33.
+
+*One rule, no second table.* Output per worker at a full workplace is
+(2c-1)/c, which is 1.67 at a workshop's three and 1.83 at a factory's
+six — so bigger workplaces reward filling more, because the one
+worker's overhead spreads further. That falls out of the formula rather
+than being tuned, and it is the right direction: economies of scale
+belong to the large. At one worker it returns 1, so nothing is taken
+away from a half-empty island; the bonus is only ever a reward.
+
+*This is the phase that makes where labour goes a decision.* Under
+Phase 1's linear rate, four huts with one worker each were identical to
+one hut with four, so the choice was empty. Now concentration wins.
+
+*The closure table moved, deliberately and for the first time:*
+0.68 / 0.82 / 0.96 → **0.38 / 0.47 / 0.55**. Fixture hash
+`4901bec1db08ed02` → `e9a9639f4bcd06a0`.
+
+*And the test grew a projection that immediately found §4 wrong.*
+`test_closure` now computes what an age pyramid would do to each
+buildable tier, splitting the bill by whether demand scales with mouths
+or with houses — which is how the half-ration lever turned out to be
+worth nothing to Wrights and Merchants, and how Merchants turned out to
+project onto the wall. Better found here than at Phase 5, where the fix
+would be a rebalance of the whole def table rather than a decision.
 
 **3 — residents have names.** The `Resident` struct, hashed, saved,
 snapshotted. Everyone is an adult, nobody ages, nothing behaves
@@ -423,8 +480,11 @@ screen and seasons as flavour. **The shift retune (60+15 → 24+6) lands
 here**, so one work cycle is one month before anything depends on the
 alignment.
 
-**5 — ageing, birth and death.** Stages gate work. Two things land in
-the SAME phase and neither is optional:
+**5 — ageing, birth and death.** Stages gate work. **Blocked on §4's
+third lever**: as measured at Phase 2, Merchants project exactly onto
+the wall and Wrights reach 0.86, because neither eats anything raw and
+the half-ration lever therefore cannot touch them. Three things land in
+the SAME phase and none is optional:
 
 - **Age-weighted rations**, because this is the phase that would
   otherwise put every tier over the wall — the closure test has to be
@@ -432,6 +492,9 @@ the SAME phase and neither is optional:
 - **Age jitter at spawn**, because a cohort that ages together dies
   together, and retrofitting that is an economy-breaking change rather
   than a balance pass.
+- **Whatever §4's third lever turns out to be**, because without it the
+  commit that introduces the pyramid is the commit that puts a buildable
+  tier on the wall.
 
 **6 — marriage and households.** Pairing from the sim's LCG in a fixed
 order. Feeds social support, and gives the ghost feed something worth

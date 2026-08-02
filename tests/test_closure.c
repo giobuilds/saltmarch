@@ -89,11 +89,19 @@ static int failures = 0;
  *
  * That is why Phase 1 could not move these numbers and did not: five
  * workers landing five fish leaves output per worker exactly where it
- * was. What building_worker_cap() decides is how many BUILDINGS those
- * workers stand in — land and capital, not labour — which is why it
- * appears nowhere in this file. Phase 2's super-linear capacity bonus
- * is the one that WILL move them, deliberately, and will have to say so
- * here.
+ * was, so what building_worker_cap() decided was how many BUILDINGS
+ * those workers stand in — land and capital, not labour.
+ *
+ * PHASE 2 MOVES THEM, DELIBERATELY. A full crew is worth more than the
+ * sum of its hands: building_work_advance() returns 2w-1, so output per
+ * worker at a full workplace is (2c-1)/c — 1.67 at a workshop's three,
+ * 1.83 at a factory's six. Every ratio below divides by that.
+ *
+ * MODELLED AT FULL STAFFING, which is the best case and therefore the
+ * right one for a guard: a tier that cannot close with every workplace
+ * full cannot close at all. It is also the case the design pushes a
+ * player toward, since the bonus exists precisely to make filling a
+ * workplace worth doing.
  *
  * Doubles are fine here and nowhere near the sim. This is a property of
  * the def table computed at test time; nothing it produces is hashed,
@@ -138,17 +146,32 @@ static double chain_workers(ResourceType g, double rate)
     if (b < 0) return UNPRODUCIBLE;
 
     visiting[g] = 1;
-    d         = &BUILDING_DEFS[b];
-    workers   = rate * (double)d->tick_seconds / (double)d->produce_amt;
-    total     = workers;
+    d = &BUILDING_DEFS[b];
+
+    /* Units per second one worker sustains, times the full-crew bonus:
+     * a crew of `cap` advances the clock 2*cap-1 rather than cap, so
+     * each of them is worth (2c-1)/c. Asked of the real function rather
+     * than restated here, so a retuned curve cannot leave this test
+     * certifying the old economy. */
+    {
+        int    cap  = building_worker_cap(d);
+        double per  = (double)building_work_advance(d, cap) / (double)cap;
+        workers = rate * (double)d->tick_seconds / (double)d->produce_amt / per;
+    }
+    total = workers;
 
     for (i = 0; i < MAX_BUILDING_INPUTS; i++) {
         double sub;
         if (d->consumes[i] == RES_COUNT) continue;
-        /* Each of those workers draws consume_amt every tick_seconds. */
+        /* Making `rate` of the output needs rate*consume/produce of each
+         * input, FULL STOP — independent of tick rate, crew size and
+         * bonus alike, since all three cancel. Deriving it from `rate`
+         * rather than from the worker count is what keeps that true:
+         * the old form multiplied the headcount by consume/tick_seconds,
+         * which was equivalent only while a worker was a building. */
         sub = chain_workers(d->consumes[i],
-                            workers * (double)d->consume_amt[i]
-                                / (double)d->tick_seconds);
+                            rate * (double)d->consume_amt[i]
+                                / (double)d->produce_amt);
         if (sub < 0.0) { visiting[g] = 0; return sub; }
         total += sub;
     }
@@ -180,6 +203,12 @@ typedef struct {
      * failing a survival limit sends the reader to the wrong table. */
     ResourceType worst_basic;
     double       worst_basic_cost;
+    /* Split by whether the tier's demand scales with the number of
+     * MOUTHS or with the number of HOUSES — tier_good_amount's rule.
+     * Only the first kind shrinks when infants and the retired eat a
+     * half ration, so a projection that applied one factor to the whole
+     * bill would flatter every tier with a long luxury list. */
+    double       raw, refined;
     int          unpriceable; /* a need nothing produces, or a cycle    */
 } TierBill;
 
@@ -209,6 +238,8 @@ static TierBill tier_bill(BuildingType house, const char *label)
         double r = good_ratio(basic[i]);
         if (r < 0.0) { bill.unpriceable = 1; continue; }
         bill.basics += r;
+        if (RESOURCE_CATEGORIES[basic[i]] == RCAT_RAW) bill.raw += r;
+        else                                           bill.refined += r;
         if (r > bill.worst_cost) { bill.worst_cost = r; bill.worst = basic[i]; }
         if (r > bill.worst_basic_cost) {
             bill.worst_basic_cost = r;
@@ -223,6 +254,8 @@ static TierBill tier_bill(BuildingType house, const char *label)
         r = good_ratio(t->luxury[i]);
         if (r < 0.0) { bill.unpriceable = 1; continue; }
         bill.total += r;
+        if (RESOURCE_CATEGORIES[t->luxury[i]] == RCAT_RAW) bill.raw += r;
+        else                                               bill.refined += r;
         if (r > bill.worst_cost) {
             bill.worst_cost = r;
             bill.worst      = t->luxury[i];
@@ -253,19 +286,26 @@ static void test_the_maths(void)
 
     printf("\n=== the arithmetic, against a hand calculation ===\n");
 
-    /* Six residents want six Fish per 30s tick = 0.2/sec. A Fisher's Hut
-     * lands 1 every 6s = 0.1667/sec. So 1.2 huts, and 1.2/6 = 0.2
-     * workers per resident. */
+    /* Six residents want six Fish per 30s tick = 0.2/sec. A LONE worker
+     * lands 1 every 6s = 0.1667/sec — but a full hut of five advances
+     * the clock 9 rather than 5, so each of the five is worth 1.8 of
+     * that: 0.3/sec each. Sustaining 0.2/sec therefore takes 0.667 of a
+     * worker, and 0.667/6 = 0.111 workers per resident.
+     *
+     * Before Phase 2 the same sum gave 1.2 and 0.2. Both numbers moving
+     * by exactly the crew bonus is the whole claim of this phase. */
     CHECK(hut->produce_amt == 1 && hut->tick_seconds == 6.0f,
           "the Fisher's Hut still lands one Fish every six seconds");
     CHECK(tier_good_amount(RES_FISH, 6) == 6,
           "and six people still want six Fish, not one");
+    CHECK(building_work_advance(hut, 5) == 9,
+          "a full hut of five advances the clock nine, not five");
 
     memset(visiting, 0, sizeof(visiting));
     r = chain_workers(RES_FISH, 6.0 / 30.0);
-    CHECK(r > 1.19 && r < 1.21, "six mouths of Fish is 1.2 Fisher's Huts");
-    CHECK(good_ratio(RES_FISH) > 0.199 && good_ratio(RES_FISH) < 0.201,
-          "which is 0.2 workers per resident");
+    CHECK(r > 0.66 && r < 0.68, "six mouths of Fish is two thirds of a hand");
+    CHECK(good_ratio(RES_FISH) > 0.110 && good_ratio(RES_FISH) < 0.112,
+          "which is 0.111 workers per resident");
 
     /* And a refined good is charged once however full the house is —
      * the property the ratio depends on most, and the one a future
@@ -406,13 +446,9 @@ static void test_the_guard_bites(void)
      * threshold no data ever exceeds is decoration. */
     {
         TierBill a = tier_bill(BUILDING_HOUSE_ARTISAN, "Artisans");
-        TierBill e = tier_bill(BUILDING_HOUSE_ENGINEER, "Engineers");
 
         CHECK(a.total > THE_WALL,
               "Artisans are over the wall — the limit is a real line");
-        CHECK(e.basics > SURVIVAL_MAX,
-              "and Engineers exceed even the survival limit on basics "
-              "alone, which is why only placeable tiers are asserted on");
     }
 
     /* Marshfolk's whole bill plus four Banquets would clear the wall,
@@ -424,6 +460,101 @@ static void test_the_guard_bites(void)
         CHECK(m.total + 4.0 * banquet > THE_WALL,
               "and four such goods on the base tier would break it");
     }
+
+    /* THE SURVIVAL LIMIT IS NOW UNEXERCISED BY REAL DATA, and saying so
+     * is better than quietly dropping the assertion that used to prove
+     * it was not. Before Phase 2, Engineers needed 1.09 workers per
+     * resident on basics alone; the crew bonus took them to 0.61 and no
+     * tier in the game exceeds 0.80 any more.
+     *
+     * That limit becomes live again at Phase 5, which is the point of
+     * the headroom this phase just bought — see below. */
+}
+
+/* ---- 5. what Phase 5 will do to all of this ----------------
+ * LIFE_PLAN's central arithmetic claim is that the crew bonus pays for
+ * the residents who cannot work. That claim is checkable NOW, against
+ * the real table rather than against the sums in the document, and it
+ * is worth checking now because the phase that would discover it wrong
+ * is the phase that introduces ageing — by which point the fix is a
+ * rebalance of the whole def table rather than a tuning pass.
+ *
+ * Two levers, both from the plan:
+ *   - only adults work, so supply scales by ADULT_FRACTION while demand
+ *     does not;
+ *   - infants and the retired eat a half ration, so demand for goods
+ *     charged PER RESIDENT falls. Goods charged per house do not move,
+ *     which is why the bill is split raw/refined rather than scaled
+ *     whole.
+ *
+ * Neither is built. This asserts the arithmetic, not the behaviour. */
+#define ADULT_FRACTION    0.55
+#define NON_ADULT_RATION  0.50
+
+static double projected(const TierBill *b)
+{
+    double demand = b->raw * (ADULT_FRACTION
+                              + (1.0 - ADULT_FRACTION) * NON_ADULT_RATION)
+                  + b->refined;
+    return demand / ADULT_FRACTION;
+}
+
+static void test_the_headroom_is_for_something(void)
+{
+    int i;
+
+    printf("\n=== and what an age pyramid would do to it ===\n");
+
+    for (i = 0; i < TIER_COUNT; i++) {
+        TierBill b = tier_bill(TIERS[i].house, TIERS[i].label);
+
+        if (!BUILDING_DEFS[b.house].hud_placeable) continue;
+        printf("  %-10s %.2f today -> %.2f projected   (raw %.2f, "
+               "refined %.2f)%s\n",
+               b.label, b.total, projected(&b), b.raw, b.refined,
+               projected(&b) >= THE_WALL ? "   <-- OVER THE WALL" : "");
+    }
+
+    /* The opening every player takes has to survive the pyramid, or
+     * ageing cannot ship at all. This one IS asserted. */
+    {
+        TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
+        char     msg[160];
+
+        snprintf(msg, sizeof(msg),
+                 "Marshfolk survive an age pyramid at %.2f", projected(&m));
+        CHECK(projected(&m) < THE_WALL, msg);
+    }
+
+    /* THE HALF RATION CANNOT HELP A TIER THAT EATS NOTHING RAW, and
+     * Merchants are that tier. Coffee, Flatbread, Rum, Marsh Hats, Wool
+     * Cloaks and Plantain Fry are all REFINED — charged per household by
+     * tier_good_amount, so the number of mouths never entered their cost
+     * and reducing some of those mouths to half rations cannot reduce it.
+     *
+     * LIFE_PLAN's own Phase 5 table missed this: it applied the 77.5%
+     * factor to the whole bill and predicted 0.75 for Merchants. The
+     * real projection is 1.00, exactly ON the wall, and a tier at the
+     * wall cannot grow.
+     *
+     * Asserted rather than merely printed, because the structural fact —
+     * this tier is immune to that lever — is what a future fix has to
+     * work around, and it would otherwise be rediscovered the hard way
+     * at Phase 5. */
+    {
+        TierBill m = tier_bill(BUILDING_HOUSE_MERCHANT, "Merchants");
+        char     msg[160];
+
+        snprintf(msg, sizeof(msg),
+                 "Merchants eat nothing raw (%.2f of %.2f), so the half "
+                 "ration moves them not at all: %.2f either way",
+                 m.raw, m.total, projected(&m));
+        CHECK(m.raw < 0.001 && projected(&m) >= THE_WALL, msg);
+    }
+
+    printf("\n  NOTE: Merchants project ON the wall. That is a LIFE_PLAN\n"
+           "  Phase 5 blocker, recorded in the plan — not a defect in the\n"
+           "  economy as it stands today, which test_closure asserts above.\n");
 }
 
 int main(void)
@@ -434,6 +565,7 @@ int main(void)
     test_every_need_is_priceable();
     test_closure();
     test_the_guard_bites();
+    test_the_headroom_is_for_something();
 
     printf("\n%s\n", failures ? "FAILED" : "PASSED");
     return failures ? 1 : 0;

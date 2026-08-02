@@ -421,6 +421,39 @@ int building_can_place(const Map *map,
  * exist. */
 int building_worker_cap(const BuildingDef *def);
 
+/* How far `workers` advance this building's production clock in one sim
+ * tick — 1 per worker would be linear; this is deliberately more
+ * (LIFE_PLAN Phase 2).
+ *
+ * ONE WORKER ALONE PAYS THE WHOLE OVERHEAD. Somebody has to haul, tend
+ * the nets, keep the fire in. Working alone you do all of it yourself
+ * and fish in what is left; the second pair of hands arrives to find
+ * every fixed cost already paid, and is worth two. So:
+ *
+ *     advance(w) = 2w - 1        1, 3, 5, 7, 9, 11 ...
+ *
+ * which lands a full Fisher's Hut of five on NINE fish where five lone
+ * workers in five huts would land five. At one worker it returns 1, so
+ * a half-empty island is exactly as productive as it was before this
+ * phase and nothing is taken away — the bonus is only ever a reward for
+ * filling a workplace.
+ *
+ * It also means bigger workplaces reward filling MORE, because the one
+ * worker's overhead is spread further: (2c-1)/c is 1.67 at a workshop's
+ * three and 1.83 at a factory's six. That falls out of the rule rather
+ * than being a second table, and it is the right direction — economies
+ * of scale belong to the large.
+ *
+ * WHY THIS IS THE PHASE THAT MOVES THE CLOSURE NUMBERS. Phase 1 was
+ * ratio-neutral by construction: five workers landing five fish leaves
+ * output per worker alone. This does not, and must not — the headroom
+ * it buys is what pays for the residents who cannot work once ageing
+ * arrives (LIFE_PLAN Phase 5). tests/test_closure.c models it at FULL
+ * staffing, which is the best case and therefore the right one for a
+ * guard: a tier that cannot close with every workplace full cannot
+ * close at all. */
+int building_work_advance(const BuildingDef *def, int workers);
+
 /* The first input slot `def` cannot pay for out of `s`, or -1 when it
  * can run. All-or-nothing: a building ticks only when every
  * non-RES_COUNT slot has enough, so nothing half-consumes one input

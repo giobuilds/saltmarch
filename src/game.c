@@ -631,8 +631,13 @@ typedef struct {
  * rather than by one. A save is a seed plus an ordered command log, so
  * a world recorded when one agent could claim a whole Fisher's Hut
  * replays into a different world under a rule where five can. The
- * bytes would load; the island they described would not come back. */
-#define SAVE_VERSION 32u
+ * bytes would load; the island they described would not come back.
+ *
+ * v33 (LIFE_PLAN Phase 2): a full crew is worth more than the sum of
+ * its hands — the production clock advances 2w-1 rather than w — so
+ * every island in every recorded log produces at a different rate from
+ * the one it was recorded at. Same reason as v32, larger effect. */
+#define SAVE_VERSION 33u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

@@ -1474,6 +1474,28 @@ int building_worker_cap(const BuildingDef *def)
     return CREW[def->category];
 }
 
+/* ---- what a full crew is worth (LIFE_PLAN Phase 2) ----------
+ * See building.h for the overhead story the formula tells.
+ *
+ * Integer, and it has to be: this advances Building.timer, which is
+ * hashed world state. A multiplier expressed as a rate per tick needs
+ * no division and no float, so two machines cannot round it apart.
+ *
+ * Clamped to the crew size rather than trusted. worker_count is
+ * retallied every tick from whoever is physically present, and a
+ * demolition mid-reassignment is exactly the sort of thing that could
+ * briefly put one more body in a building than it holds — which would
+ * otherwise be a free production bonus for knocking a workplace down. */
+int building_work_advance(const BuildingDef *def, int workers)
+{
+    int cap = building_worker_cap(def);
+
+    if (cap <= 0 || workers <= 0) return 0;
+    if (workers > cap) workers = cap;
+
+    return 2 * workers - 1;
+}
+
 /* =========================================================
  * Helper: is tile (r,c) occupied by any placed building?
  * We check every active building's footprint.

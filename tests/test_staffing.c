@@ -59,6 +59,50 @@ static void test_the_rule(void)
           "heavy industry holds more than one artisan's bench");
 }
 
+/* ---- 1b. what a FULL crew is worth (LIFE_PLAN Phase 2) -----
+ * One worker alone pays the overhead; the second arrives to find it
+ * paid. So a filled workplace beats the same people spread across
+ * several — which is what makes where labour goes a decision at all,
+ * rather than a slider that is always worth maxing and never worth
+ * thinking about. */
+static void test_a_full_crew_is_worth_more(void)
+{
+    const BuildingDef *hut = &BUILDING_DEFS[BUILDING_FISHERS_HUT];
+    int                cap = building_worker_cap(hut);
+    int                w;
+
+    printf("\n=== and a full one is worth more than the sum of it ===\n");
+
+    CHECK(building_work_advance(hut, 1) == 1,
+          "a lone worker is worth exactly what they always were");
+    CHECK(building_work_advance(hut, cap) == 2 * cap - 1,
+          "and a full hut of five lands nine, not five");
+    CHECK(building_work_advance(hut, 0) == 0, "an empty one lands nothing");
+
+    /* Monotonic, and strictly so: every extra hand is worth having.
+     * A curve that flattened would make the top of a crew pointless. */
+    for (w = 1; w < cap; w++)
+        if (building_work_advance(hut, w + 1)
+            <= building_work_advance(hut, w)) {
+            printf("  FAIL: worker %d adds nothing\n", w + 1);
+            failures++;
+        }
+    printf("  ok:   every extra hand is worth having\n");
+
+    /* Over-full is clamped, not rewarded. worker_count is retallied
+     * every tick from whoever is present, and a demolition mid-
+     * reassignment could briefly overfill a building — which must not
+     * be a production bonus for knocking a workplace down. */
+    CHECK(building_work_advance(hut, cap + 10)
+          == building_work_advance(hut, cap),
+          "and a crush of bodies is worth no more than a full crew");
+
+    /* THE POINT: one full workplace beats the same people in separate
+     * ones, so concentrating labour is a real choice. */
+    CHECK(building_work_advance(hut, cap) > cap * building_work_advance(hut, 1),
+          "five in one hut beat five huts with one each");
+}
+
 /* ---- a small island: store, road, and things to work at ----
  * Built by SUBMITTING commands, exactly as replay.c's fixture does, so
  * nothing can be looked up until the ticks have run. Returns the
@@ -257,6 +301,7 @@ int main(void)
     printf("== staffing (LIFE_PLAN Phase 1) ==\n");
 
     test_the_rule();
+    test_a_full_crew_is_worth_more();
     test_a_crew_is_hired();
     test_production_scales();
     test_nobody_still_means_nothing();
