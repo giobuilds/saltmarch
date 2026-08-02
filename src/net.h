@@ -151,7 +151,11 @@ typedef struct NetSession NetSession;
  *    next hash while decoding each other's frames perfectly. A
  *    lockstep protocol version has to cover the rules as well as the
  *    bytes, which is why Phase 5's ageing should have moved it too. */
-#define NET_PROTO_VERSION     25u
+/* 26: a resident carries a sex, a pregnancy and the house they were
+ *    born in (LIFE_PLAN Phase 6b). This one IS a format change as well
+ *    as a rule change — three int32s per resident — so an older peer
+ *    would decode every resident after the first at the wrong offset. */
+#define NET_PROTO_VERSION     26u
 /* Connections one host session will hold. A co-op host uses one; the
  * dedicated server uses as many as it is given. Peers are cheap (a
  * growable receive buffer each), so this is a sanity bound, not a

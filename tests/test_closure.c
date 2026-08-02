@@ -490,7 +490,12 @@ static void test_the_guard_bites(void)
  * for exactly this — so the year is the wrong statistic and the
  * five-year mean is the right one. Closure has to hold through a bad
  * decade, because a bad decade is when an island actually fails. */
-#define ADULT_FRACTION    0.48
+/* 0.33 SINCE LIFE_PLAN Phase 6b, and it is no longer really a
+ * statistic. An island raises its own people now, and a house that is
+ * doing so is two parents and four children — a third of it able to
+ * work, on every seed, for the eighteen years it takes the eldest to
+ * grow up. */
+#define ADULT_FRACTION    0.33
 #define NON_ADULT_RATION  0.50
 
 static double projected(const TierBill *b)
@@ -517,22 +522,54 @@ static void test_the_headroom_is_for_something(void)
                projected(&b) >= THE_WALL ? "   <-- OVER THE WALL" : "");
     }
 
-    /* The two tiers that must feed themselves, at the WORST measured
-     * adult fraction. Marshfolk are the opening every player takes;
-     * Wrights are the other line's floor. */
+    /* THE TIER THAT MUST FEED ITSELF, at the worst measured adult
+     * fraction. Marshfolk are the opening every player takes, and an
+     * island that cannot staff its own cottages is an island that
+     * cannot be started — so this one is not negotiable. It clears at
+     * 0.89, which is close to the wall and is meant to be: raising
+     * children is supposed to be the hardest thing a young village
+     * does. */
     {
         TierBill m = tier_bill(BUILDING_HOUSE, "Marshfolk");
-        TierBill w = tier_bill(BUILDING_HOUSE_WORKER, "Wrights");
         char     msg[160];
 
         snprintf(msg, sizeof(msg),
                  "Marshfolk feed themselves through the worst decade "
                  "(%.2f)", projected(&m));
         CHECK(projected(&m) < THE_WALL, msg);
+    }
+
+    /* WRIGHTS BECAME IMPORT-DEPENDENT AT PHASE 6b, BY DECISION — the
+     * same decision, and for very nearly the same reason, as the one
+     * recorded for Merchants below.
+     *
+     * Their bill is entirely REFINED (0.47, no raw at all), and a
+     * refined good is charged once per household however many live
+     * there. That was affordable while a household was six grown
+     * lodgers: six workers between them paid one household's bill.
+     * Since a house is founded by a COUPLE and fills with children, the
+     * same bill falls on two workers for the eighteen years it takes
+     * the eldest to grow up — three times the burden, and 0.47 becomes
+     * 1.44.
+     *
+     * Note what does NOT fix it: HOUSE_CAPACITY. The bill is per
+     * household either way, and the household has two adults in it
+     * whether the ceiling is four or six, so the ratio does not move.
+     * The only levers are the tier's own needs list and the demography.
+     *
+     * So a Wrights town buys its comforts in, like a merchant town, and
+     * the sea is what makes that possible. Asserted rather than
+     * exempted, so the day somebody rebalances the tier the test says
+     * the policy changed instead of quietly passing. */
+    {
+        TierBill w = tier_bill(BUILDING_HOUSE_WORKER, "Wrights");
+        char     msg[200];
 
         snprintf(msg, sizeof(msg),
-                 "and so do Wrights (%.2f)", projected(&w));
-        CHECK(projected(&w) < THE_WALL, msg);
+                 "Wrights eat nothing raw (%.2f of %.2f) and reach %.2f "
+                 "while raising children — import-dependent, by decision",
+                 w.raw, w.total, projected(&w));
+        CHECK(w.raw < 0.001 && projected(&w) >= THE_WALL, msg);
     }
 
     /* MERCHANTS ARE IMPORT-ONLY, BY DECISION (LIFE_PLAN Phase 5).

@@ -652,8 +652,15 @@ typedef struct {
  * under Phase 3's rules and a v33 log recorded under Phase 5's are
  * still indistinguishable to each other. What this fixes is the going-
  * forward case, and the lesson is that the version belongs in the same
- * commit as the rule it describes. */
-#define SAVE_VERSION 34u
+ * commit as the rule it describes.
+ *
+ * v35 (LIFE_PLAN Phase 6b): a house is founded by a couple and grows
+ * only by birth. Immigration into an existing house is gone, the
+ * starting gold is ten thousand rather than one, and a house opens at
+ * two residents rather than five — so a recorded log replays into an
+ * island with a different population, a different workforce and a
+ * different amount of money to have spent. */
+#define SAVE_VERSION 35u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and
@@ -1453,6 +1460,9 @@ uint64_t sim_hash(const GameState *gs)
             fnv_bytes(&h, &p->age_months, sizeof(p->age_months));
             fnv_bytes(&h, &p->spouse, sizeof(p->spouse));
             fnv_bytes(&h, &p->tenure_months, sizeof(p->tenure_months));
+            fnv_bytes(&h, &p->sex, sizeof(p->sex));
+            fnv_bytes(&h, &p->pregnancy, sizeof(p->pregnancy));
+            fnv_bytes(&h, &p->birth_house, sizeof(p->birth_house));
         }
 
         for (b = 0; b < isl->building_count; b++) {

@@ -5,6 +5,7 @@
  */
 
 #include "resident.h"
+#include "simlog.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -14,13 +15,21 @@
  * than an island can hold, so a player rarely meets the same name twice
  * — and the collisions that do happen read as a family rather than as a
  * bug, which is the right failure. */
-static const char *const FIRST_NAMES[] = {
-    "Bess",  "Cully", "Maud",  "Tam",   "Ivy",   "Hob",   "Neve",  "Wick",
-    "Sela",  "Bram",  "Nan",   "Orrin", "Tilda", "Fen",   "Marta", "Gil",
-    "Peg",   "Colm",  "Ada",   "Rusk",  "Elsie", "Dorn",  "Hettie","Sarn",
-    "Winna", "Kell",  "Bryde", "Aldo",  "Merrit","Salla", "Torr",  "Grea",
-    "Odd",   "Lisbet","Harl",  "Nell",  "Pike",  "Cass",  "Rowan", "Juna",
-    "Silas", "Wren",  "Ansel", "Dove",  "Mabb",  "Teague","Iris",  "Corwin"
+/* SPLIT BY SEX SINCE PHASE 6b. Residents have a sex now because a
+ * household is founded by a couple and only one half of one can be
+ * pregnant, and a table that answered "Bess" for a man would put that
+ * fact on screen as a mistake the moment anything displayed either.
+ * The two lists are deliberately the same length, so neither sex draws
+ * from a smaller pool and reads as less varied. */
+static const char *const FIRST_NAMES_F[] = {
+    "Bess",  "Maud",  "Ivy",   "Neve",  "Sela",  "Nan",   "Tilda", "Marta",
+    "Peg",   "Ada",   "Elsie", "Hettie","Winna", "Bryde", "Salla", "Grea",
+    "Lisbet","Nell",  "Cass",  "Juna",  "Wren",  "Dove",  "Iris",  "Merrit"
+};
+static const char *const FIRST_NAMES_M[] = {
+    "Cully", "Tam",   "Hob",   "Wick",  "Bram",  "Orrin", "Fen",   "Gil",
+    "Colm",  "Rusk",  "Dorn",  "Sarn",  "Kell",  "Aldo",  "Torr",  "Odd",
+    "Harl",  "Pike",  "Rowan", "Silas", "Ansel", "Mabb",  "Teague","Corwin"
 };
 static const char *const SURNAMES[] = {
     "Cobbleworth", "Marsh",     "Tidewell",   "Fenn",      "Saltley",
@@ -32,8 +41,8 @@ static const char *const SURNAMES[] = {
     "Rushton",     "Brine",     "Gullet",     "Weatherall","Stapley",
     "Ferrier",     "Winnow",    "Larkspur",   "Dunmore",   "Kittle"
 };
-#define FIRST_COUNT (int)(sizeof(FIRST_NAMES) / sizeof(FIRST_NAMES[0]))
-#define SUR_COUNT   (int)(sizeof(SURNAMES)    / sizeof(SURNAMES[0]))
+#define FIRST_COUNT (int)(sizeof(FIRST_NAMES_F) / sizeof(FIRST_NAMES_F[0]))
+#define SUR_COUNT   (int)(sizeof(SURNAMES)      / sizeof(SURNAMES[0]))
 
 /* FNV-1a over (world_seed, id, salt) with a murmur3 finaliser, the same
  * shape survey.c uses and for the same reasons: integer-only so every
@@ -109,7 +118,9 @@ void resident_name(const Resident *r, uint32_t world_seed,
     f = resident_hash(world_seed, r->id, 0x1111u) % (uint32_t)FIRST_COUNT;
     s = resident_hash(world_seed, r->id, 0x2222u) % (uint32_t)SUR_COUNT;
 
-    snprintf(out, out_len, "%s %s", FIRST_NAMES[f], SURNAMES[s]);
+    snprintf(out, out_len, "%s %s",
+             r->sex == SEX_MALE ? FIRST_NAMES_M[f] : FIRST_NAMES_F[f],
+             SURNAMES[s]);
 }
 
 /* ---- sync -------------------------------------------------
@@ -140,16 +151,24 @@ static void widow_partner(Resident r[], int count, int idx)
     r[idx].spouse = -1;
 }
 
-/* Arriving adults, aged 20-45 and spread — see the invariant in
- * resident.h. The spread is what stops an island dying in cohorts.
+/* A FOUNDER arrives grown, aged 20-31 and spread. The spread is the
+ * anti-cohort invariant from resident.h; the CEILING is new in Phase
+ * 6b and is the other half of the same concern. Founders used to
+ * arrive at 20-45, which was harmless when a house was five unrelated
+ * strangers and growth came off a boat. Now the founding pair are the
+ * only fertile couple a house will ever have, so a mother who lands at
+ * 44 has one year of fertility and the household never fills. Twenty
+ * to thirty-one leaves fifteen-odd years of it: several children, and
+ * still a decade of spread between two neighbouring houses.
  *
- * `newborn` makes this a BIRTH instead: age zero, and no jitter,
- * because a baby's age is not a sample of anything — it is the one age
- * a person is genuinely known to be. The spread exists to break up
- * cohorts among people who arrive together, and children born into a
- * house arrive one growth tick at a time already. */
-static void spawn_resident(Resident r[], int *count, uint32_t *next_id,
-                           int home_idx, uint32_t world_seed, int newborn)
+ * A NEWBORN is age zero, with no jitter, because a baby's age is not a
+ * sample of anything — it is the one age a person is genuinely known
+ * to be.
+ *
+ * Returns the slot used, or -1 if the island is full. */
+static int spawn_resident(Resident r[], int *count, uint32_t *next_id,
+                          int home_idx, uint32_t world_seed,
+                          int newborn, int sex)
 {
     int      slot = -1, i;
     uint32_t id, years, months;
@@ -157,22 +176,30 @@ static void spawn_resident(Resident r[], int *count, uint32_t *next_id,
     for (i = 0; i < *count; i++)
         if (!r[i].active) { slot = i; break; }
     if (slot < 0) {
-        if (*count >= MAX_RESIDENTS) return;   /* soft cap, like agents */
+        if (*count >= MAX_RESIDENTS) return -1;  /* soft cap, like agents */
         slot = (*count)++;
     }
 
     id     = (*next_id)++;
-    years  = 20u + resident_hash(world_seed, id, 0x3333u) % 26u;
+    years  = 20u + resident_hash(world_seed, id, 0x3333u) % 12u;
     months = resident_hash(world_seed, id, 0x4444u) % (uint32_t)MONTHS_PER_YEAR;
 
     memset(&r[slot], 0, sizeof(r[slot]));
-    r[slot].active     = 1;
-    r[slot].home_idx   = home_idx;
-    r[slot].id         = id;
-    r[slot].age_months = newborn
-                       ? 0
-                       : (int32_t)(years * MONTHS_PER_YEAR + months);
-    r[slot].spouse     = -1;
+    r[slot].active      = 1;
+    r[slot].home_idx    = home_idx;
+    r[slot].id          = id;
+    r[slot].age_months  = newborn
+                        ? 0
+                        : (int32_t)(years * MONTHS_PER_YEAR + months);
+    r[slot].spouse      = -1;
+    r[slot].pregnancy   = 0;
+    r[slot].birth_house = newborn ? home_idx : -1;
+    /* A founder is told which half of the couple to be; a newborn is
+     * asked, and the coin is the id it was just given. */
+    r[slot].sex = sex >= 0
+                ? sex
+                : (int32_t)(resident_hash(world_seed, id, 0x7777u) & 1u);
+    return slot;
 }
 
 /* Removes the LAST matching resident, which is deterministic and is all
@@ -198,6 +225,7 @@ int residents_adults_at(const Resident r[], int count, int home_idx)
     int i, n = 0;
     for (i = 0; i < count; i++)
         if (r[i].active && r[i].home_idx == home_idx
+            && r[i].pregnancy == 0                 /* carrying: not free */
             && resident_stage(&r[i]) == LIFE_ADULT) n++;
     return n;
 }
@@ -272,6 +300,19 @@ static int marriageable(const Resident *r)
     return r->active && r->spouse < 0 && resident_stage(r) == LIFE_ADULT;
 }
 
+/* Two people who were born in the same house are brother and sister.
+ *
+ * THIS GUARD IS WHY birth_house EXISTS. Phase 6 paired within a house
+ * on the reasoning that a house was six unrelated lodgers; Phase 6b
+ * makes a house a family, and the very same rule would marry siblings
+ * the month they both turned eighteen. Founders carry -1 and are
+ * therefore never siblings of anyone, which is correct: they arrived
+ * from somewhere else and from nobody here. */
+static int siblings(const Resident *a, const Resident *b)
+{
+    return a->birth_house >= 0 && a->birth_house == b->birth_house;
+}
+
 void residents_marry(Resident r[], int count, uint32_t world_seed,
                      uint64_t tick)
 {
@@ -285,6 +326,8 @@ void residents_marry(Resident r[], int count, uint32_t world_seed,
 
             if (!marriageable(&r[j])) continue;
             if (r[j].home_idx != r[i].home_idx) continue;
+            if (r[j].sex == r[i].sex) continue;      /* it takes two */
+            if (siblings(&r[i], &r[j])) continue;
 
             /* Salted with BOTH ids and the tick. Both, so the question
              * is about this pair rather than about whoever happens to
@@ -301,6 +344,91 @@ void residents_marry(Resident r[], int count, uint32_t world_seed,
             r[j].spouse = i;
             break;      /* i is spoken for; move to the next person */
         }
+    }
+}
+
+/* ---- conception, gestation, birth (Phase 6b) --------------- */
+
+static int fertile_age(const Resident *r)
+{
+    return r->age_months / MONTHS_PER_YEAR < AGE_FERTILE_MAX_YEARS
+        && resident_stage(r) == LIFE_ADULT;
+}
+
+/* A woman who could start carrying this month: married, of an age, and
+ * not already. Returns her index or -1. */
+static int who_could_conceive(const Resident r[], int count, int home_idx)
+{
+    int i;
+
+    for (i = 0; i < count; i++) {
+        int sp = r[i].spouse;
+
+        if (!r[i].active || r[i].home_idx != home_idx) continue;
+        if (r[i].sex != SEX_FEMALE || r[i].pregnancy > 0) continue;
+        if (!fertile_age(&r[i])) continue;
+
+        if (sp < 0 || sp >= count || !r[sp].active) continue;
+        if (r[sp].spouse != i) continue;          /* one-way: not a couple */
+        if (!fertile_age(&r[sp])) continue;
+
+        return i;
+    }
+    return -1;
+}
+
+void residents_breed(Resident r[], int *count, uint32_t *next_id,
+                     PopData pop_data[], int building_count,
+                     uint32_t world_seed, uint64_t tick)
+{
+    int i;
+
+    /* Carry on carrying, and deliver those who are due. Done before
+     * conception so a birth this month does not also conceive this
+     * month off the back of the bed it just filled. */
+    for (i = 0; i < *count; i++) {
+        int slot;
+
+        if (!r[i].active || r[i].pregnancy <= 0) continue;
+        if (--r[i].pregnancy > 0) continue;
+
+        /* The bed is checked again at delivery, not only at conception:
+         * nine months is long enough for the house to have taken in a
+         * sibling or for the mother to have been moved. A house with no
+         * room keeps the child rather than losing it — the pregnancy
+         * simply ends and she may conceive again. */
+        if (r[i].home_idx < 0 || r[i].home_idx >= building_count) continue;
+        if (pop_data[r[i].home_idx].residents >= HOUSE_CAPACITY) continue;
+
+        slot = spawn_resident(r, count, next_id, r[i].home_idx,
+                              world_seed, 1, -1);
+        if (slot < 0) continue;                 /* island full */
+
+        pop_data[r[i].home_idx].residents++;
+        sim_log("House %d: a child is born, %d residents",
+                r[i].home_idx, pop_data[r[i].home_idx].residents);
+    }
+
+    /* And who begins. One conception per house per month at most —
+     * there is only ever one couple in a house that can, since siblings
+     * do not marry and their parents are the founders. */
+    for (i = 0; i < building_count; i++) {
+        int her;
+
+        if (!pop_data[i].active) continue;
+        if (pop_data[i].residents >= HOUSE_CAPACITY) continue;
+
+        her = who_could_conceive(r, *count, i);
+        if (her < 0) continue;
+
+        /* Salted with the tick, so a month that says no is one month
+         * saying no rather than the answer forever. */
+        if (resident_hash(world_seed,
+                          r[her].id ^ (uint32_t)(tick & 0xFFFFFFFFu),
+                          0x8888u) % 1000u >= CONCEIVE_PERMILLE_PER_MONTH)
+            continue;
+
+        r[her].pregnancy = PREGNANCY_MONTHS;
     }
 }
 
@@ -346,17 +474,42 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
         live   = count_live_for_home(residents, *count, i);
         target = pop_data[i].residents;
 
-        /* WHO arrives, not WHETHER (LIFE_PLAN Phase 6). The slot was
-         * opened by pop_update from happiness, exactly as before; all
-         * that is decided here is whether the house fills it with its
-         * own child or with somebody off a boat.
+        /* THE ONLY PEOPLE THIS FUNCTION STILL CREATES ARE FOUNDERS
+         * (LIFE_PLAN Phase 6b). Growth inside an existing house is a
+         * birth now and belongs to residents_breed; what is left here
+         * is the moment a house first appears with pop_init's two
+         * residents in it, and the reconciliation that removes people
+         * when a starving house empties.
          *
-         * Asked once per house rather than once per spawn, and it makes
-         * no difference which: a newborn is not a spouse, so no arrival
-         * in this loop can turn a house fertile that was not already. */
-        for (k = live; k < target; k++)
-            spawn_resident(residents, count, next_id, i, world_seed,
-                           residents_fertile_couple_at(residents, *count, i));
+         * The pair are spawned as one woman and one man and married to
+         * each other on the spot. Leaving them to the ordinary monthly
+         * draw would have worked, but it would have meant a new
+         * household waiting a random handful of months before it could
+         * begin — a delay with nothing to teach the player, since there
+         * is nobody else in the house either of them could have
+         * married instead. */
+        for (k = live; k < target; k++) {
+            int sex  = (k - live) % 2 == 0 ? SEX_FEMALE : SEX_MALE;
+            int slot = spawn_resident(residents, count, next_id, i,
+                                      world_seed, 0, sex);
+            if (slot < 0) break;
+
+            /* Marry this founder to the one spawned just before, if
+             * that one is still single and is the other sex. */
+            if (k > live) {
+                int j, mate = -1;
+                for (j = 0; j < *count; j++)
+                    if (residents[j].active && j != slot
+                        && residents[j].home_idx == i
+                        && residents[j].spouse < 0
+                        && residents[j].sex != residents[slot].sex
+                        && residents[j].birth_house < 0) { mate = j; break; }
+                if (mate >= 0) {
+                    residents[slot].spouse = mate;
+                    residents[mate].spouse = slot;
+                }
+            }
+        }
         for (k = live; k > target; k--)
             despawn_one_for_home(residents, *count, i);
     }

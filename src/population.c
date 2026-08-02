@@ -255,7 +255,13 @@ int pop_is_house_type(BuildingType type)
 void pop_init(PopData *p)
 {
     p->active    = 1;
-    p->residents = 5;        /* start half-full so growth is visible */
+    /* TWO, and they are a couple (LIFE_PLAN Phase 6b). A house used to
+     * open at five so that growth would be visible within a minute of
+     * laying it; it opens at two now because everybody after those two
+     * has to be born here. What the player watches is no longer a
+     * number ticking up toward six — it is a household, and the way to
+     * have more people is to give more couples a roof. */
+    p->residents = 2;
     p->timer     = 0;
     /* Neutral, not zero: a house that has just been built is neither
      * delighted nor about to empty, and starting at 0 would mean the
@@ -404,11 +410,18 @@ void pop_update(PopData pop[], const Building buildings[], int count,
         if (target >= HAPPINESS_NEUTRAL && p->residents > 0)
             stockpile_add(s, RES_GOLD, GOLD_PER_RESIDENT * p->residents);
 
-        if (p->happiness >= HAPPINESS_GROW && p->residents < HOUSE_CAPACITY) {
-            p->residents++;
-            sim_log("House %d: happy (%d/%d), %d residents",
-                    i, p->happiness, HAPPINESS_MAX, p->residents);
-        } else if (p->happiness == 0 && p->residents > 0) {
+        /* GROWTH USED TO LIVE HERE (LIFE_PLAN Phase 6b removed it). A
+         * happy house gained a resident every needs tick, and where
+         * that resident came from was never asked. Now a house grows
+         * only by birth — residents_breed owns the upward direction
+         * entirely — so happiness buys a household the room to raise
+         * children rather than conjuring grown strangers into a spare
+         * bed.
+         *
+         * Decline stays exactly where it was. The two are deliberately
+         * not symmetric: leaving is a decision about this month, being
+         * born takes nine of them. */
+        if (p->happiness == 0 && p->residents > 0) {
             const char *why = "no road to Warehouse";
             char        buf[48];
 

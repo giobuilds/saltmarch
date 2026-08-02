@@ -91,7 +91,14 @@ static void test_plenty(void)
 
     CHECK(w.p[0].happiness == HAPPINESS_MAX,
           "everything supplied reaches the top of the ladder");
-    CHECK(w.p[0].residents > start, "and people move in");
+    /* AND NOBODY MOVES IN (LIFE_PLAN Phase 6b). Happiness used to add a
+     * resident every needs tick, out of nowhere in particular. A house
+     * grows only by birth now — residents_breed owns the upward
+     * direction, and pop_update cannot fill a bed however delighted the
+     * household is. What plenty buys is the room and the will to raise
+     * children, which is a different function's business entirely. */
+    CHECK(w.p[0].residents == start,
+          "and nobody moves in — a house grows by birth or not at all");
     CHECK(w.s.amount[RES_GOLD] > 0, "a fed house pays its way");
 
     /* It climbed rather than jumping: five steps from neutral. */
@@ -295,7 +302,12 @@ static void test_consumption_scales(void)
     CHECK(w.p[0].happiness < HAPPINESS_NEUTRAL,
           "and feeding four of six people is not feeding the house");
 
-    /* And the ceiling moved. */
+    /* And the ceiling is no longer something pop_update walks up to.
+     * Forty ticks of everything a house could want used to fill it from
+     * one to six; since Phase 6b it leaves the house exactly as it
+     * found it, because feeding people is not the same as making them.
+     * The capacity is still the ceiling — residents_breed checks it —
+     * but nothing here can reach it. */
     {
         int i;
         world_init(&w, 1);
@@ -304,9 +316,9 @@ static void test_consumption_scales(void)
             stock_luxuries(&w, 50);
             needs_tick(&w);
         }
-        CHECK(w.p[0].residents == HOUSE_CAPACITY,
-              "a thriving house fills to capacity and stops");
-        CHECK(HOUSE_CAPACITY == 6, "which is six now, not ten");
+        CHECK(w.p[0].residents == 1,
+              "forty fat months do not add one person to a house");
+        CHECK(HOUSE_CAPACITY == 6, "the ceiling is still six");
     }
 }
 

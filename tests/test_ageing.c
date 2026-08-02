@@ -273,18 +273,26 @@ static void test_the_adult_fraction(void)
     CHECK(measured >= 2, "at least two worlds ran long enough to measure");
     if (measured == 0) return;
 
-    /* THE NUMBER LIFE_PLAN GUESSED AT 55%. An island peopled by adult
-     * immigrants who then age in place sits far above it, which is why
-     * nothing in the economy needed rebalancing for this phase.
+    /* THE NUMBER LIFE_PLAN GUESSED AT 55%, and which Phase 5 measured
+     * at 48% when every resident arrived grown. Phase 6b makes an
+     * island raise its own people, and the floor fell to 33% — where it
+     * sits on every seed tried, because it is not really a statistic at
+     * all. It is the shape of a household: two parents and four
+     * children under one roof is a third of the house able to work, and
+     * every house that fills does it the same way.
      *
-     * The floor is asserted below where it was measured (48% across ten
-     * seeds), not at it: this is a statistic over a stochastic process
-     * and pinning the assertion to the observed value would make it
-     * fail the first time a seed came out slightly unluckier. */
-    CHECK(worst >= 45,
-          "through its worst five years, nearly half the island still works");
+     * THAT TROUGH LASTS EIGHTEEN YEARS, which is the whole point of
+     * asserting on the five-year mean rather than the worst month. It
+     * is not a bad harvest the happiness ladder can absorb; it is how
+     * long it takes to raise the people who will end it.
+     *
+     * Asserted a little below the measured value, not at it, so an
+     * unluckier seed does not fail a number that has not moved. */
+    CHECK(worst >= 30,
+          "through the years it is raising children, a third of the "
+          "island works");
     CHECK(mean_sum / measured >= 70,
-          "and four fifths of it does, most of the time");
+          "and three quarters of it does, taken over a lifetime");
 }
 
 int main(void)

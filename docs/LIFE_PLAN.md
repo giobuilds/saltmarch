@@ -638,7 +638,90 @@ over sixty years, **28 of 134 arrivals were born on the island (20%)**;
 the rest sailed in. That is lower than it sounds like it should be, and
 the reason is structural rather than a bug — see below.
 
-**The open question Phase 6 leaves: housing caps people, not adults.**
+**6b — a house is founded by a couple, and grows only by birth. DONE.**
+The answer to the open question below, taken in the other direction
+from the one it proposed. Save v35, snapshot v14, protocol 26. Fixture
+hash `e07bd51fd2d9ba87` → `f5844c21ba0c995f`.
+
+*What a player now does.* Ten thousand Gold rather than one thousand,
+because population is something you found rather than something you
+wait for. A house opens with **two residents, a woman and a man,
+married on arrival**; they work; she conceives on a monthly draw, stops
+working for the nine months she carries, and gives birth; the child
+eats a half ration and holds no job until eighteen, then joins the
+workforce. Watched end to end on seed 12345: a couple at year 0,
+expecting at year 1, four children by year 5, and twelve adults across
+two houses by year 23.
+
+*Immigration into an existing house is gone.* `pop_update` no longer
+grows a house at all — the happiness-driven `residents++` that used to
+conjure a grown stranger into a spare bed is deleted. Growth is
+`residents_breed` and nothing else. Decline stays exactly where it was,
+and the asymmetry is deliberate: leaving is a decision about this
+month, being born takes nine of them.
+
+*This inverts Phase 6's own rule, and that is the point.* Phase 6 kept
+growth count-driven and made birth a question of who filled the slot.
+6b makes both directions resident-driven, which is simpler than the
+split Phase 5 needed and is only possible because nobody immigrates any
+more.
+
+*A pregnancy costs labour, not rations.* `residents_adults_at` skips a
+woman who is carrying, so she loses her agent and her workplace by the
+same one-line route that keeps children out of work — and a two-person
+household that is expecting is a one-person household. She still eats a
+full ration.
+
+*Siblings do not marry*, which needed a new field. Phase 6 paired
+within a house on the reasoning that a house was six unrelated lodgers;
+6b makes a house a family, and the identical rule would have married a
+brother to his sister the month they both turned eighteen.
+`birth_house` is -1 for a founder and the house index for anybody born
+here, and two people who share a non-negative one are siblings.
+
+*Names split by sex*, because a table that answered "Bess" for a man
+would put the mistake on screen the moment anything displayed either.
+
+**The cost, measured: the adult fraction fell to 33%.** Not a
+statistic so much as the shape of a household — two parents and four
+children is a third of the house able to work, on every seed, for the
+eighteen years it takes the eldest to grow up. That is far too long for
+the happiness ladder to absorb, so the economy has to survive it.
+
+Marshfolk still close, at **0.89** against a wall of 1.00 — tight, and
+meant to be. **Wrights no longer close (1.44) and are now
+import-dependent by decision**, recorded in `test_closure.c` beside the
+identical decision already taken for Merchants. Their bill is entirely
+refined, a refined good is charged once per household, and the same
+bill now falls on two workers instead of six. Worth recording because
+it is the obvious wrong guess: **`HOUSE_CAPACITY` does not fix this.**
+The bill is per household either way and the household has two adults
+in it whether the ceiling is four or six, so the ratio does not move.
+The only levers are the tier's needs list and the demography.
+
+*Three fixtures were encoding the old world and had to be told.*
+`test_happiness` asserted that a well-fed house gains residents — it
+does not any more. `test_staffing` laid two houses and expected a
+dozen people, and got four. That one exposed an older bug worth the
+note: its village put the houses in the road's own row, so only the
+first of them ever touched pavement, and the fixture had been measuring
+one connected house all along. It passed regardless while that house
+held five people. With a couple to a house it stopped passing, which is
+the good kind of test failure.
+
+*What is still not built.* Children have nobody to marry: pairing is
+within a house, and everybody in a house is either their parent or
+their sibling. So a household is one generation deep — the founders'
+children grow up, work, and die unmarried, and the island depends on
+the player laying new houses to bring new couples. Cross-house
+marriage, with a spouse moving in, is the next piece and is what
+`birth_house` was really added for.
+
+---
+
+**The open question Phase 6 left: housing caps people, not adults.**
+*Answered at 6b, in the other direction:* housing still caps people,
+and the population it caps is now grown at home rather than shipped in.
 `HOUSE_CAPACITY` is 6 and `pop_init` seeds a house at 5, so a house is
 full within one needs tick and stays full. The only demographic event
 after that is a death opening a bed — and a house whose members are

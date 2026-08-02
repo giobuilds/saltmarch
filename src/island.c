@@ -186,6 +186,13 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
          * the month they become adults rather than the one after. */
         residents_marry(isl->residents, isl->resident_count,
                         world_seed, tick);
+        /* And after marriage, so a couple wed this month may begin one
+         * this month. This is the ONLY thing that grows a house now
+         * (LIFE_PLAN Phase 6b) — pop_update below can still empty one,
+         * but it can no longer fill one. */
+        residents_breed(isl->residents, &isl->resident_count,
+                        &isl->next_resident_id, isl->pop_data,
+                        isl->building_count, world_seed, tick);
     }
 
     pop_update(isl->pop_data, isl->buildings, isl->building_count,

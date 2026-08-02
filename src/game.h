@@ -44,8 +44,16 @@
 #include "pirate.h"
 #include "intent.h"
 
-/* Gold a new game's starting island begins with. */
-#define STARTING_GOLD 1000
+/* Gold a new game's starting island begins with.
+ *
+ * Ten thousand since LIFE_PLAN Phase 6b, and the reason is demographic
+ * rather than economic. A house now arrives with a COUPLE in it rather
+ * than five grown strangers, and everybody after those two has to be
+ * born and then raised to eighteen. So an island's population is no
+ * longer something a player waits for — it is something they found, one
+ * household at a time, and they need enough capital in hand to lay down
+ * several roofs rather than one. */
+#define STARTING_GOLD 10000
 
 /* Player identity (MMO_PLAN Phase 5). PLAYER_NONE marks an unowned
  * island; real players count from 1. Single player is always player 1;

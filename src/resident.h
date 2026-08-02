@@ -66,10 +66,39 @@ typedef enum {
 #define AGE_ADULT_YEARS    18
 #define AGE_RETIRED_YEARS  65
 
-/* A person. 24 bytes, and the width is not an accident — this is
- * per-resident state that goes into every snapshot, so at MAX_RESIDENTS
- * it is 12 KB an island rather than the half-megabyte an Agent-sized
- * record would have cost. */
+/* Which half of a couple somebody is. Stored rather than derived from
+ * the id, unlike the name and the stage — a house has to be founded
+ * with one of each, and a derived sex cannot be asked to come out a
+ * particular way without hunting for an id that happens to answer
+ * correctly, which would make the id sequence depend on the answer. */
+typedef enum {
+    SEX_FEMALE = 0,
+    SEX_MALE   = 1
+} Sex;
+
+/* How long a pregnancy runs, in months — which is to say in needs
+ * ticks, which is four and a half minutes of play at a six-minute
+ * year. Nine because it is nine; there is no tuning here. */
+#define PREGNANCY_MONTHS 9
+
+/* Per-mille chance that an eligible couple conceives in a given month.
+ * Eligible means married, both under AGE_FERTILE_MAX_YEARS, she is not
+ * already carrying, and the house has a bed free.
+ *
+ * 200 puts the average wait at five months, so a child costs about
+ * fourteen months of its parents' time from conception to birth — seven
+ * minutes — and a house of two fills its four spare beds in something
+ * under half an hour. Fast enough to watch, slow enough that laying a
+ * second house is a better idea than waiting. */
+#define CONCEIVE_PERMILLE_PER_MONTH 200
+
+/* A person. 36 bytes since Phase 6b — the three fields added there are
+ * each a full int32 rather than the byte or two they need, because this
+ * struct is hashed field by field and packing it would introduce
+ * padding, and hashing padding is hashing uninitialised memory (the
+ * exact failure ci/sanitize.sh's MSan pass exists to catch). At
+ * MAX_RESIDENTS that is 18 KB an island, against the half-megabyte an
+ * Agent-sized record would have cost. */
 typedef struct {
     int      active;         /* slot in use                            */
     int      home_idx;       /* buildings[] slot of the house          */
@@ -77,6 +106,14 @@ typedef struct {
     int32_t  age_months;
     int32_t  spouse;         /* residents[] index, -1 for none         */
     uint32_t tenure_months;  /* at the current workplace               */
+    int32_t  sex;            /* Sex                                    */
+    int32_t  pregnancy;      /* months left to carry, 0 when not       */
+    /* The house this person was BORN in, or -1 for a founder who
+     * arrived grown. Its only job is to stop siblings marrying each
+     * other: a house is a family now, so the within-house pairing
+     * Phase 6 shipped would otherwise marry a brother to his sister the
+     * month they both turned eighteen. */
+    int32_t  birth_house;
 } Resident;
 
 /* ---- how long a life is (LIFE_PLAN Phase 5) ---------------
@@ -158,12 +195,19 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
                     const Building buildings[], const PopData pop_data[],
                     int building_count, uint32_t world_seed);
 
-/* How many residents of `home_idx` are old enough to work.
+/* How many residents of `home_idx` are old enough to work AND free to.
  *
  * THIS IS WHAT GATES LABOUR, and it does so by the simplest available
  * route: agents_sync spawns one agent per ADULT rather than per
  * resident, so a child has no agent, therefore no job, therefore no
- * shift. Nothing in agent.c or island.c had to learn what an age is. */
+ * shift. Nothing in agent.c or island.c had to learn what an age is.
+ *
+ * A WOMAN CARRYING A CHILD IS NOT COUNTED (Phase 6b), by the same
+ * route and for the same reason: she loses her agent, so she keeps no
+ * workplace and walks no shift, and the island is short a pair of hands
+ * for nine months. That is the cost of the next generation, and it is
+ * meant to be felt — a two-person household that is expecting is a
+ * one-person household until the child arrives. */
 int residents_adults_at(const Resident residents[], int count, int home_idx);
 
 /* Effective mouths at `home_idx` for the needs tick: an adult eats a
@@ -203,21 +247,29 @@ void residents_age(Resident residents[], int count, PopData pop_data[],
 void residents_marry(Resident residents[], int count,
                      uint32_t world_seed, uint64_t tick);
 
-/* Is there a couple at `home_idx` young enough to have a child?
- *
- * THIS IS WHAT MAKES A BIRTH A BIRTH. Growth stays exactly where it
- * was — count-driven, decided by pop_update from happiness — and this
- * decides only WHO ARRIVES to fill the slot it opened: a newborn where
- * a fertile couple lives, an immigrant adult otherwise. So Phase 6 adds
- * no second source of population, needs no rebalance of the economy,
- * and leaves "deaths are resident-driven, growth is count-driven"
- * exactly as Phase 5 left it.
- *
- * The consequence is the one LIFE_PLAN predicted: houses with couples
- * fill with children who eat half a ration and hold no job, so the
- * adult fraction falls and the closure projection starts doing real
- * work. */
+/* Is there a couple at `home_idx` young enough to have a child? */
 int residents_fertile_couple_at(const Resident residents[], int count,
                                 int home_idx);
+
+/* Conception, gestation and birth — one month of it (LIFE_PLAN Phase
+ * 6b). Call once per needs tick, from the same calendar trigger as
+ * residents_age and after it.
+ *
+ * BIRTH IS NOW THE ONLY WAY A HOUSE GROWS. Phase 6 made a birth a
+ * question of WHO filled a slot that happiness had already opened;
+ * Phase 6b removes that slot entirely — pop_update no longer grows a
+ * house at all — so this function drives pop_data[].residents UP the
+ * same way residents_age drives it DOWN. Both directions are
+ * resident-driven now, which is simpler than the split Phase 5 needed
+ * and is only possible because nobody immigrates into an existing
+ * house any more.
+ *
+ * A house still empties when it starves: decline stays in pop_update,
+ * where it always was. Growth and decline are no longer symmetric, and
+ * that is the point — leaving is a decision about this month, being
+ * born takes nine of them. */
+void residents_breed(Resident residents[], int *count, uint32_t *next_id,
+                     PopData pop_data[], int building_count,
+                     uint32_t world_seed, uint64_t tick);
 
 #endif /* RESIDENT_H */

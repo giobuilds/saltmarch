@@ -291,6 +291,12 @@ static void put_resident(W *w, const Resident *p)
     w_i32(w, p->age_months);
     w_i32(w, p->spouse);
     w_u32(w, p->tenure_months);
+    /* Phase 6b. Sex is written rather than derived from the id, unlike
+     * the name: a founding pair is required to be one of each, so the
+     * answer is chosen at spawn and has to survive the round trip. */
+    w_i32(w, p->sex);
+    w_i32(w, p->pregnancy);
+    w_i32(w, p->birth_house);
 }
 
 static void get_resident(R *r, Resident *p)
@@ -302,6 +308,9 @@ static void get_resident(R *r, Resident *p)
     p->age_months    = r_i32(r);
     p->spouse        = r_i32(r);
     p->tenure_months = r_u32(r);
+    p->sex           = r_i32(r);
+    p->pregnancy     = r_i32(r);
+    p->birth_house   = r_i32(r);
 }
 
 static void put_ship(W *w, const Ship *s)

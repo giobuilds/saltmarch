@@ -35,15 +35,25 @@ static int failures = 0;
         else         { printf("  ok:   %s\n", (msg)); }                 \
     } while (0)
 
-/* An adult of `years`, living at `home`. */
-static void person(Resident *r, uint32_t id, int years, int home)
+/* An adult of `years`, living at `home`.
+ *
+ * `birth_house` is set to -1 EXPLICITLY and not left to the memset,
+ * which is the one trap in building these by hand: zero is a valid
+ * building slot, so a founder zeroed rather than initialised claims to
+ * have been born in house 0 — and two of them would then read as
+ * siblings and refuse to marry, for a reason nothing in the test would
+ * show. spawn_resident sets it the same way and for the same reason. */
+static void person(Resident *r, uint32_t id, int years, int home, int sex)
 {
     memset(r, 0, sizeof(*r));
-    r->active     = 1;
-    r->id         = id;
-    r->age_months = (int32_t)(years * MONTHS_PER_YEAR);
-    r->home_idx   = home;
-    r->spouse     = -1;
+    r->active      = 1;
+    r->id          = id;
+    r->age_months  = (int32_t)(years * MONTHS_PER_YEAR);
+    r->home_idx    = home;
+    r->spouse      = -1;
+    r->sex         = sex;
+    r->pregnancy   = 0;
+    r->birth_house = -1;
 }
 
 /* Marriage is a monthly draw, so a test that calls it once is testing
@@ -62,10 +72,10 @@ static void test_pairing(void)
 
     printf("\n=== a house makes a household ===\n");
 
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2, 28, 0);
-    person(&r[2], 3, 35, 1);   /* another house entirely */
-    person(&r[3], 4, 33, 1);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
+    person(&r[2], 3, 35, 1, SEX_FEMALE);   /* another house entirely */
+    person(&r[3], 4, 33, 1, SEX_MALE);
 
     marry_for_years(r, 4, 5);
 
@@ -90,13 +100,13 @@ static void test_who_is_eligible(void)
 
     printf("\n=== and not everyone is eligible ===\n");
 
-    person(&r[0], 1, 30, 0);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
     marry_for_years(r, 1, 10);
     CHECK(r[0].spouse < 0, "an adult alone in a house stays unmarried");
 
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2,  8, 0);      /* a child */
-    person(&r[2], 3, 70, 0);      /* retired */
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2,  8, 0, SEX_MALE);      /* a child */
+    person(&r[2], 3, 70, 0, SEX_MALE);      /* retired */
     marry_for_years(r, 3, 10);
     CHECK(r[1].spouse < 0, "a child does not marry");
     CHECK(r[0].spouse < 0 && r[2].spouse < 0,
@@ -118,10 +128,10 @@ static void test_marriage_is_not_re_drawn(void)
 
     printf("\n=== a marriage is not asked about twice ===\n");
 
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2, 28, 0);
-    person(&r[2], 3, 31, 0);
-    person(&r[3], 4, 29, 0);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
+    person(&r[2], 3, 31, 0, SEX_FEMALE);
+    person(&r[3], 4, 29, 0, SEX_MALE);
 
     marry_for_years(r, 4, 20);
     for (i = 0; i < 4; i++) {
@@ -147,8 +157,8 @@ static void test_death_widows(void)
     memset(pop, 0, sizeof(pop));
     pop[0].active = 1; pop[0].residents = 2;
 
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2, 28, 0);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
     marry_for_years(r, 2, 5);
     CHECK(r[0].spouse == 1, "a couple, to begin with");
 
@@ -180,8 +190,8 @@ static void test_a_reused_slot_is_a_stranger(void)
 
     /* Married while both were of an age to marry — an elder is not
      * marriageable, so the old one has to get old the ordinary way. */
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2, 60, 0);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 60, 0, SEX_MALE);
     marry_for_years(r, 2, 5);
     CHECK(r[0].spouse == 1, "a couple, one of them much older");
 
@@ -191,7 +201,7 @@ static void test_a_reused_slot_is_a_stranger(void)
     CHECK(!r[1].active, "the old one dies and slot 1 falls empty");
 
     /* Somebody new takes the slot — exactly what residents_sync does. */
-    person(&r[1], 99, 26, 0);
+    person(&r[1], 99, 26, 0, SEX_MALE);
     CHECK(r[0].spouse < 0 && r[1].spouse < 0,
           "the newcomer is not married to the widow by accident of address");
 
@@ -200,63 +210,118 @@ static void test_a_reused_slot_is_a_stranger(void)
           "though they may of course marry on their own account");
 }
 
-/* ---- 3. birth, or a boat ---------------------------------- */
-static void test_who_fills_the_empty_bed(void)
+/* ---- 3. conception, gestation, birth ---------------------- */
+/* Runs `months` of the breeding cycle and reports how many months the
+ * mother spent carrying, so the nine can be counted rather than assumed. */
+static int breed_for_months(Resident r[], int *count, uint32_t *next_id,
+                            PopData pop[], int months)
 {
-    printf("\n=== who arrives when a bed falls empty ===\n");
-
-    /* A house whose couple is young: the vacancy is a birth. */
-    {
-        Resident r[8];
-        PopData  pop[2];
-        Building b[2];
-        int      count = 2;
-        uint32_t next_id = 50;
-
-        memset(r, 0, sizeof(r));
-        memset(pop, 0, sizeof(pop));
-        memset(b, 0, sizeof(b));
-        b[0].active = 1; b[0].type = BUILDING_HOUSE;
-        pop[0].active = 1;
-
-        person(&r[0], 1, 30, 0);
-        person(&r[1], 2, 28, 0);
-        marry_for_years(r, 2, 5);
-        CHECK(residents_fertile_couple_at(r, 2, 0),
-              "a young couple keeps house");
-
-        pop[0].residents = 3;               /* pop_update opened a slot */
-        residents_sync(r, &count, &next_id, b, pop, 1, 12345u);
-        CHECK(count == 3, "and somebody fills it");
-        CHECK(r[2].age_months == 0,
-              "and that somebody is a newborn, not a stranger off a boat");
+    int m, carried = 0;
+    for (m = 0; m < months; m++) {
+        residents_breed(r, count, next_id, pop, 1, 12345u,
+                        (uint64_t)(m + 1) * CALENDAR_MONTH_TICKS);
+        if (r[0].pregnancy > 0) carried++;
     }
+    return carried;
+}
 
-    /* The same house with nobody paired: the vacancy is an immigrant. */
-    {
-        Resident r[8];
-        PopData  pop[2];
-        Building b[2];
-        int      count = 2;
-        uint32_t next_id = 50;
+static void test_a_child_takes_nine_months(void)
+{
+    Resident r[8];
+    PopData  pop[2];
+    int      count = 2, carried;
+    uint32_t next_id = 50;
 
-        memset(r, 0, sizeof(r));
-        memset(pop, 0, sizeof(pop));
-        memset(b, 0, sizeof(b));
-        b[0].active = 1; b[0].type = BUILDING_HOUSE;
-        pop[0].active = 1;
+    printf("\n=== nine months, and then a child ===\n");
 
-        person(&r[0], 1, 30, 0);
-        person(&r[1], 2, 28, 0);            /* never married */
-        CHECK(!residents_fertile_couple_at(r, 2, 0),
-              "two lodgers are not a household");
+    memset(r, 0, sizeof(r));
+    memset(pop, 0, sizeof(pop));
+    pop[0].active = 1; pop[0].residents = 2;
 
-        pop[0].residents = 3;
-        residents_sync(r, &count, &next_id, b, pop, 1, 12345u);
-        CHECK(count == 3, "the bed is still filled");
-        CHECK(r[2].age_months >= 20 * MONTHS_PER_YEAR,
-              "but by an adult who came from somewhere else");
-    }
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
+    marry_for_years(r, 2, 5);
+    CHECK(residents_fertile_couple_at(r, 2, 0), "a young couple keeps house");
+    CHECK(residents_adults_at(r, 2, 0) == 2, "and both of them work");
+
+    /* Long enough that the conception draw is certain to have come up. */
+    carried = breed_for_months(r, &count, &next_id, pop, 120);
+
+    CHECK(count > 2, "a child is born");
+    CHECK(r[2].age_months == 0, "and is a newborn, not an arrival");
+    CHECK(r[2].birth_house == 0, "who knows which house they were born in");
+    CHECK(pop[0].residents > 2,
+          "and the house is one larger for it — birth drives the count up");
+    CHECK(carried >= PREGNANCY_MONTHS,
+          "somebody carried for at least the nine months it takes");
+}
+
+static void test_carrying_is_not_working(void)
+{
+    Resident r[4];
+
+    printf("\n=== and a pregnancy costs the island a pair of hands ===\n");
+
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
+    CHECK(residents_adults_at(r, 2, 0) == 2, "two adults, two workers");
+
+    r[0].pregnancy = PREGNANCY_MONTHS;
+    CHECK(residents_adults_at(r, 2, 0) == 1,
+          "she is carrying, so the house is down to one");
+    CHECK(residents_mouths_at(r, 2, 0) == 2,
+          "but she still eats — a pregnancy costs labour, not rations");
+
+    r[0].pregnancy = 0;
+    CHECK(residents_adults_at(r, 2, 0) == 2, "and she goes back to work");
+}
+
+/* Growth is birth and nothing else now: an unmarried pair never grows. */
+static void test_nobody_immigrates_into_a_house(void)
+{
+    Resident r[8];
+    PopData  pop[2];
+    int      count = 2;
+    uint32_t next_id = 50;
+
+    printf("\n=== and nobody arrives by boat ===\n");
+
+    memset(r, 0, sizeof(r));
+    memset(pop, 0, sizeof(pop));
+    pop[0].active = 1; pop[0].residents = 2;
+
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);            /* never married */
+    CHECK(!residents_fertile_couple_at(r, 2, 0),
+          "two lodgers are not a household");
+
+    breed_for_months(r, &count, &next_id, pop, 240);
+    CHECK(count == 2 && pop[0].residents == 2,
+          "twenty years later the house is exactly as full as it was");
+}
+
+/* Siblings share a birth_house, and a house is a family now. */
+static void test_siblings_do_not_marry(void)
+{
+    Resident r[4];
+    int      i, any = 0;
+
+    printf("\n=== and a brother does not marry his sister ===\n");
+
+    person(&r[0], 1, 20, 0, SEX_FEMALE);
+    person(&r[1], 2, 22, 0, SEX_MALE);
+    r[0].birth_house = 0;      /* both born in this house */
+    r[1].birth_house = 0;
+
+    marry_for_years(r, 2, 30);
+    CHECK(r[0].spouse < 0 && r[1].spouse < 0,
+          "thirty years under one roof and they never marry");
+
+    /* But a child of the house and somebody born elsewhere may. */
+    r[1].birth_house = 7;
+    marry_for_years(r, 2, 30);
+    for (i = 0; i < 2; i++) if (r[i].spouse >= 0) any = 1;
+    CHECK(any, "though somebody born elsewhere is fair game");
 }
 
 static void test_fertility_ends(void)
@@ -265,8 +330,8 @@ static void test_fertility_ends(void)
 
     printf("\n=== and it does not go on forever ===\n");
 
-    person(&r[0], 1, 30, 0);
-    person(&r[1], 2, 28, 0);
+    person(&r[0], 1, 30, 0, SEX_FEMALE);
+    person(&r[1], 2, 28, 0, SEX_MALE);
     marry_for_years(r, 2, 5);
     CHECK(residents_fertile_couple_at(r, 2, 0), "young, and a couple");
 
@@ -364,7 +429,7 @@ static void test_a_village_over_sixty_years(void)
                         mutual_always = 0;
                 }
 
-                /* An immigrant arrives at 20 or older, so anybody under
+                /* A founder arrives at 20 or older, so anybody under
                  * eighteen was born here. Marked by id, so each child is
                  * counted once however many months they are seen. */
                 if (r->age_months < AGE_ADULT_YEARS * MONTHS_PER_YEAR &&
@@ -406,7 +471,10 @@ int main(void)
     test_marriage_is_not_re_drawn();
     test_death_widows();
     test_a_reused_slot_is_a_stranger();
-    test_who_fills_the_empty_bed();
+    test_a_child_takes_nine_months();
+    test_carrying_is_not_working();
+    test_nobody_immigrates_into_a_house();
+    test_siblings_do_not_marry();
     test_fertility_ends();
     test_a_village_over_sixty_years();
 

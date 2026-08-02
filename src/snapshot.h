@@ -53,7 +53,7 @@
 /* Bumped whenever the encoding changes. Unlike SAVE_VERSION this is not
  * about the meaning of a log — a snapshot has no history to
  * reinterpret — it is purely "these bytes are laid out differently". */
-#define SNAPSHOT_VERSION 13u   /* 2: order book; 3: trade capacity;
+#define SNAPSHOT_VERSION 14u   /* 2: order book; 3: trade capacity;
                                * 4: the faction's standing quotes;
                                * 5: route knowledge and charts;
                                * 6: per-route premiums, raids, policies;
@@ -63,7 +63,8 @@
                                * 10: the pirate fleets;
                                * 11: a house's origin tier;
                                * 12: happiness as a 0..10 ladder;
-                               * 13: residents as named people */
+                               * 13: residents as named people;
+                               * 14: sex, pregnancy and the birth house */
 
 /* Encode `gs`'s world state into a freshly malloc'd buffer. On success
  * returns 1 and stores the buffer and its length; the caller owns the
