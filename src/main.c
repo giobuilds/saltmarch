@@ -175,7 +175,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return cli_result;
 
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING,    "Saltmarch");
-    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.3.0");
+    /* Keep this in step with the release tag. It had drifted three
+     * releases behind — 0.3.0 against a v0.5.0-alpha tag — because the
+     * tag is the thing anybody looks at and this string is the thing
+     * nothing reads back. */
+    SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_VERSION_STRING, "0.6.0");
     SDL_SetAppMetadataProperty(SDL_PROP_APP_METADATA_TYPE_STRING,    "game");
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
