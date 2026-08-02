@@ -93,11 +93,17 @@ int main(void)
          * about a world where nothing happens is not a determinism
          * gate; it is a very slow way of comparing two zeroes. */
         CHECK(ea && eb,
-              "the fixture fed somebody — house connected, food eaten, "
-              "happiness off the floor");
+              "the fixture fed somebody, and raised, married and employed "
+              "its own children");
     }
 
-    CHECK(a->sim_tick_no == 2000 && b->sim_tick_no == 2000,
+    /* Fifty years since the fixture was lengthened to cover demography
+     * — it ran six and a half months before, which is too short for
+     * anybody in it to age, marry, conceive, inherit or turn twelve.
+     * Asked of DEMO_SESSION_TICKS rather than a literal, so the two
+     * cannot drift apart the next time the length moves. */
+    CHECK(a->sim_tick_no == DEMO_SESSION_TICKS &&
+          b->sim_tick_no == DEMO_SESSION_TICKS,
           "the fixture session ran its ticks with no client attached");
     CHECK(a->cmd_count > 0, "the session went through the command funnel");
 

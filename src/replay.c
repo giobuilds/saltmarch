@@ -94,41 +94,65 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
      * SUBMITS commands rather than applying them, so nothing here can
      * be looked up until the ticks below have run — which is what the
      * second version of this got wrong. */
-    for (wr = 0; wr + 2 < MAP_ROWS && !laid; wr++)
-        for (wc = 0; wc + 4 < MAP_COLS && !laid; wc++) {
-            int rr = wr + 2, rc = wc;          /* road below the store  */
-            int hr = wr + 3, hc = wc;          /* house below the road  */
-            int fr = wr + 2, fc = wc + 1;      /* hut beside the road   */
+#define DEMO_ROAD_LEN 10
+    for (wr = 0; wr + 5 < MAP_ROWS && !laid; wr++)
+        for (wc = 0; wc + DEMO_ROAD_LEN + 1 < MAP_COLS && !laid; wc++) {
+            int rr = wr + 2;                   /* road below the store  */
+            int hr = wr + 3;                   /* the row below that    */
+            int k, ok = 1;
+            int fhut = -1, farm = -1, h1 = -1, h2 = -1;
 
             if (!building_can_place(&isl->map, BUILDING_WAREHOUSE, wr, wc))
                 continue;
-            if (hr >= MAP_ROWS) continue;
-            if (!building_can_place(&isl->map, BUILDING_ROAD,  rr, rc)) continue;
-            if (!building_can_place(&isl->map, BUILDING_HOUSE, hr, hc)) continue;
-            /* Coastal, so this is the constraint that actually decides
-             * where the village goes. An island always has a shore. */
-            if (!building_can_place(&isl->map, BUILDING_FISHERS_HUT, fr, fc))
-                continue;
+            /* A LONG ROW OF PAVEMENT, and then each building is given
+             * its own position along it.
+             *
+             * The first attempt at this demanded a coastal tile and a
+             * fertile 2x2 at two fixed offsets, and found a site on none
+             * of five seeds — coast and good soil are on opposite sides
+             * of an island, which is obvious in hindsight and was not
+             * before it was measured. Scanning the row for each in turn
+             * asks the same question without insisting they be
+             * neighbours. Fixed order, so every machine still lays the
+             * identical village. */
+            for (k = 0; k < DEMO_ROAD_LEN; k++)
+                if (!building_can_place(&isl->map, BUILDING_ROAD, rr, wc + k))
+                    ok = 0;
+            if (!ok) continue;
 
-            /* Paid in GOLD, not goods. A fresh island holds 1000 Gold
-             * and no Wood at all, so the goods payment this used to
-             * request was refused every single time. */
+            for (k = 0; k < DEMO_ROAD_LEN && fhut < 0; k++)
+                if (building_can_place(&isl->map, BUILDING_FISHERS_HUT,
+                                       hr, wc + k)) fhut = k;
+            /* The farm is 2x2 and sits ABOVE the row, beside the store,
+             * because the inland side is where soil is. */
+            for (k = 2; k + 1 < DEMO_ROAD_LEN && farm < 0; k++)
+                if (building_can_place(&isl->map, BUILDING_FARM, wr, wc + k))
+                    farm = k;
+            for (k = 0; k < DEMO_ROAD_LEN && h2 < 0; k++) {
+                if (k == fhut) continue;
+                if (!building_can_place(&isl->map, BUILDING_HOUSE, hr, wc + k))
+                    continue;
+                if (h1 < 0) h1 = k; else h2 = k;
+            }
+            if (fhut < 0 || farm < 0 || h1 < 0 || h2 < 0) continue;
+
+            /* Paid in GOLD, not goods. A fresh island holds no Wood at
+             * all, so the goods payment this used to request was refused
+             * every single time. */
             game_place_building(gs, wr, wc, BUILDING_WAREHOUSE, 1);
-            game_place_building(gs, rr, rc, BUILDING_ROAD,      1);
-            game_place_building(gs, hr, hc, BUILDING_HOUSE,     1);
-            game_place_building(gs, fr, fc, BUILDING_FISHERS_HUT, 1);
+            for (k = 0; k < DEMO_ROAD_LEN; k++)
+                game_place_building(gs, rr, wc + k, BUILDING_ROAD, 1);
+            game_place_building(gs, hr, wc + fhut, BUILDING_FISHERS_HUT, 1);
+            game_place_building(gs, wr, wc + farm, BUILDING_FARM,        1);
+            /* TWO houses, so there is somebody to marry. One house makes
+             * a family, and a family has nobody in it who may marry
+             * anybody — which is how the six-month fixture covered no
+             * marriage, no move and no reserve. */
+            game_place_building(gs, hr, wc + h1, BUILDING_HOUSE, 1);
+            game_place_building(gs, hr, wc + h2, BUILDING_HOUSE, 1);
             laid = 1;
         }
 
-    /* What marshfolk eat, and DELIBERATELY LESS FISH THAN THEY WILL EAT.
-     * Six needs ticks at five residents is thirty Fish; twenty are
-     * bought. The rest has to be landed by the hut, which is what makes
-     * "more Fish than were ever purchased" below a claim about
-     * production rather than about the market.
-     *
-     * Grain and Oilskins stay bought: the fixture covers ONE producer on
-     * purpose, so a failure points at the production path rather than at
-     * whichever of three chains happened to stall. */
     game_buy_resource(gs, RES_FISH,     20);
     game_buy_resource(gs, RES_GRAIN,    40);
     game_buy_resource(gs, RES_OILSKINS, 10);
@@ -138,10 +162,13 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
     game_ship_transfer(gs, 0, (ResourceType)0, 5);
     game_ship_depart(gs, 0, 1);
 
-    /* Long enough for the needs tick (every 300) to fire several times,
-     * so growth and consumption are in the recording rather than one
-     * lonely boundary. */
-    for (t = 0; t < 2000; t++)
+    /* FIFTY YEARS. Long enough for the founding couple to raise
+     * children, for those children to reach twelve and go to work, to
+     * marry across the two houses, to have children of their own, and
+     * for the founders to die and the eldest to inherit. See
+     * DEMO_SESSION_TICKS in replay.h for what the old six months
+     * covered, which was none of that. */
+    for (t = 0; t < DEMO_SESSION_TICKS; t++)
         sim_run_one_tick(gs);
 
     for (i = 0; i < isl->building_count; i++)
@@ -152,10 +179,47 @@ int replay_record_demo_session(GameState *gs, uint32_t seed)
             isl->buildings[i].type == BUILDING_FISHERS_HUT) { hut = i; break; }
 
     if (house < 0 || hut < 0) return 0;
-    return isl->buildings[house].connected &&
-           isl->pop_data[house].happiness > HAPPINESS_NEUTRAL &&
-           isl->buildings[hut].connected &&
-           /* Somebody went to work: more Fish on the island than were
-            * ever bought, which nothing but the hut can explain. */
-           isl->stockpile.amount[RES_FISH] > 20;
+
+    /* ---- what this fixture now insists actually happened -----
+     * It has silently covered nothing THREE times: paying for its house
+     * in goods the island did not have, placing a house on an island
+     * with no warehouse, and — until this rewrite — running for six and
+     * a half months, which is too short for anybody in it to age out of
+     * infancy, marry, conceive, inherit or turn twelve. Four phases of
+     * demography went into the cross-platform gate untested.
+     *
+     * Fifty years, two houses, a hut and a farm. The village feeds
+     * itself: it is fed rather than delighted, because nothing here
+     * produces Oilskins or Marsh Gin and fifty years of them cannot be
+     * bought, so NEUTRAL is the honest bar and above-neutral was the
+     * bar that quietly required a luxury chain nobody built. */
+    {
+        int n, born = 0, grown_here = 0, married = 0;
+
+        for (n = 0; n < isl->resident_count; n++) {
+            const Resident *r = &isl->residents[n];
+            if (!r->active) continue;
+            if (r->birth_house >= 0) {
+                born++;
+                /* Born here AND old enough to work: the only way this
+                 * is true is that a child was carried, delivered, aged
+                 * twelve years and passed the labour gate. */
+                if (resident_stage(r) == LIFE_TEEN ||
+                    resident_stage(r) == LIFE_ADULT) grown_here++;
+            }
+            if (r->spouse >= 0) married++;
+        }
+
+        return isl->buildings[house].connected &&
+               isl->pop_data[house].happiness >= HAPPINESS_NEUTRAL &&
+               isl->buildings[hut].connected &&
+               /* Somebody went to work: more Fish and more Grain on the
+                * island than were ever bought, which nothing but the hut
+                * and the farm can explain. */
+               isl->stockpile.amount[RES_FISH]  > 20 &&
+               isl->stockpile.amount[RES_GRAIN] > 40 &&
+               /* And the island raised its own people, married them,
+                * and put the children to work. */
+               born > 0 && grown_here > 0 && married > 0;
+    }
 }

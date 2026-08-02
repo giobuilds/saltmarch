@@ -32,6 +32,16 @@
  * nothing twice (see replay.c). tests/test_determinism.c asserts on
  * it, so a third time is a failing test rather than a hash quietly
  * agreeing with itself. */
+/* How long the determinism fixture runs: fifty years.
+ *
+ * It ran 2000 ticks — six and a half months — until LIFE_PLAN Phase 7b,
+ * which is too short for anybody in it to age out of infancy, marry,
+ * conceive, inherit or turn twelve. Four phases of demography reached
+ * the cross-platform gate without it ever exercising them. Fifty years
+ * is what it takes to reach a founder's death and the inheritance that
+ * follows; it costs about seven seconds to record and replay. */
+#define DEMO_SESSION_TICKS 180000
+
 int replay_record_demo_session(GameState *gs, uint32_t seed);
 
 /* ---- the UI harness (UI_PLAN M1) ---------------------------

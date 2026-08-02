@@ -898,13 +898,39 @@ arithmetically not, so an island that builds its chains need not import
 food at all. Proving it needs a fixture that lays the whole Marshfolk
 chain, which does not exist yet.
 
-*And the determinism fixture proves nothing about any of this.* It runs
-**2000 ticks — six and a half months**, so nobody in it ages out of
-infancy, marries, inherits or turns twelve. The hash did not move for
-Phase 7b at all, which is the same silent non-coverage this document
-records finding three times before. The fixture wants lengthening to at
-least a generation; that is its own change, because it moves the hash
-for a reason unrelated to whatever phase does it.
+*And the determinism fixture proved nothing about any of this* until it
+was lengthened immediately afterwards — see below.
+
+**The fixture, lengthened.** `replay_record_demo_session` ran **2000
+ticks — six and a half months** — so nobody in it aged out of infancy,
+married, conceived, inherited or turned twelve. Four phases of
+demography reached the cross-platform gate without it ever exercising
+them, which is the same silent non-coverage this document records
+finding three times before.
+
+It now runs **fifty years** (`DEMO_SESSION_TICKS`), over a village of
+two houses, a Fisher's Hut and a Farm. Measured across five seeds it
+raises 14-26 people of its own, 9-15 of whom reach working age, 2-12
+marriages, and a reserve that fills on some seeds and not others.
+
+*Three things had to change with it.* One house could not cover
+marriage — a family has nobody in it who may marry anybody — so there
+are two. Bought food cannot last fifty years at any affordable quantity
+and would blow the warehouse cap besides, so the village grows its own:
+the Farm is what makes the length survivable. And the old assertion
+asked for happiness ABOVE neutral, which quietly required a luxury chain
+the fixture never built; it asks for FED now, which is what a village of
+basics honestly is.
+
+*The first attempt at the layout found a site on none of five seeds.* It
+demanded a coastal tile and a fertile 2x2 at fixed offsets from each
+other — and coast and good soil are on opposite sides of an island,
+which is obvious in hindsight and was not before it was measured. The
+row of pavement is scanned for each building in turn now, which asks the
+same question without insisting they be neighbours.
+
+Costs about seven seconds to record and replay. Fixture hash
+`86899f082c03924e` → `f71bc0b54f4e5556`.
 
 **8 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent
