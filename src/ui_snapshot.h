@@ -16,6 +16,30 @@ struct GameState;        /* the builder's input; UI code never sees it */
 
 /* One building, compacted: what an overlay needs to draw or reason
  * about it, not the simulation's working state. */
+/* One named resident, for the wellbeing screen. A CAST, NOT A CENSUS:
+ * the snapshot carries the handful worth telling the player about
+ * rather than all five hundred, chosen by notability in
+ * ui_snapshot_build. */
+#define UI_CAST_MAX      10
+#define UI_CAST_NAME_LEN 32
+#define UI_CAST_WORK_LEN 24
+
+typedef struct {
+    uint32_t id;
+    int32_t  age_years;
+    int32_t  stage;              /* LifeStage                          */
+    int32_t  home_idx;           /* -1 when unhoused                   */
+    int32_t  work_idx;           /* -1 when not working                */
+    int32_t  tenure_months;
+    int32_t  productivity;       /* percent                            */
+    int32_t  happiness;          /* their household's, -1 if unhoused  */
+    int32_t  children;
+    uint8_t  married;
+    uint8_t  sex;
+    char     name[UI_CAST_NAME_LEN];
+    char     workplace[UI_CAST_WORK_LEN];
+} UiResident;
+
 typedef struct {
     int16_t type;            /* BuildingType                           */
     int16_t row, col;
@@ -56,6 +80,10 @@ typedef struct {
     int32_t  tax_rate_permille;
     int32_t  compliance_permille;
     int32_t  tax_last_month;
+
+    /* The handful of residents worth naming, most notable first. */
+    UiResident cast[UI_CAST_MAX];
+    int32_t    cast_count;
 
     UiBuilding buildings[MAX_BUILDINGS];
     int32_t    building_count;

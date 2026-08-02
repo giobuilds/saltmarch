@@ -174,6 +174,7 @@ add_library(saltmarch_ui STATIC
     src/yard_view.c
     src/hud_view.c
     src/vitals.c
+    src/wellbeing.c
     src/inventory_view.c
     src/island_bar.c
     src/confirm_view.c

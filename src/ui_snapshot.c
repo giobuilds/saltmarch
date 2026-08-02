@@ -10,10 +10,104 @@
 #include "faction.h"
 #include "population.h"
 #include "simclock.h"
+#include "resident.h"
+#include "calendar.h"
+#include <stdio.h>
 #include <string.h>
 
+/* How interesting a resident is to the player right now. Coarse bands
+ * rather than a formula: unhoused first, then hungry, then the extremes
+ * of age and service. Ties break on id so the cast does not reshuffle
+ * under the cursor between frames. */
+static int cast_notability(const Resident *r, const Island *isl)
+{
+    int score = 0, stage = resident_stage(r);
+
+    if (r->home_idx == RESIDENT_HOMELESS) score += 100;
+    else if (isl->pop_data[r->home_idx].happiness < HAPPINESS_NEUTRAL)
+        score += 60;
+
+    if (stage == LIFE_RETIRED)                        score += 25;
+    if (r->pregnancy > 0)                             score += 30;
+    if (r->tenure_months >= (uint32_t)PROD_TENURE_FULL) score += 20;
+    if (r->children >= 4)                             score += 10;
+    return score;
+}
+
+/* Fills out->cast with the most notable residents, most notable first. */
+static void snapshot_cast(UiIsland *out, const Island *isl,
+                          uint32_t world_seed)
+{
+    int taken[UI_CAST_MAX], n = 0, i, k;
+
+    out->cast_count = 0;
+
+    /* Selection sort over the residents rather than sorting the whole
+     * array: the cast is ten of five hundred. */
+    for (k = 0; k < UI_CAST_MAX; k++) {
+        int best = -1, best_score = -1;
+
+        for (i = 0; i < isl->resident_count; i++) {
+            const Resident *r = &isl->residents[i];
+            int             sc, j, already = 0;
+
+            if (!r->active) continue;
+            for (j = 0; j < n; j++) if (taken[j] == i) already = 1;
+            if (already) continue;
+
+            sc = cast_notability(r, isl);
+            if (sc > best_score ||
+                (sc == best_score && best >= 0 &&
+                 r->id < isl->residents[best].id)) {
+                best = i; best_score = sc;
+            }
+        }
+        if (best < 0) break;
+        taken[n++] = best;
+    }
+
+    for (k = 0; k < n; k++) {
+        const Resident *r = &isl->residents[taken[k]];
+        UiResident     *u = &out->cast[k];
+        int             h = r->home_idx;
+
+        memset(u, 0, sizeof(*u));
+        u->id            = r->id;
+        u->age_years     = r->age_months / MONTHS_PER_YEAR;
+        u->stage         = resident_stage(r);
+        u->home_idx      = h;
+        u->work_idx      = -1;
+        u->tenure_months = (int32_t)r->tenure_months;
+        u->children      = r->children;
+        u->married       = (uint8_t)(r->spouse >= 0);
+        u->sex           = (uint8_t)r->sex;
+        u->happiness     = h >= 0 ? isl->pop_data[h].happiness : -1;
+        u->productivity  = resident_productivity(r,
+                               h >= 0 ? isl->pop_data[h].happiness
+                                      : HAPPINESS_NEUTRAL);
+        resident_name(r, world_seed, u->name, sizeof(u->name));
+
+        /* An Agent carries no link back to a Resident, so this names
+         * the first workplace staffed from their household -- what the
+         * household-level model can honestly say. */
+        if (h >= 0) {
+            int a;
+            for (a = 0; a < isl->agent_count; a++)
+                if (isl->agents[a].active && isl->agents[a].home_idx == h
+                    && isl->agents[a].work_idx >= 0) {
+                    u->work_idx = isl->agents[a].work_idx;
+                    snprintf(u->workplace, sizeof(u->workplace), "%s",
+                             BUILDING_DEFS[
+                                 isl->buildings[u->work_idx].type].name);
+                    break;
+                }
+        }
+    }
+    out->cast_count = n;
+}
+
 static void snapshot_island(UiIsland *out, const Island *isl,
-                            uint32_t local_player)
+                            uint32_t local_player, uint32_t world_seed)
 {
     int i;
 
@@ -26,6 +120,7 @@ static void snapshot_island(UiIsland *out, const Island *isl,
     out->capacity        = isl->stockpile.capacity;
     out->escrow_nonce    = island_escrow_nonce(isl);
     out->residents       = pop_total(isl->pop_data, isl->building_count);
+    snapshot_cast(out, isl, world_seed);
 
     /* Phase 7. The reserve is counted here rather than stored on the
      * island: it is a property of who has a roof, and one loop over the
@@ -203,7 +298,7 @@ void ui_snapshot_build(UiSnapshot *out, const struct GameState *gs)
 
     for (i = 0; i < MAX_ISLANDS; i++)
         snapshot_island(&out->islands[i], &gs->islands[i],
-                        gs->local_player_id);
+                        gs->local_player_id, gs->world_seed);
 
     out->ship_count = gs->ship_count;
     for (i = 0; i < gs->ship_count && i < MAX_SHIPS; i++) {
