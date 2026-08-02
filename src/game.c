@@ -636,8 +636,24 @@ typedef struct {
  * v33 (LIFE_PLAN Phase 2): a full crew is worth more than the sum of
  * its hands — the production clock advances 2w-1 rather than w — so
  * every island in every recorded log produces at a different rate from
- * the one it was recorded at. Same reason as v32, larger effect. */
-#define SAVE_VERSION 33u
+ * the one it was recorded at. Same reason as v32, larger effect.
+ *
+ * v34 (LIFE_PLAN Phase 6): marriage and birth. Growth that used to
+ * arrive as an adult off a boat now arrives as somebody's child where a
+ * couple lives, so a log replays into an island with a different age
+ * structure, a different workforce and a different appetite.
+ *
+ * AND IT COVERS PHASES 4 AND 5 TOO, which is worth admitting rather
+ * than quietly folding in. Phase 4 retuned the shift durations and
+ * Phase 5 gave everybody an age and a death, both of which change what
+ * a recorded log replays into, and neither bumped this number —
+ * LIFE_PLAN's own phase notes claim a v34 and a v35 that were never
+ * written. One bump cannot undo two missing ones: a v33 log recorded
+ * under Phase 3's rules and a v33 log recorded under Phase 5's are
+ * still indistinguishable to each other. What this fixes is the going-
+ * forward case, and the lesson is that the version belongs in the same
+ * commit as the rule it describes. */
+#define SAVE_VERSION 34u
 
 /* Plain stdio rather than SDL_IOStream (MMO_PLAN Phase 6): a save IS the
  * server's checkpoint format and the CI fixture format, so reading and

@@ -125,10 +125,31 @@ static int count_live_for_home(const Resident r[], int count, int home_idx)
     return n;
 }
 
+/* Severs `idx`'s marriage from the OTHER side, so no live resident is
+ * ever left pointing at a slot that has been cleared or reused.
+ *
+ * Reciprocity is checked rather than assumed: only a partner who names
+ * `idx` back is widowed. Without that a stale one-way link — from an
+ * older snapshot, or from a bug — would let one death silently divorce
+ * a couple it had nothing to do with. */
+static void widow_partner(Resident r[], int count, int idx)
+{
+    int sp = r[idx].spouse;
+
+    if (sp >= 0 && sp < count && r[sp].spouse == idx) r[sp].spouse = -1;
+    r[idx].spouse = -1;
+}
+
 /* Arriving adults, aged 20-45 and spread — see the invariant in
- * resident.h. The spread is what stops an island dying in cohorts. */
+ * resident.h. The spread is what stops an island dying in cohorts.
+ *
+ * `newborn` makes this a BIRTH instead: age zero, and no jitter,
+ * because a baby's age is not a sample of anything — it is the one age
+ * a person is genuinely known to be. The spread exists to break up
+ * cohorts among people who arrive together, and children born into a
+ * house arrive one growth tick at a time already. */
 static void spawn_resident(Resident r[], int *count, uint32_t *next_id,
-                           int home_idx, uint32_t world_seed)
+                           int home_idx, uint32_t world_seed, int newborn)
 {
     int      slot = -1, i;
     uint32_t id, years, months;
@@ -148,7 +169,9 @@ static void spawn_resident(Resident r[], int *count, uint32_t *next_id,
     r[slot].active     = 1;
     r[slot].home_idx   = home_idx;
     r[slot].id         = id;
-    r[slot].age_months = (int32_t)(years * MONTHS_PER_YEAR + months);
+    r[slot].age_months = newborn
+                       ? 0
+                       : (int32_t)(years * MONTHS_PER_YEAR + months);
     r[slot].spouse     = -1;
 }
 
@@ -160,6 +183,11 @@ static void despawn_one_for_home(Resident r[], int count, int home_idx)
     int i;
     for (i = count - 1; i >= 0; i--)
         if (r[i].active && r[i].home_idx == home_idx) {
+            /* Before the slot goes, so a surviving spouse is not left
+             * pointing into it — the slot is reused by the next
+             * arrival, and a stale index would marry a widow to a
+             * stranger who moved in (LIFE_PLAN Phase 6). */
+            widow_partner(r, count, i);
             r[i].active = 0;
             return;
         }
@@ -221,6 +249,9 @@ void residents_age(Resident r[], int count, PopData pop_data[],
 
         if (!resident_dies(&r[i], world_seed, tick)) continue;
 
+        /* Widowed before the slot is cleared, for the reason given at
+         * widow_partner: the slot is about to become reusable. */
+        widow_partner(r, count, i);
         r[i].active = 0;
         /* The house is one smaller, and pop_update will see that this
          * same tick. Clamped rather than trusted: a resident whose
@@ -229,6 +260,70 @@ void residents_age(Resident r[], int count, PopData pop_data[],
         if (pop_data && pop_data[r[i].home_idx].residents > 0)
             pop_data[r[i].home_idx].residents--;
     }
+}
+
+/* ---- marriage (LIFE_PLAN Phase 6) -------------------------
+ * See resident.h for why a house is the household and why this is a
+ * monthly draw rather than an immediate pairing.
+ */
+
+static int marriageable(const Resident *r)
+{
+    return r->active && r->spouse < 0 && resident_stage(r) == LIFE_ADULT;
+}
+
+void residents_marry(Resident r[], int count, uint32_t world_seed,
+                     uint64_t tick)
+{
+    int i, j;
+
+    for (i = 0; i < count; i++) {
+        if (!marriageable(&r[i])) continue;
+
+        for (j = i + 1; j < count; j++) {
+            uint32_t draw;
+
+            if (!marriageable(&r[j])) continue;
+            if (r[j].home_idx != r[i].home_idx) continue;
+
+            /* Salted with BOTH ids and the tick. Both, so the question
+             * is about this pair rather than about whoever happens to
+             * be scanning; the tick, so a pair that is refused this
+             * month is asked afresh next month instead of being
+             * refused forever by one unlucky draw — the same reason
+             * resident_dies is salted. */
+            draw = resident_hash(world_seed,
+                                 r[i].id ^ (r[j].id * 2654435761u),
+                                 0x6666u ^ (uint32_t)(tick & 0xFFFFFFFFu));
+            if (draw % 1000u >= MARRY_PERMILLE_PER_MONTH) continue;
+
+            r[i].spouse = j;
+            r[j].spouse = i;
+            break;      /* i is spoken for; move to the next person */
+        }
+    }
+}
+
+int residents_fertile_couple_at(const Resident r[], int count, int home_idx)
+{
+    int i;
+
+    for (i = 0; i < count; i++) {
+        int sp = r[i].spouse;
+
+        if (!r[i].active || r[i].home_idx != home_idx) continue;
+        if (sp < 0 || sp >= count || !r[sp].active) continue;
+        if (r[sp].spouse != i) continue;        /* one-way: not a couple */
+
+        /* Both halves young enough. Checked on both because a couple
+         * ages at two different rates in this model — they married as
+         * adults, not as twins. */
+        if (r[i].age_months  / MONTHS_PER_YEAR >= AGE_FERTILE_MAX_YEARS) continue;
+        if (r[sp].age_months / MONTHS_PER_YEAR >= AGE_FERTILE_MAX_YEARS) continue;
+
+        return 1;
+    }
+    return 0;
 }
 
 void residents_sync(Resident residents[], int *count, uint32_t *next_id,
@@ -251,8 +346,17 @@ void residents_sync(Resident residents[], int *count, uint32_t *next_id,
         live   = count_live_for_home(residents, *count, i);
         target = pop_data[i].residents;
 
+        /* WHO arrives, not WHETHER (LIFE_PLAN Phase 6). The slot was
+         * opened by pop_update from happiness, exactly as before; all
+         * that is decided here is whether the house fills it with its
+         * own child or with somebody off a boat.
+         *
+         * Asked once per house rather than once per spawn, and it makes
+         * no difference which: a newborn is not a spouse, so no arrival
+         * in this loop can turn a house fertile that was not already. */
         for (k = live; k < target; k++)
-            spawn_resident(residents, count, next_id, i, world_seed);
+            spawn_resident(residents, count, next_id, i, world_seed,
+                           residents_fertile_couple_at(residents, *count, i));
         for (k = live; k > target; k--)
             despawn_one_for_home(residents, *count, i);
     }

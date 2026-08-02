@@ -178,9 +178,15 @@ void island_update(Island *isl, uint32_t world_seed, uint64_t tick)
      * Deaths drive the resident count DOWN; growth drives it up and
      * residents_sync follows. Keeping those two directions apart is
      * what stops the reconciliation fighting itself. */
-    if (tick % CALENDAR_MONTH_TICKS == 0)
+    if (tick % CALENDAR_MONTH_TICKS == 0) {
         residents_age(isl->residents, isl->resident_count, isl->pop_data,
                       world_seed, tick);
+        /* After ageing, so somebody who died this month does not marry
+         * this month — and so this month's new adults are eligible on
+         * the month they become adults rather than the one after. */
+        residents_marry(isl->residents, isl->resident_count,
+                        world_seed, tick);
+    }
 
     pop_update(isl->pop_data, isl->buildings, isl->building_count,
                &isl->stockpile, island_mouths_at, isl);

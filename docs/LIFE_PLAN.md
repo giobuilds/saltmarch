@@ -592,14 +592,78 @@ year.
 it would have people in different streets getting older at different
 rates. That alignment is what Phase 4 was for.
 
-**6 — marriage, households and birth.** Pairing derived from identity in
-a fixed order, and the births that follow from it. Feeds social support,
-and gives the ghost feed something worth saying.
+**6 — marriage, households and birth. DONE.** Adults who share a house
+pair off on a monthly draw, and a house with a young couple fills its
+next vacancy with a child instead of an immigrant. Save v34, protocol
+25. Fixture hash `bb7e381ae6ab6c0d` → `e07bd51fd2d9ba87`.
 
-*Watch the adult fraction here.* Phase 5 measured 81% typical because
-every resident arrives an adult. Children will push it down, and the
-closure projection is asserted against the worst measured year — so this
-is the phase where that assertion starts doing real work.
+*A HOUSE IS THE HOUSEHOLD.* Pairing is between people who already share
+an address, which is what lets marriage cost nothing in bookkeeping:
+nobody's `home_idx` ever changes, so no house's `pop_data.residents` has
+to move between slots in the same tick `residents_sync` is reconciling
+against it. Island-wide pairing with a spouse moving in was the
+alternative, and it buys a nicer story for a reconciliation bug that
+would be very hard to see.
+
+*Phase 6 ADDS NO SOURCE OF POPULATION.* This is the decision the whole
+phase rests on. Growth stays exactly where Phase 5 left it — count-
+driven, decided by `pop_update` from happiness — and birth decides only
+**who arrives** to fill the slot it opened. So there was no rebalance,
+no second growth path to reconcile against the first, and "deaths are
+resident-driven, growth is count-driven" survives intact. A birth is a
+composition change, not an addition.
+
+*Marriage is a monthly draw, not an immediate fact*, for the same reason
+ages are jittered at spawn. If every eligible pair married the first
+month they were eligible, every couple would start having children in
+the same month and the island would be raising cohorts again — the exact
+defect the age spread exists to prevent.
+
+*The one structural hazard was `spouse` being an INDEX*, into an array
+whose slots are reused. A marriage that outlives its partner's slot is a
+widow married to whoever moves in next: no crash, no hash failure, just
+quiet nonsense. Both removal paths — death and despawn — now widow the
+partner before clearing the slot, every read is bounds- and reciprocity-
+checked, and `test_marriage.c` re-checks mutuality every month of sixty
+years rather than once at the end.
+
+*The adult fraction moved, but less than expected:* 81% typical → ~74%,
+with the worst five-year mean holding around 48%. So `test_closure`'s
+`ADULT_FRACTION` of 0.48 needed no change, and the assertion the plan
+predicted would "start doing real work" is doing it — it is simply not
+yet under strain.
+
+*And the measurement that matters is a composition:* across three seeds
+over sixty years, **28 of 134 arrivals were born on the island (20%)**;
+the rest sailed in. That is lower than it sounds like it should be, and
+the reason is structural rather than a bug — see below.
+
+**The open question Phase 6 leaves: housing caps people, not adults.**
+`HOUSE_CAPACITY` is 6 and `pop_init` seeds a house at 5, so a house is
+full within one needs tick and stays full. The only demographic event
+after that is a death opening a bed — and a house whose members are
+dying is a house of old people, whose couple is usually past
+`AGE_FERTILE_MAX_YEARS`. Hence 20%.
+
+This document's own arithmetic assumes the *other* model. "Residents are
+world state now" says the `MAX_AGENTS` ceiling "stops being a ceiling on
+population and becomes one on the working population — roughly 930
+residents at a 55% adult fraction, against 512 today." That sentence
+only holds if children are **additional to** the capped household rather
+than competing with adults for the same six beds.
+
+Making that true means `HOUSE_CAPACITY` bounding ADULTS, with children
+extra. It is a real change and not a small one: more mouths per house at
+unchanged worker count, `GOLD_PER_RESIDENT` needing to stop paying
+children, and `test_closure`'s tables re-derived against a population
+half again as large. **It is deliberately not built here**, because it is
+an economy-scale decision rather than a consequence of marriage, and
+because Phase 6 is coherent and green without it.
+
+*What was NOT built.* The ghost feed says nothing about weddings or
+births yet — `feed.c` is client-side and the phase's sim work stands on
+its own. Kinship is not modelled at all: nobody has recorded parents, so
+nobody can marry a relative and nobody can inherit anything.
 
 **7 — status modifies productivity.** Slept, ate, married, employed →
 an integer percentage with the 0.75 floor from §5. Several independent
