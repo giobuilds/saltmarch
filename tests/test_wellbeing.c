@@ -90,6 +90,43 @@ static void test_unmodelled_are_excluded(void)
     }
 }
 
+/* ---- 2b. empty ground is not scored ----------------------- */
+/* Income is a constant, so on an island with nobody on it that one term
+ * would carry the whole weighted sum and empty ground would report 2.8
+ * out of 10. The people screen is what made that visible. */
+static void test_empty_ground_is_not_scored(void)
+{
+    UiSnapshot snap;
+    Wellbeing  w;
+
+    printf("\n=== an island nobody lives on has no wellbeing ===\n");
+
+    memset(&snap, 0, sizeof(snap));
+    snap.islands[0].settled        = 1;
+    snap.islands[0].detail_known   = 1;
+    snap.islands[0].building_count = 1;
+    snap.islands[0].buildings[0].active = 1;   /* a house, nobody in it */
+
+    wellbeing_island(&w, &snap, 0);
+    CHECK(w.score == 0.0f, "empty ground scores nothing at all");
+    CHECK(w.factor[WB_INCOME] == 0.0f,
+          "and the constant income term does not answer for it");
+
+    /* One person under a roof is enough to have an answer. */
+    snap.islands[0].buildings[0].residents = 2;
+    snap.islands[0].residents              = 2;
+    wellbeing_island(&w, &snap, 0);
+    CHECK(w.score >= WB_BASELINE, "two residents make it a question again");
+
+    /* And so is one person waiting for one. */
+    snap.islands[0].buildings[0].residents = 0;
+    snap.islands[0].residents              = 0;
+    snap.islands[0].reserve                = 3;
+    wellbeing_island(&w, &snap, 0);
+    CHECK(w.score >= WB_BASELINE,
+          "as does a reserve with nowhere to put it");
+}
+
 /* ---- 3. density is a curve, not a ramp -------------------- */
 static void test_density_is_an_inverted_u(void)
 {
@@ -305,6 +342,7 @@ int main(void)
 
     test_the_table();
     test_unmodelled_are_excluded();
+    test_empty_ground_is_not_scored();
     test_density_is_an_inverted_u();
     test_income_is_logarithmic();
     test_unhoused_scores_worst();

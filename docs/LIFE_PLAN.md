@@ -1026,6 +1026,44 @@ workplace staffed from that household. Same limitation Phase 8's
 per-household productivity has, and the same reason — the link would
 mean widening a struct that is snapshotted.
 
+**9b — the screen. DONE.** `people_view.c/h` in the SDL-free UI library
+and `people_ui.c/h` in the client, on `P`, following the same
+builder/drawer split as every overlay since UI_PLAN N3. Four blocks:
+the island's score against the ladder, one bar per factor with its
+weight, the cast, and the counts nothing scores.
+
+*The unmodelled factors are listed, not omitted.* They get a row, their
+weight, an empty track and the words "not modelled". Dropping them
+would make the screen agree with the arithmetic and disagree with the
+design — the point of excluding their weight was that an unbuilt
+feature should not read as a balance problem, and a factor the player
+never sees cannot read as anything.
+
+*Each cast row carries its own six factors as a six-segment
+sparkline*, so ten people are comparable down a column rather than one
+at a time. That is what made the screen read-only: with the breakdown
+already on every row there is nothing left to select, so there is no
+page, no selection, no `UiState` field — and therefore nothing to add
+to `IntentUiState` or the recorded click stream. The only click that
+does anything closes it.
+
+**It found a bug in Phase 9 on its first frame.** A fresh island scored
+2.8 out of 10 with Income at 82%. `wellbeing_island` guarded only on
+`settled`, and income is a constant — so on ground nobody stands on that
+one term carried the entire weighted sum by itself and empty grass
+reported a number. Guarded now on population (housed or waiting), with
+the screen showing "Nobody lives here to score" and empty tracks in
+place of a fabricated bar. Assertions in both `tests/test_wellbeing.c`
+and `tests/test_people.c`; the ladder is otherwise unchanged and the
+hash still `10dc16be1a45550c`, because none of this is sim state.
+
+*The screen makes the flat-income finding above visible rather than
+fixing it.* Income reads 82% on every populated island, always, because
+`WAGE_PER_WORKER` is the same everywhere. That is now on screen with a
+weight of 1.7 beside it, which is a fair description of a factor the
+model does not yet vary — but it is the first thing to look at when
+wages stop being flat.
+
 ## What this does not do
 
 It does not build districts, wages, taxes, corruption or crime. Phases

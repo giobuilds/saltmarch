@@ -174,6 +174,11 @@ typedef struct GameState {
      * the flag lives here. */
     int  yard_open;
 
+    /* The people (LIFE_PLAN Phase 9): the island's wellbeing score, the
+     * six factors behind it, and the cast the snapshot names. Read-only
+     * and rebuilt each frame, so only the flag lives here. */
+    int  people_open;
+
     /* ---- The command funnel (MMO_PLAN Phase 1a) ----------- */
     Command  *cmd_log;
     int       cmd_count;
@@ -337,7 +342,8 @@ typedef enum {
     UI_OVERLAY_WORLD,
     UI_OVERLAY_BOOK,        /* the order book (UI_PLAN N3)             */
     UI_OVERLAY_CHARTS,      /* the passages (UI_PLAN N4)               */
-    UI_OVERLAY_YARD         /* the shipyard (UI_PLAN N6)               */
+    UI_OVERLAY_YARD,        /* the shipyard (UI_PLAN N6)               */
+    UI_OVERLAY_PEOPLE       /* the people (LIFE_PLAN Phase 9)          */
 } GameOverlay;
 
 GameOverlay game_topmost_overlay(const GameState *gs);

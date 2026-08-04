@@ -175,6 +175,7 @@ add_library(saltmarch_ui STATIC
     src/hud_view.c
     src/vitals.c
     src/wellbeing.c
+    src/people_view.c
     src/inventory_view.c
     src/island_bar.c
     src/confirm_view.c
@@ -197,6 +198,7 @@ set(SALTMARCH_CLIENT_SOURCES
     src/book_ui.c
     src/chart_ui.c
     src/yard_ui.c
+    src/people_ui.c
     src/world_ui.c
     src/feed.c
     src/config.c

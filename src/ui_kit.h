@@ -60,7 +60,12 @@ enum {
     UI_GROUP_BUILD_HULL,    /* value = ShipClass (the button)        */
     UI_GROUP_ESCORT,        /* value = ship index; widget value=target */
     UI_GROUP_SURVEY,        /* value = the island to look for a way to */
-    UI_GROUP_CAPACITY       /* value = which harbour capacity (N8)   */
+    UI_GROUP_CAPACITY,      /* value = which harbour capacity (N8)   */
+    /* The people screen (LIFE_PLAN Phase 9). A factor row is named by
+     * its WellbeingFactor; a cast row by its index into the view, since
+     * a resident id is 32 bits and this field is 16. */
+    UI_GROUP_FACTOR,        /* value = WellbeingFactor               */
+    UI_GROUP_RESIDENT       /* value = index into PeopleView.rows    */
 };
 
 /* Fixed actions — the non-entity buttons (Close, Prev, ...). These are

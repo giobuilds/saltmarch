@@ -5,6 +5,7 @@
 #include "book_view.h"
 #include "chart_view.h"
 #include "yard_view.h"
+#include "people_view.h"
 #include "camera.h"
 #include "confirm_view.h"
 #include "exchange_view.h"
@@ -496,6 +497,7 @@ typedef struct {
     BookView      book;  UiList book_list;
     ChartView     charts; UiList chart_list;
     YardView      yard;   UiList yard_list;
+    PeopleView    people; UiList people_list;
 } UiFrame;
 
 /* Rebuild every overlay for this frame. Lists are filled in a fixed
@@ -528,6 +530,10 @@ static void build_all(UiFrame *f, const UiSnapshot *snap, const UiState *st,
 
     yard_view_build(&f->yard, snap, snap->current_island);
     yard_build(&f->yard_list, &f->yard, st, (float)SCREEN_W, (float)SCREEN_H);
+
+    people_view_build(&f->people, snap, snap->current_island);
+    people_build(&f->people_list, &f->people, (float)SCREEN_W,
+                 (float)SCREEN_H);
 }
 
 static int rects_on_screen(const UiList *l, const char *what, int verbose)
@@ -727,6 +733,7 @@ static void verify_one(const UiFrame *f, const UiSnapshot *snap,
     v->failures += rects_on_screen(&f->book_list,   "book",      v->verbose);
     v->failures += rects_on_screen(&f->chart_list,  "charts",    v->verbose);
     v->failures += rects_on_screen(&f->yard_list,   "yard",      v->verbose);
+    v->failures += rects_on_screen(&f->people_list, "people",    v->verbose);
     v->checked++;
 
     /* Emission, where the mapping is pure. */
