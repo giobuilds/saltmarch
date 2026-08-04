@@ -104,6 +104,11 @@ void wellbeing_island(Wellbeing *out, const UiSnapshot *snap, int island)
         density += density_curve((float)b->residents);
     }
 
+    /* An island nobody lives on has no wellbeing to score. Without this
+     * the income term — which is a constant — carries the whole weighted
+     * sum on its own, and empty ground reports a number. */
+    if (people == 0 && isl->reserve == 0) return;
+
     if (houses > 0) {
         happy   /= (float)houses;
         density /= (float)houses;

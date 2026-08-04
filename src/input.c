@@ -44,6 +44,9 @@ SDL_AppResult input_handle_event(InputState *input,
         case SDL_SCANCODE_Y:
             if (down) input->yard_toggle = 1;
             break;
+        case SDL_SCANCODE_P:
+            if (down) input->people_toggle = 1;
+            break;
         case SDL_SCANCODE_F8:
             if (down) input->scrub_toggle = 1;
             break;
@@ -102,6 +105,7 @@ void input_clear_clicks(InputState *input)
     input->book_toggle          = 0;
     input->chart_toggle         = 0;
     input->yard_toggle          = 0;
+    input->people_toggle        = 0;
     input->scrub_toggle         = 0;
     input->scroll_y             = 0.0f;   /* CHANGED: reset scroll each frame */
 }

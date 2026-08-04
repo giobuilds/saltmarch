@@ -27,6 +27,7 @@
 #include "book_ui.h"      /* UI_PLAN N3: the order book (pulls its view)*/
 #include "chart_ui.h"     /* UI_PLAN N4: the passages (pulls its view)  */
 #include "yard_ui.h"      /* UI_PLAN N6: the yard and the fleet         */
+#include "people_ui.h"    /* LIFE_PLAN Phase 9: the people (pulls view) */
 #include "config.h"       /* AUTH_PLAN Phase 2: where a token lives      */
 #include "replay.h"   /* MMO Phase 6: the headless record/replay harness */
 
@@ -59,6 +60,8 @@ typedef struct {
     SeaView       sea_view;
     YardView      yard;
     UiList        yard_list;
+    PeopleView    people;
+    UiList        people_list;
     HudView       hud;
     UiList        hud_list;
     InventoryView inventory;
@@ -99,6 +102,7 @@ static int overlay_by_name(const char *name)
     if (SDL_strcmp(name, "book")   == 0) return UI_OVERLAY_BOOK;
     if (SDL_strcmp(name, "charts") == 0) return UI_OVERLAY_CHARTS;
     if (SDL_strcmp(name, "yard")   == 0) return UI_OVERLAY_YARD;
+    if (SDL_strcmp(name, "people") == 0) return UI_OVERLAY_PEOPLE;
     if (SDL_strcmp(name, "stores") == 0) return UI_OVERLAY_INVENTORY;
     if (SDL_strcmp(name, "world")  == 0) return UI_OVERLAY_WORLD;
     if (SDL_strcmp(name, "trade")  == 0) return UI_OVERLAY_TRADE;
@@ -426,6 +430,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                    (float)SCREEN_W, (float)SCREEN_H);
     }
 
+    if (gs->people_open) {
+        people_view_build(&app->people, &app->snap, gs->current_island);
+        people_build(&app->people_list, &app->people,
+                     (float)SCREEN_W, (float)SCREEN_H);
+    }
+
     /* The sea, whenever the map is open (UI_PLAN N5). Rebuilt rather
      * than folded: unlike a row under a cursor, a path has nothing to
      * lose by being recomputed — it is where the water is. */
@@ -503,6 +513,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         if (gs->yard_open) app->ui.yard_page = 0;
     }
 
+    /* P: the people (LIFE_PLAN Phase 9). Nothing to reset — the screen
+     * carries no page and no draft. */
+    if (gs->input.people_toggle)
+        gs->people_open = !gs->people_open;
+
     /* --screenshot-overlay: open the named screen once, the same way
      * its key does, so a capture can be of the passages or the yard
      * rather than always of the map. Done here beside the real toggles
@@ -523,6 +538,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             gs->yard_open = 1;
             app->ui.yard_page = 0;
             break;
+        case UI_OVERLAY_PEOPLE: gs->people_open = 1; break;
         case UI_OVERLAY_INVENTORY:
             gs->inventory_open = 1;
             app->ui.inventory_page = 0;
@@ -861,6 +877,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 break;
             }
 
+        /* The people (LIFE_PLAN Phase 9). A read-only screen: the only
+         * click that does anything closes it. */
+        } else if (gs->people_open) {
+            PeopleHit ph = people_hit(&app->people_list,
+                                      (float)gs->input.logical_x,
+                                      (float)gs->input.logical_y);
+            if (ph.kind != PEOPLE_HIT_NONE) gs->people_open = 0;
+
         } else if (gs->inventory_open) {
             InventoryHit ihit = inventory_hit(&app->inventory_list, &app->ui,
                                               (float)gs->input.logical_x,
@@ -1087,6 +1111,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         case UI_OVERLAY_BOOK:      gs->book_open      = 0; break;
         case UI_OVERLAY_CHARTS:    gs->charts_open    = 0; break;
         case UI_OVERLAY_YARD:      gs->yard_open      = 0; break;
+        case UI_OVERLAY_PEOPLE:    gs->people_open    = 0; break;
         case UI_OVERLAY_INVENTORY: gs->inventory_open = 0; break;
         case UI_OVERLAY_WORLD:     gs->world_open     = 0; break;
         case UI_OVERLAY_NONE:
@@ -1191,6 +1216,12 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (gs->yard_open)
         yard_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->yard_list,
                      &app->yard, gs->input.logical_x, gs->input.logical_y);
+
+    /* And the people (LIFE_PLAN Phase 9). */
+    if (gs->people_open)
+        people_ui_draw(app->r, SCREEN_W, SCREEN_H, &app->people_list,
+                       &app->people, gs->input.logical_x,
+                       gs->input.logical_y);
 
     /* The one confirmation, on top when open (UI_PLAN Phase 6). It
      * shows the literal Command it will submit; four popups used to be

@@ -47,6 +47,9 @@ typedef struct {
     /* Edge-triggered on Y: opens/closes the shipyard (UI_PLAN N6). */
     int yard_toggle;
 
+    /* Edge-triggered on P: opens/closes the people (LIFE_PLAN Ph.9). */
+    int people_toggle;
+
     /* Edge-triggered on F8: the time-travel scrubber (MMO_PLAN later
      * phases). */
     int scrub_toggle;

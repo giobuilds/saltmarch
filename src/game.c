@@ -49,6 +49,7 @@ void game_set_current_island(GameState *gs, int idx)
     gs->book_open             = 0;
     gs->charts_open           = 0;
     gs->yard_open             = 0;
+    gs->people_open           = 0;
     gs->inventory_open        = 0;
     gs->demolish_mode         = 0;
     gs->selected_building     = BUILDING_NONE;
@@ -209,6 +210,7 @@ GameOverlay game_topmost_overlay(const GameState *gs)
     if (gs->book_open)             return UI_OVERLAY_BOOK;
     if (gs->charts_open)           return UI_OVERLAY_CHARTS;
     if (gs->yard_open)             return UI_OVERLAY_YARD;
+    if (gs->people_open)           return UI_OVERLAY_PEOPLE;
     if (gs->inventory_open)        return UI_OVERLAY_INVENTORY;
     if (gs->world_open)            return UI_OVERLAY_WORLD;
     return UI_OVERLAY_NONE;

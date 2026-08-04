@@ -108,6 +108,10 @@ Multiplayer, all three shapes:
 | Mouse move | Highlight the tile under the cursor |
 | `‹` `›` header (top centre) | Step between the islands you have settled |
 | `I` | Open the stores overlay (everything this island holds) |
+| `B` | Open the order book: your resting orders, and the composer for a new one |
+| `C` | Open the passages: the routes out of this island and the charts that buy them |
+| `Y` | Open the shipyard: the hulls on offer and the fleet already afloat |
+| `P` | Open the people: the island's wellbeing, the six factors behind it, and who lives here |
 | `F8` | Time-travel scrubber: freeze the world and re-simulate to any past tick |
 | `Escape` | Quit |
 
